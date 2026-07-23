@@ -43,8 +43,9 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Protect everything except static assets and the login page itself
-  // (login is handled inside the middleware body above, not excluded
-  // here, so the redirect-away-from-login-when-authed logic still runs).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Protect everything except static assets, the unauthenticated health
+  // check, and the login page itself (login is handled inside the middleware
+  // body above, not excluded here, so the redirect-away-from-login-when-authed
+  // logic still runs).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/health).*)"],
 };
