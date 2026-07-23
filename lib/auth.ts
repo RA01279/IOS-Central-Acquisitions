@@ -1,34 +1,43 @@
 // lib/auth.ts
-import { getServerSession } from "next-auth";
-import AzureADProvider from "next-auth/providers/azure-ad";
+//
+// Simple Supabase email/password auth -- no Azure AD app registration,
+// no IT approval needed. You create the 3 accounts yourself in the
+// Supabase dashboard (Authentication -> Users -> Add user) and hand out
+// the passwords directly. If Dalfen IT later wants this on SSO, swap
+// this file for an Azure AD provider -- nothing else in the app needs
+// to change, since every route just calls getCurrentUser().
+
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 
-export const authOptions = {
-  providers: [
-    AzureADProvider({
-      clientId: process.env.AZURE_AD_CLIENT_ID!,
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
-      tenantId: process.env.AZURE_AD_TENANT_ID!,
-      // Delegated scopes needed later for sending mail via Graph
-      // (market-lead MLA notifications) -- Mail.Send is the one that
-      // matters for this app; Calendars.Read only if calendar sync
-      // gets added.
-      authorization: { params: { scope: "openid profile email Mail.Send" } },
-    }),
-  ],
-  callbacks: {
-    async session({ session, token }: any) {
-      if (session.user) {
-        session.user.email = token.email;
-      }
-      return session;
-    },
-  },
-};
+export function getSupabaseServerClient() {
+  const cookieStore = cookies();
+  return createServerClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: (name: string, value: string, options: any) => cookieStore.set(name, value, options),
+        remove: (name: string, options: any) => cookieStore.set(name, "", { ...options, maxAge: 0 }),
+      },
+    }
+  );
+}
 
-// Only Rhett/John should reach PSA-confirm actions -- enforced wherever
-// that action is triggered, not just hidden in the UI. See
-// app/api/deals/[id]/route.ts.
+export async function getCurrentUser(_req?: NextRequest) {
+  const supabase = getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.email) return null;
+  return { email: user.email };
+}
+
+// Only Rhett/John should reach PSA-confirm actions -- enforced here,
+// not just hidden in the UI. See app/api/deals/[id]/archive/route.ts
+// and wherever the "Moving to PSA" button ends up calling into.
 const PSA_CONFIRM_ALLOWLIST = (process.env.PSA_CONFIRM_ALLOWLIST ?? "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
@@ -36,10 +45,4 @@ const PSA_CONFIRM_ALLOWLIST = (process.env.PSA_CONFIRM_ALLOWLIST ?? "")
 
 export function canConfirmPsa(email: string) {
   return PSA_CONFIRM_ALLOWLIST.includes(email.toLowerCase());
-}
-
-export async function getCurrentUser(_req: NextRequest) {
-  const session = await getServerSession(authOptions as any);
-  if (!session?.user?.email) return null;
-  return { email: session.user.email as string };
 }

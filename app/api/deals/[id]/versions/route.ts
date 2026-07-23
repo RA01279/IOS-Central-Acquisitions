@@ -78,7 +78,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   if (nextVersion === 1) {
     await supabase.from("deals").update({ stage: "uw_v1" }).eq("id", params.id);
-    // TODO(claude-code): notify Rhett once Graph Mail.Send is wired up.
+    // No auto-notification -- the "uw_v1" stage change is visible on
+    // the pipeline board; ping Rhett directly same as you do today.
   }
 
   // Surface parser warnings (e.g. #REF! errors, non-numeric cells) back

@@ -103,11 +103,11 @@ export async function findDuplicateDeals(address: string, excludeDealId?: string
 }
 
 async function notifyMarketLeadForMla(dealId: string, address: string) {
-  // Sends via the requester's own mailbox (delegated Graph permission) --
-  // deliberately not the shared inbox, since that doesn't exist yet.
-  // See lib/graph.ts for the actual Graph sendMail call.
+  // No Graph/Mail.Send dependency -- this just logs the flag so it
+  // shows up as "awaiting MLA" on the deal. You email the market lead
+  // yourself, same as today; when they reply, key the numbers into
+  // mla_data via the deal detail page.
   await logDealEvent(dealId, "mla_requested", { address }, "system");
-  // TODO: wire up lib/graph.ts sendMail() once Graph app registration is approved.
 }
 
 export async function logDealEvent(

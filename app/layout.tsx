@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Acquisitions Tracking Tool",
+  title: "Hopper",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
