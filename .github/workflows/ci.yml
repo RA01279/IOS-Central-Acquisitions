@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          # Dummy values so build doesn't fail on missing env in CI --
+          # real values live in Vercel project settings.
+          SUPABASE_URL: "https://placeholder.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: "placeholder"
+          NEXTAUTH_SECRET: "placeholder"
+          AZURE_AD_CLIENT_ID: "placeholder"
+          AZURE_AD_CLIENT_SECRET: "placeholder"
+          AZURE_AD_TENANT_ID: "placeholder"
