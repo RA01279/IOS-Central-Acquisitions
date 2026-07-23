@@ -91,6 +91,78 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
       <StageActions dealId={deal.id} stage={deal.stage} canConfirmPsa={userCanConfirmPsa} />
 
+      <section className="panel">
+        <h2>Property</h2>
+        <div className="metrics-grid">
+          <div>
+            <span className="label">City / Submarket</span>
+            <span className="value">
+              {[deal.properties?.city, deal.properties?.submarket].filter(Boolean).join(" / ") || "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Acres</span>
+            <span className="value">
+              {deal.properties?.lot_sf ? (deal.properties.lot_sf / 43560).toFixed(2) : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Lot SF</span>
+            <span className="value">
+              {deal.properties?.lot_sf ? Math.round(deal.properties.lot_sf).toLocaleString() : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Building SF</span>
+            <span className="value">
+              {deal.properties?.building_sf ? Math.round(deal.properties.building_sf).toLocaleString() : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Occupancy</span>
+            <span className="value">
+              {deal.properties?.occupancy_status === "occupied"
+                ? `Occupied${deal.properties?.walt_years ? ` · ${deal.properties.walt_years} yr WALT` : ""}`
+                : deal.properties?.occupancy_status === "vacant"
+                  ? "Vacant"
+                  : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Tenancy</span>
+            <span className="value">
+              {deal.properties?.tenancy === "single_tenant"
+                ? "Single-tenant"
+                : deal.properties?.tenancy === "multi_tenant"
+                  ? "Multi-tenant"
+                  : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Source</span>
+            <span className="value">
+              {deal.marketing_status === "marketed"
+                ? "Marketed"
+                : deal.marketing_status === "off_market"
+                  ? "Off-Market"
+                  : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="label">Type</span>
+            <span className="value">
+              {deal.acquisition_type === "slb"
+                ? "Sale-leaseback"
+                : deal.acquisition_type === "unsolicited"
+                  ? "Unsolicited"
+                  : deal.acquisition_type === "standard"
+                    ? "Standard"
+                    : "—"}
+            </span>
+          </div>
+        </div>
+      </section>
+
       <OffersPanel
         dealId={deal.id}
         offers={deal.offers ?? []}
