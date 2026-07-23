@@ -56,14 +56,30 @@ npm run dev
 - Archive/restore and UW-version API routes
 - Simple auth with a PSA-confirm allowlist (`canConfirmPsa()`)
 
-**Stubbed -- needs finishing:**
-- **Deal detail page UI** (`app/deals/[id]/page.tsx`) -- data is wired
-  up, UI is a placeholder. Needs the Offered/PSA-confirm buttons,
-  version history list, and document list built out.
-- **Pipeline board** (`app/deals/page.tsx`) -- currently a plain
-  list-by-stage; swap for a real kanban layout when there's time.
-- **Login page** -- Supabase auth is wired server-side; needs a basic
-  sign-in form in the UI.
+## What's built vs. stubbed
+
+**Built:**
+- Schema (`supabase/migrations/`)
+- `createDeal()` with duplicate detection and MLA-request logging
+- New Deal form + API route
+- v1 comp scoring (recency + distance blend, see `lib/comps.ts`)
+- Excel parsing (`lib/excel-parser.ts`) -- reads the `Summary Table` tab
+  of the underwriting model for IRR, multiple, cap rates, etc.
+- Archive/restore and UW-version API routes
+- Simple auth with a PSA-confirm allowlist (`canConfirmPsa()`) and a
+  login page
+- Pipeline board (kanban-style, by stage)
+- Deal detail page: returns summary, MLA entry/display, Excel upload,
+  version history, document list, activity log, and stage-transition
+  buttons (Mark Offered / Confirm Moving to PSA / Archive)
+
+**Not yet built:**
+- Any styling polish beyond "clean and legible" -- this is a tracker,
+  not a showpiece, by design.
+- Document download links (documents are stored and listed, but there's
+  no signed-URL download button yet).
+- Duplicate-deal warning surfaced in the UI (the detection logic runs
+  and logs an event on intake, but nothing displays it to the user yet).
 
 ## Deferred (see spec doc for reasoning)
 
