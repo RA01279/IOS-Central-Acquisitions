@@ -1,4 +1,5 @@
 import "./globals.css";
+import ProductionRedirect from "@/components/ProductionRedirect";
 
 export const metadata = {
   title: "Hopper",
@@ -7,7 +8,10 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ProductionRedirect />
+        {children}
+      </body>
     </html>
   );
 }
