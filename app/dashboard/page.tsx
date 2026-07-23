@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ACQUISITION_STAGES, LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
+import CardDeleteButton from "@/components/CardDeleteButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -267,7 +268,7 @@ export default async function DashboardPage() {
                     new Date(a.updated_at ?? a.created_at).getTime()
                 )
                 .map((d: any) => (
-                  <li key={d.id}>
+                  <li key={d.id} className="archive-row">
                     <span className="doc-type">{d.deal_type === "lease" ? "LEASE" : "ACQ"}</span>
                     <Link href={d.deal_type === "lease" ? `/leasing/${d.id}` : `/deals/${d.id}`}>
                       {d.properties?.address ?? "Untitled deal"}
@@ -277,6 +278,7 @@ export default async function DashboardPage() {
                       · died at {STAGE_LABELS[d.death_stage] ?? d.death_stage ?? "?"}
                       {d.death_reason ? ` — ${d.death_reason}` : ""}
                     </span>
+                    <CardDeleteButton dealId={d.id} />
                   </li>
                 ))}
             </ul>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ACQUISITION_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
+import CardDeleteButton from "@/components/CardDeleteButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -45,13 +46,16 @@ export default async function DealsPage() {
             </h2>
             <div className="pipeline-cards">
               {byStage[stage].map((deal: any) => (
-                <Link key={deal.id} href={`/deals/${deal.id}`} className="pipeline-card">
-                  <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
-                  <span className="market muted">{deal.properties?.market ?? ""}</span>
-                  {deal.mla_status === "requested" && (
-                    <span className="badge">awaiting MLA</span>
-                  )}
-                </Link>
+                <div key={deal.id} className="pipeline-card-wrap">
+                  <Link href={`/deals/${deal.id}`} className="pipeline-card">
+                    <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
+                    <span className="market muted">{deal.properties?.market ?? ""}</span>
+                    {deal.mla_status === "requested" && (
+                      <span className="badge">awaiting MLA</span>
+                    )}
+                  </Link>
+                  <CardDeleteButton dealId={deal.id} />
+                </div>
               ))}
               {byStage[stage].length === 0 && <p className="empty">Nothing here</p>}
             </div>

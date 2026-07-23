@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
+import CardDeleteButton from "@/components/CardDeleteButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -55,15 +56,18 @@ export default async function LeasingPage() {
                 {byStage[stage].map((deal: any) => {
                   const tenant = tenantName(deal);
                   return (
-                    <Link key={deal.id} href={`/leasing/${deal.id}`} className="pipeline-card">
-                      <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
-                      {tenant ? (
-                        <span className="tenant">{tenant}</span>
-                      ) : (
-                        <span className="muted tenant-missing">no tenant linked</span>
-                      )}
-                      <span className="market muted">{deal.properties?.market ?? ""}</span>
-                    </Link>
+                    <div key={deal.id} className="pipeline-card-wrap">
+                      <Link href={`/leasing/${deal.id}`} className="pipeline-card">
+                        <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
+                        {tenant ? (
+                          <span className="tenant">{tenant}</span>
+                        ) : (
+                          <span className="muted tenant-missing">no tenant linked</span>
+                        )}
+                        <span className="market muted">{deal.properties?.market ?? ""}</span>
+                      </Link>
+                      <CardDeleteButton dealId={deal.id} />
+                    </div>
                   );
                 })}
                 {byStage[stage].length === 0 && <p className="empty">Nothing here</p>}

@@ -247,6 +247,37 @@ fieldset {
 .pipeline-card:hover {
   border-color: var(--accent-2);
 }
+.pipeline-card-wrap {
+  position: relative;
+}
+.pipeline-card-wrap .pipeline-card {
+  padding-right: 30px;
+}
+.card-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.card-delete:hover {
+  color: var(--error);
+  background: var(--bg);
+}
+.archive-row {
+  position: relative;
+  padding-right: 30px;
+}
+.archive-row .card-delete {
+  top: 0;
+  right: 0;
+}
 .pipeline-card .address {
   font-size: 14px;
   font-weight: 500;
