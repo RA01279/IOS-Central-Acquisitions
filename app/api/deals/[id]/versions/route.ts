@@ -76,10 +76,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     user.email
   );
 
-  if (nextVersion === 1) {
-    await supabase.from("deals").update({ stage: "uw_v1" }).eq("id", params.id);
-    // No auto-notification -- the "uw_v1" stage change is visible on
-    // the pipeline board; ping Rhett directly same as you do today.
+  // A model in hand is what makes a deal "in UW": if this deal is still at
+  // Prospect, the upload advances it. Deals already past UW (offered, PSA...)
+  // are never regressed by a re-upload -- the stage filter below guarantees
+  // the update only fires from Prospect.
+  const { data: advanced } = await supabase
+    .from("deals")
+    .update({ stage: "uw" })
+    .eq("id", params.id)
+    .eq("deal_type", "acquisition")
+    .eq("stage", "prospect")
+    .select("id");
+  if (advanced && advanced.length > 0) {
+    await logDealEvent(params.id, "advanced_to_uw", { via: "model_upload" }, "system");
   }
 
   // Surface parser warnings (e.g. #REF! errors, non-numeric cells) back

@@ -1,22 +1,12 @@
 import { getServiceClient } from "@/lib/supabase";
 import { nextLeaseStage, STAGE_LABELS } from "@/lib/deals";
-import { getDealContacts } from "@/lib/crm";
+import { getDealContacts, listContacts, ROLE_LABELS, ROLES_BY_DEAL_TYPE } from "@/lib/crm";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import LeaseStageActions from "@/components/LeaseStageActions";
-
-const ROLE_LABELS: Record<string, string> = {
-  tenant: "Tenant",
-  landlord: "Landlord",
-  tenant_broker: "Tenant broker",
-  listing_broker: "Listing broker",
-  seller: "Seller",
-  buyer: "Buyer",
-  seller_broker: "Seller broker",
-  buyer_broker: "Buyer broker",
-  other: "Other",
-};
+import DealContactsPanel from "@/components/DealContactsPanel";
+import DealCrmPanels from "@/components/DealCrmPanels";
 
 export default async function LeaseDealDetailPage({ params }: { params: { id: string } }) {
   const supabase = getServiceClient();
@@ -31,7 +21,7 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
   // Guard against an acquisition id being opened under /leasing.
   if (deal.deal_type !== "lease") redirect(`/deals/${deal.id}`);
 
-  const contacts = await getDealContacts(deal.id);
+  const [contacts, allContacts] = await Promise.all([getDealContacts(deal.id), listContacts()]);
 
   const next = nextLeaseStage(deal.stage);
   const eventsDesc = [...(deal.deal_events ?? [])].sort(
@@ -72,28 +62,15 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
           nextStageLabel={next ? STAGE_LABELS[next] : null}
         />
 
-        <section className="panel">
-          <h2>Contacts</h2>
-          {contacts.length === 0 ? (
-            <p className="muted">
-              No contacts linked yet. Add the tenant and brokers from the{" "}
-              <Link href="/contacts">Contacts</Link> section.
-            </p>
-          ) : (
-            <ul className="doc-list">
-              {contacts.map((c: any) => (
-                <li key={c.id}>
-                  <span className="doc-type">{ROLE_LABELS[c.role] ?? c.role}</span>
-                  <Link href={`/contacts/${c.contacts?.id}`}>{c.contacts?.name}</Link>
-                  {c.contacts?.companies?.name ? (
-                    <span className="muted"> · {c.contacts.companies.name}</span>
-                  ) : null}
-                  {c.contacts?.email ? <span className="muted"> · {c.contacts.email}</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <DealContactsPanel
+          dealId={deal.id}
+          links={contacts as any}
+          contacts={allContacts.map((c: any) => ({ id: c.id, name: c.name }))}
+          roleOptions={ROLES_BY_DEAL_TYPE.lease}
+          roleLabels={ROLE_LABELS}
+        />
+
+        <DealCrmPanels dealId={deal.id} />
 
         <section className="panel">
           <h2>Activity</h2>

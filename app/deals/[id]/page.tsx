@@ -1,14 +1,18 @@
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
+import { getDealContacts, listContacts, ROLE_LABELS, ROLES_BY_DEAL_TYPE } from "@/lib/crm";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import StageActions from "@/components/StageActions";
 import MlaProvideForm from "@/components/MlaProvideForm";
 import ExcelUploadForm from "@/components/ExcelUploadForm";
+import DealContactsPanel from "@/components/DealContactsPanel";
+import DealCrmPanels from "@/components/DealCrmPanels";
 
 const STAGE_LABELS: Record<string, string> = {
+  prospect: "Prospect",
   uw: "UW",
-  uw_v1: "UW v1",
+  uw_v1: "UW v1", // legacy -- display only
   offered: "Offered",
   moving_to_psa: "Moving to PSA",
   due_diligence: "Due Diligence",
@@ -38,6 +42,11 @@ export default async function DealDetailPage({ params }: { params: { id: string 
     .single();
 
   if (!deal) return notFound();
+
+  const [dealContacts, allContacts] = await Promise.all([
+    getDealContacts(deal.id),
+    listContacts(),
+  ]);
 
   const latestVersion = [...(deal.uw_versions ?? [])].sort(
     (a: any, b: any) => b.version_number - a.version_number
@@ -151,6 +160,14 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         )}
       </section>
 
+      <DealContactsPanel
+        dealId={deal.id}
+        links={dealContacts as any}
+        contacts={allContacts.map((c: any) => ({ id: c.id, name: c.name }))}
+        roleOptions={ROLES_BY_DEAL_TYPE.acquisition}
+        roleLabels={ROLE_LABELS}
+      />
+
       <section className="panel">
         <h2>Version history</h2>
         {versionsDesc.length === 0 ? (
@@ -182,6 +199,8 @@ export default async function DealDetailPage({ params }: { params: { id: string 
           <p className="muted">No documents yet.</p>
         )}
       </section>
+
+      <DealCrmPanels dealId={deal.id} />
 
       <section className="panel">
         <h2>Activity</h2>

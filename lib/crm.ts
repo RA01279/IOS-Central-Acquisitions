@@ -21,6 +21,33 @@ export type ContactRole =
   | "other";
 export type ActivityType = "call" | "email" | "meeting" | "tour" | "note" | "other";
 
+export const ROLE_LABELS: Record<string, string> = {
+  seller: "Seller",
+  buyer: "Buyer",
+  seller_broker: "Seller broker",
+  buyer_broker: "Buyer broker",
+  tenant: "Tenant",
+  landlord: "Landlord",
+  tenant_broker: "Tenant broker",
+  listing_broker: "Listing broker",
+  other: "Other",
+};
+
+// Which roles make sense per pipeline -- drives the role dropdown when
+// linking a contact to a deal. "other" is always available.
+export const ROLES_BY_DEAL_TYPE: Record<"acquisition" | "lease", ContactRole[]> = {
+  acquisition: ["seller", "buyer", "seller_broker", "buyer_broker", "other"],
+  lease: ["tenant", "landlord", "tenant_broker", "listing_broker", "other"],
+};
+
+export const COMPANY_TYPE_LABELS: Record<CompanyType, string> = {
+  landlord: "Landlord",
+  tenant: "Tenant",
+  broker: "Broker",
+  jv_partner: "JV partner",
+  other: "Other",
+};
+
 // -- Companies ------------------------------------------------------------
 
 export async function listCompanies(search?: string) {
@@ -265,6 +292,18 @@ export async function reopenTask(taskId: string) {
     .update({ status: "open", completed_at: null })
     .eq("id", taskId);
   if (error) throw error;
+}
+
+export async function listOpenTasksForDeal(dealId: string) {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("deal_id", dealId)
+    .eq("status", "open")
+    .order("due_date", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
 // Open tasks, optionally scoped to one assignee, soonest due first. Tasks with

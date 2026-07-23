@@ -63,7 +63,13 @@ export default function StageActions({
 
   return (
     <div className="stage-actions">
-      {stage === "uw_v1" && (
+      {stage === "prospect" && (
+        <p className="hint" style={{ margin: 0 }}>
+          Upload an underwriting model below to move this deal into UW.
+        </p>
+      )}
+
+      {(stage === "uw" || stage === "uw_v1") && (
         <button onClick={() => callAction("mark_offered")} disabled={busy !== null}>
           {busy === "mark_offered" ? "Marking…" : "Mark Offered"}
         </button>

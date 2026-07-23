@@ -15,12 +15,16 @@ export type DealType = "acquisition" | "lease";
 // terminal). Keep these in sync with the deals_stage_for_type DB constraint
 // in 0004_crm_leasing.sql. The leasing board and LeaseStageActions both read
 // LEASE_STAGES so there's a single source of truth for order and labels.
-export const ACQUISITION_STAGES = ["uw", "uw_v1", "offered", "moving_to_psa", "due_diligence"] as const;
+// Acquisitions: deals enter at Prospect and move to UW only when a model
+// (underwriting Excel) is uploaded -- see the versions route. UW v1 was
+// retired when Prospect took over the "no model yet" role; it survives only
+// in STAGE_LABELS so old events/archived deals still render.
+export const ACQUISITION_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
 export const LEASE_STAGES = ["prospect", "tour", "proposal", "negotiation", "executed"] as const;
 
 export const STAGE_LABELS: Record<string, string> = {
   uw: "UW",
-  uw_v1: "UW v1",
+  uw_v1: "UW v1", // legacy -- display only
   offered: "Offered",
   moving_to_psa: "Moving to PSA",
   due_diligence: "Due Diligence",
@@ -35,7 +39,7 @@ export const STAGE_LABELS: Record<string, string> = {
 // Opening stage per pipeline. Enforced in the DB by deals_stage_for_type
 // (see 0004_crm_leasing.sql) -- keep these in sync with that constraint.
 export const OPENING_STAGE: Record<DealType, string> = {
-  acquisition: "uw",
+  acquisition: "prospect",
   lease: "prospect",
 };
 
