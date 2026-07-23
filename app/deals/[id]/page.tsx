@@ -8,6 +8,7 @@ import MlaProvideForm from "@/components/MlaProvideForm";
 import ExcelUploadForm from "@/components/ExcelUploadForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealCrmPanels from "@/components/DealCrmPanels";
+import OffersPanel from "@/components/OffersPanel";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
@@ -39,7 +40,7 @@ export default async function DealDetailPage({ params }: { params: { id: string 
   const { data: deal } = await supabase
     .from("deals")
     .select(
-      "*, properties(*), mla_data(*), uw_versions(*), documents(*), deal_events(*)"
+      "*, properties(*), mla_data(*), uw_versions(*), documents(*), deal_events(*), offers(*)"
     )
     .eq("id", params.id)
     .single();
@@ -89,6 +90,12 @@ export default async function DealDetailPage({ params }: { params: { id: string 
       )}
 
       <StageActions dealId={deal.id} stage={deal.stage} canConfirmPsa={userCanConfirmPsa} />
+
+      <OffersPanel
+        dealId={deal.id}
+        offers={deal.offers ?? []}
+        lotSf={deal.properties?.lot_sf ?? null}
+      />
 
       <section className="panel">
         <h2>Returns summary</h2>

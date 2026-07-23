@@ -62,9 +62,17 @@ export interface NewDealInput {
   address: string;
   market?: string;
   submarket?: string;
+  city?: string;
   assetType: "ios" | "industrial" | "flex" | "other";
   lotSf?: number;
+  // The team thinks in acres (IOS land deals). If lotSf is absent and acres
+  // is present, we convert (1 acre = 43,560 SF).
+  acres?: number;
   buildingSf?: number;
+  // From the 2026 Pipeline Tracker: was the deal marketed or off-market, and
+  // what flavor of acquisition is it?
+  marketingStatus?: "marketed" | "off_market";
+  acquisitionType?: "standard" | "slb" | "unsolicited";
   // Current occupancy of the building at acquisition. WALT (weighted average
   // lease term remaining, years) is only meaningful when occupied.
   occupancyStatus?: "vacant" | "occupied";
@@ -121,8 +129,9 @@ export async function createDeal(input: NewDealInput) {
       address: input.address,
       market: input.market ?? null,
       submarket: input.submarket ?? null,
+      city: input.city ?? null,
       asset_type: input.assetType,
-      lot_sf: input.lotSf ?? null,
+      lot_sf: input.lotSf ?? (input.acres ? Math.round(input.acres * 43560) : null),
       building_sf: input.buildingSf ?? null,
       occupancy_status: input.occupancyStatus ?? null,
       walt_years: input.occupancyStatus === "occupied" ? input.waltYears ?? null : null,
@@ -146,6 +155,8 @@ export async function createDeal(input: NewDealInput) {
       stage: OPENING_STAGE[dealType],
       source_broker_id: input.sourceBrokerId ?? null,
       mla_status: mlaStatus,
+      marketing_status: input.marketingStatus ?? null,
+      acquisition_type: input.acquisitionType ?? null,
       created_by: input.createdBy,
     })
     .select()

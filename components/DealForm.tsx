@@ -51,9 +51,12 @@ export default function DealForm() {
     const payload = {
       address: form.get("address"),
       market: form.get("market"),
+      city: (form.get("city") as string) || undefined,
       assetType: form.get("assetType"),
-      lotSf: form.get("lotSf") ? Number(form.get("lotSf")) : undefined,
+      acres: form.get("acres") ? Number(form.get("acres")) : undefined,
       buildingSf: form.get("buildingSf") ? Number(form.get("buildingSf")) : undefined,
+      marketingStatus: (form.get("marketingStatus") as string) || undefined,
+      acquisitionType: (form.get("acquisitionType") as string) || undefined,
       occupancyStatus: occupancy,
       // WALT only matters when occupied; send undefined otherwise.
       waltYears: occupancy === "occupied" ? num("waltYears") : undefined,
@@ -93,12 +96,31 @@ export default function DealForm() {
 
       <div className="grid-2">
         <label>
+          City
+          <input name="city" />
+        </label>
+        <label>
           Market
           <input name="market" />
         </label>
         <label>
           Current owner
           <input name="currentOwnerName" placeholder="Seller — created as a contact automatically" />
+        </label>
+        <label>
+          Source
+          <select name="marketingStatus" defaultValue="off_market">
+            <option value="off_market">Off-Market</option>
+            <option value="marketed">Marketed</option>
+          </select>
+        </label>
+        <label>
+          Acquisition type
+          <select name="acquisitionType" defaultValue="standard">
+            <option value="standard">Standard</option>
+            <option value="slb">Sale-leaseback (SLB)</option>
+            <option value="unsolicited">Unsolicited</option>
+          </select>
         </label>
       </div>
 
@@ -125,8 +147,8 @@ export default function DealForm() {
 
       <div className="grid-2">
         <label>
-          Lot SF
-          <input name="lotSf" type="number" />
+          Acres
+          <input name="acres" type="number" step="0.01" placeholder="converts to lot SF" />
         </label>
         <label>
           Building SF
