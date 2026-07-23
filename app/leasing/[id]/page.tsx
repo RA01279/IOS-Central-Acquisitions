@@ -1,5 +1,6 @@
 import { getServiceClient } from "@/lib/supabase";
-import { nextLeaseStage, STAGE_LABELS } from "@/lib/deals";
+import { nextLeaseStage, LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
+import TruncatedList from "@/components/TruncatedList";
 import { getDealContacts, listContacts, ROLE_LABELS, ROLES_BY_DEAL_TYPE } from "@/lib/crm";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
@@ -26,6 +27,8 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
   const [contacts, allContacts] = await Promise.all([getDealContacts(deal.id), listContacts()]);
 
   const next = nextLeaseStage(deal.stage);
+  const stageIdx = (LEASE_STAGES as readonly string[]).indexOf(deal.stage);
+  const prev = stageIdx > 0 ? LEASE_STAGES[stageIdx - 1] : null;
   const eventsDesc = [...(deal.deal_events ?? [])].sort(
     (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
@@ -60,6 +63,8 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
           stage={deal.stage}
           nextStage={next}
           nextStageLabel={next ? STAGE_LABELS[next] : null}
+          prevStage={prev}
+          prevStageLabel={prev ? STAGE_LABELS[prev] : null}
         />
 
         <DealContactsPanel
@@ -77,14 +82,15 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
           {eventsDesc.length === 0 ? (
             <p className="muted">No activity yet.</p>
           ) : (
-            <ul className="event-list">
-              {eventsDesc.map((e: any) => (
+            <TruncatedList
+              className="event-list"
+              items={eventsDesc.map((e: any) => (
                 <li key={e.id}>
                   <span className="muted">{new Date(e.created_at).toLocaleString()}</span> —{" "}
                   {e.event_type} ({e.actor})
                 </li>
               ))}
-            </ul>
+            />
           )}
         </section>
 

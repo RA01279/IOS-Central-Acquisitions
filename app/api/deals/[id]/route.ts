@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { logDealEvent, isValidLeaseStage, STAGE_LABELS } from "@/lib/deals";
+import { logDealEvent, isValidLeaseStage, STAGE_LABELS, ACQUISITION_STAGES } from "@/lib/deals";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 
 // PATCH /api/deals/[id]
@@ -52,6 +52,46 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const { error } = await supabase.from("deals").update({ stage: "moving_to_psa" }).eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await logDealEvent(params.id, "confirmed_psa", {}, user.email);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Stage correction for acquisitions -- lets a deal move BACKWARD when
+  // someone advanced it by mistake. Any acquisition stage is a legal target;
+  // the DB constraint still guards against cross-pipeline stages.
+  if (body.action === "set_acq_stage") {
+    const toStage = body.toStage;
+    if (!(ACQUISITION_STAGES as readonly string[]).includes(toStage)) {
+      return NextResponse.json({ error: "Not a valid acquisition stage" }, { status: 400 });
+    }
+    const { error } = await supabase.from("deals").update({ stage: toStage }).eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logDealEvent(
+      params.id,
+      "stage_corrected",
+      { to: toStage, label: STAGE_LABELS[toStage] ?? toStage },
+      user.email
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  // Target repository scoring on archived deals: why it's parked, how badly
+  // we want it (1-5), and when to re-approach the owner.
+  if (body.action === "set_targeting") {
+    const { error } = await supabase
+      .from("deals")
+      .update({
+        disposition: body.disposition ?? null,
+        pursuit_score: body.pursuitScore ?? null,
+        follow_up_on: body.followUpOn ?? null,
+      })
+      .eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logDealEvent(
+      params.id,
+      "targeting_updated",
+      { disposition: body.disposition ?? null, score: body.pursuitScore ?? null, follow_up: body.followUpOn ?? null },
+      user.email
+    );
     return NextResponse.json({ ok: true });
   }
 

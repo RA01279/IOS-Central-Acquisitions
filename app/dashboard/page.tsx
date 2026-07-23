@@ -4,6 +4,7 @@ import { ACQUISITION_STAGES, LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import CardDeleteButton from "@/components/CardDeleteButton";
 import AutoRefresh from "@/components/AutoRefresh";
+import TruncatedList from "@/components/TruncatedList";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -195,8 +196,8 @@ export default async function DashboardPage() {
           {stale.length === 0 ? (
             <p className="muted">Nothing stale. Every active deal has been touched recently.</p>
           ) : (
-            <ul className="doc-list">
-              {stale.map((d: any) => (
+            <TruncatedList
+              items={stale.map((d: any) => (
                 <li key={d.id}>
                   <span className="doc-type">{d.deal_type === "lease" ? "LEASE" : "ACQ"}</span>
                   <Link href={d.deal_type === "lease" ? `/leasing/${d.id}` : `/deals/${d.id}`}>
@@ -208,7 +209,7 @@ export default async function DashboardPage() {
                   </span>
                 </li>
               ))}
-            </ul>
+            />
           )}
         </section>
 
@@ -273,8 +274,8 @@ export default async function DashboardPage() {
           {archived.length === 0 ? (
             <p className="muted">No archived deals. Deals archived from either board land here.</p>
           ) : (
-            <ul className="doc-list">
-              {[...(archived as any[])]
+            <TruncatedList
+              items={[...(archived as any[])]
                 .sort(
                   (a, b) =>
                     new Date(b.updated_at ?? b.created_at).getTime() -
@@ -294,7 +295,7 @@ export default async function DashboardPage() {
                     <CardDeleteButton dealId={d.id} />
                   </li>
                 ))}
-            </ul>
+            />
           )}
         </section>
       </main>

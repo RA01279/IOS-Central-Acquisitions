@@ -15,11 +15,15 @@ export default function LeaseStageActions({
   stage,
   nextStage,
   nextStageLabel,
+  prevStage,
+  prevStageLabel,
 }: {
   dealId: string;
   stage: string;
   nextStage: string | null;
   nextStageLabel: string | null;
+  prevStage?: string | null;
+  prevStageLabel?: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -27,15 +31,15 @@ export default function LeaseStageActions({
   const [showArchive, setShowArchive] = useState(false);
   const [archiveReason, setArchiveReason] = useState("");
 
-  async function advance() {
-    if (!nextStage) return;
-    setBusy("advance");
+  async function moveTo(toStage: string | null, busyKey: string) {
+    if (!toStage) return;
+    setBusy(busyKey);
     setError(null);
     try {
       const res = await fetch(`/api/deals/${dealId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set_lease_stage", toStage: nextStage }),
+        body: JSON.stringify({ action: "set_lease_stage", toStage }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Action failed");
       router.refresh();
@@ -68,8 +72,19 @@ export default function LeaseStageActions({
   return (
     <div className="stage-actions">
       {nextStage && (
-        <button onClick={advance} disabled={busy !== null}>
+        <button onClick={() => moveTo(nextStage, "advance")} disabled={busy !== null}>
           {busy === "advance" ? "Advancing…" : `Advance to ${nextStageLabel}`}
+        </button>
+      )}
+
+      {prevStage && stage !== "archived" && (
+        <button
+          className="secondary"
+          onClick={() => moveTo(prevStage, "back")}
+          disabled={busy !== null}
+          title="Correct an accidental advance"
+        >
+          {busy === "back" ? "Moving…" : `‹ Back to ${prevStageLabel}`}
         </button>
       )}
 

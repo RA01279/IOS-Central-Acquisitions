@@ -8,10 +8,14 @@ export default function StageActions({
   dealId,
   stage,
   canConfirmPsa,
+  prevStage,
+  prevStageLabel,
 }: {
   dealId: string;
   stage: string;
   canConfirmPsa: boolean;
+  prevStage?: string | null;
+  prevStageLabel?: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -89,6 +93,17 @@ export default function StageActions({
       {stage === "moving_to_psa" && (
         <button onClick={() => callAction("move_to_due_diligence")} disabled={busy !== null}>
           {busy === "move_to_due_diligence" ? "Moving…" : "PSA executed → Due Diligence"}
+        </button>
+      )}
+
+      {prevStage && stage !== "archived" && (
+        <button
+          className="secondary"
+          onClick={() => callAction("set_acq_stage", { toStage: prevStage })}
+          disabled={busy !== null}
+          title="Correct an accidental advance"
+        >
+          {busy === "set_acq_stage" ? "Moving…" : `‹ Back to ${prevStageLabel}`}
         </button>
       )}
 

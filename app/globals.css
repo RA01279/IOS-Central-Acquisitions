@@ -307,6 +307,37 @@ fieldset {
   font-style: italic;
 }
 
+/* Truncated lists */
+.show-more {
+  margin-top: 10px;
+}
+.show-more summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent-2);
+}
+.show-more summary:hover {
+  text-decoration: underline;
+}
+.show-more ul {
+  margin-top: 10px;
+}
+
+/* Targets */
+.target-row {
+  display: block;
+}
+.target-stars {
+  font-size: 13px;
+  color: var(--accent-2);
+  margin-right: 8px;
+  letter-spacing: 1px;
+}
+.target-stars.muted {
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
 /* Back button */
 .back-btn {
   background: transparent;

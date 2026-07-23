@@ -15,6 +15,7 @@ import SignOutButton from "./SignOutButton";
 const LINKS = [
   { href: "/deals", label: "Acquisitions", key: "acquisitions" },
   { href: "/leasing", label: "Leasing", key: "leasing" },
+  { href: "/targets", label: "Targets", key: "targets" },
   { href: "/contacts", label: "Contacts", key: "contacts" },
   { href: "/tasks", label: "Tasks", key: "tasks" },
   { href: "/dashboard", label: "Dashboard", key: "dashboard" },

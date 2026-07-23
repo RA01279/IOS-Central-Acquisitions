@@ -9,6 +9,10 @@ import ExcelUploadForm from "@/components/ExcelUploadForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealCrmPanels from "@/components/DealCrmPanels";
 import OffersPanel from "@/components/OffersPanel";
+import TargetingPanel from "@/components/TargetingPanel";
+import RestoreDealButton from "@/components/RestoreDealButton";
+import TruncatedList from "@/components/TruncatedList";
+import { ACQUISITION_STAGES } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
@@ -66,6 +70,9 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
   const userCanConfirmPsa = user ? canConfirmPsa(user.email) : false;
 
+  const stageIdx = (ACQUISITION_STAGES as readonly string[]).indexOf(deal.stage);
+  const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : null;
+
   return (
     <>
     <Nav active="acquisitions" />
@@ -86,10 +93,26 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         <div className="archived-banner">
           Archived at <strong>{STAGE_LABELS[deal.death_stage] ?? deal.death_stage}</strong>
           {deal.death_reason ? ` — ${deal.death_reason}` : ""}
+          <RestoreDealButton dealId={deal.id} />
         </div>
       )}
 
-      <StageActions dealId={deal.id} stage={deal.stage} canConfirmPsa={userCanConfirmPsa} />
+      <StageActions
+        dealId={deal.id}
+        stage={deal.stage}
+        canConfirmPsa={userCanConfirmPsa}
+        prevStage={prevStage}
+        prevStageLabel={prevStage ? STAGE_LABELS[prevStage] : null}
+      />
+
+      {deal.stage === "archived" && (
+        <TargetingPanel
+          dealId={deal.id}
+          disposition={deal.disposition ?? null}
+          pursuitScore={deal.pursuit_score ?? null}
+          followUpOn={deal.follow_up_on ?? null}
+        />
+      )}
 
       <section className="panel">
         <h2>Property</h2>
@@ -286,13 +309,14 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
       <section className="panel">
         <h2>Activity</h2>
-        <ul className="event-list">
-          {eventsDesc.map((e: any) => (
+        <TruncatedList
+          className="event-list"
+          items={eventsDesc.map((e: any) => (
             <li key={e.id}>
               <span className="muted">{new Date(e.created_at).toLocaleString()}</span> — {e.event_type} ({e.actor})
             </li>
           ))}
-        </ul>
+        />
       </section>
 
       <DeleteDealButton dealId={deal.id} redirectTo="/deals" />

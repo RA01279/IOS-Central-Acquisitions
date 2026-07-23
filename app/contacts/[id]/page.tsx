@@ -8,6 +8,7 @@ import TaskAddForm from "@/components/TaskAddForm";
 import TaskDoneButton from "@/components/TaskDoneButton";
 import ActivityLogForm from "@/components/ActivityLogForm";
 import BackButton from "@/components/BackButton";
+import TruncatedList from "@/components/TruncatedList";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -78,24 +79,25 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
           {deals.length === 0 ? (
             <p className="muted">Not linked to any deals yet.</p>
           ) : (
-            <ul className="doc-list">
-              {deals.map((d: any, i: number) => {
-                const deal = d.deals;
-                if (!deal) return null;
-                const href = deal.deal_type === "lease" ? `/leasing/${deal.id}` : `/deals/${deal.id}`;
-                return (
-                  <li key={`${deal.id}-${d.role}-${i}`}>
-                    <span className="doc-type">{ROLE_LABELS[d.role] ?? d.role}</span>
-                    <Link href={href}>{deal.properties?.address ?? "Untitled deal"}</Link>
-                    <span className="muted">
-                      {" "}
-                      · {deal.deal_type === "lease" ? "Leasing" : "Acquisition"} ·{" "}
-                      {STAGE_LABELS[deal.stage] ?? deal.stage}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+            <TruncatedList
+              items={deals
+                .filter((d: any) => d.deals)
+                .map((d: any, i: number) => {
+                  const deal = d.deals;
+                  const href = deal.deal_type === "lease" ? `/leasing/${deal.id}` : `/deals/${deal.id}`;
+                  return (
+                    <li key={`${deal.id}-${d.role}-${i}`}>
+                      <span className="doc-type">{ROLE_LABELS[d.role] ?? d.role}</span>
+                      <Link href={href}>{deal.properties?.address ?? "Untitled deal"}</Link>
+                      <span className="muted">
+                        {" "}
+                        · {deal.deal_type === "lease" ? "Leasing" : "Acquisition"} ·{" "}
+                        {STAGE_LABELS[deal.stage] ?? deal.stage}
+                      </span>
+                    </li>
+                  );
+                })}
+            />
           )}
         </section>
 
@@ -127,8 +129,9 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
           {activities.length === 0 ? (
             <p className="muted">No activity logged yet.</p>
           ) : (
-            <ul className="event-list">
-              {activities.map((a: any) => (
+            <TruncatedList
+              className="event-list"
+              items={activities.map((a: any) => (
                 <li key={a.id}>
                   <span className="doc-type">{ACTIVITY_LABELS[a.activity_type] ?? a.activity_type}</span>{" "}
                   {a.subject ?? ""}
@@ -139,7 +142,7 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
                   {a.body && <div className="muted">{a.body}</div>}
                 </li>
               ))}
-            </ul>
+            />
           )}
           <div style={{ marginTop: 12 }}>
             <ActivityLogForm contactId={contact.id} />
