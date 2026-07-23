@@ -22,6 +22,7 @@ export default function LeaseDealForm() {
     const form = new FormData(e.currentTarget);
     const payload = {
       dealType: "lease",
+      tenantName: form.get("tenantName") || undefined,
       address: form.get("address"),
       market: form.get("market") || undefined,
       submarket: form.get("submarket") || undefined,
@@ -51,6 +52,11 @@ export default function LeaseDealForm() {
 
   return (
     <form onSubmit={handleSubmit} className="deal-form">
+      <label>
+        Tenant (prospect)
+        <input name="tenantName" placeholder="Company or person — created as a contact automatically" />
+      </label>
+
       <label>
         Property address
         <input name="address" required />

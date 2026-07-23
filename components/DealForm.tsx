@@ -58,6 +58,7 @@ export default function DealForm() {
       // WALT only matters when occupied; send undefined otherwise.
       waltYears: occupancy === "occupied" ? num("waltYears") : undefined,
       tenancy: (form.get("tenancy") as string) || undefined,
+      currentOwnerName: (form.get("currentOwnerName") as string) || undefined,
       sourceBrokerId: form.get("sourceBrokerId") || undefined,
       mla,
     };
@@ -88,10 +89,16 @@ export default function DealForm() {
         <input name="address" required />
       </label>
 
-      <label>
-        Market
-        <input name="market" />
-      </label>
+      <div className="grid-2">
+        <label>
+          Market
+          <input name="market" />
+        </label>
+        <label>
+          Current owner
+          <input name="currentOwnerName" placeholder="Seller — created as a contact automatically" />
+        </label>
+      </div>
 
       <label>
         Asset type

@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
       occupancyStatus: body.occupancyStatus,
       waltYears: body.waltYears,
       tenancy: body.tenancy,
+      tenantName: body.tenantName,
+      currentOwnerName: body.currentOwnerName,
       sourceBrokerId: body.sourceBrokerId,
       dealType: body.dealType, // "acquisition" (default) or "lease"
       createdBy: user.email,

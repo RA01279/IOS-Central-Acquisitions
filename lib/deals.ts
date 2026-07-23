@@ -70,6 +70,12 @@ export interface NewDealInput {
   occupancyStatus?: "vacant" | "occupied";
   waltYears?: number;
   tenancy?: "single_tenant" | "multi_tenant";
+  // Counterparty names typed at intake. Each becomes a contact (found by
+  // exact name match, or created) linked to the deal via deal_contacts:
+  // tenantName -> role 'tenant' (leases), currentOwnerName -> role 'seller'
+  // (acquisitions). Keeps intake fast without creating dead text columns.
+  tenantName?: string;
+  currentOwnerName?: string;
   sourceBrokerId?: string;
   dealType?: DealType;
   createdBy: string; // who's entering this (Rhett, market lead, or later: "email-intake")
@@ -170,6 +176,27 @@ export async function createDeal(input: NewDealInput) {
     await notifyMarketLeadForMla(deal.id, input.address);
   }
 
+  // Link the typed counterparty as a contact on the deal.
+  const counterparty =
+    dealType === "lease"
+      ? { name: input.tenantName, role: "tenant" as const }
+      : { name: input.currentOwnerName, role: "seller" as const };
+  if (counterparty.name?.trim()) {
+    const contactId = await findOrCreateContactByName(counterparty.name.trim());
+    const { error: linkError } = await supabase.from("deal_contacts").insert({
+      deal_id: deal.id,
+      contact_id: contactId,
+      role: counterparty.role,
+    });
+    if (linkError) throw linkError;
+    await logDealEvent(
+      deal.id,
+      "contact_linked",
+      { contact_id: contactId, role: counterparty.role, via: "intake" },
+      input.createdBy
+    );
+  }
+
   await logDealEvent(deal.id, "deal_created", { deal_type: dealType, mla_status: mlaStatus }, input.createdBy);
 
   // Duplicate detection: check address history now that the deal exists.
@@ -179,6 +206,28 @@ export async function createDeal(input: NewDealInput) {
   }
 
   return { deal, property, duplicates };
+}
+
+// Exact-name match (case-insensitive) or create. Intake types a counterparty
+// name; if that person/firm is already a contact we reuse them so their deal
+// history accumulates on one record.
+async function findOrCreateContactByName(name: string): Promise<string> {
+  const supabase = getServiceClient();
+  const { data: existing } = await supabase
+    .from("contacts")
+    .select("id")
+    .ilike("name", name)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const { data: created, error } = await supabase
+    .from("contacts")
+    .insert({ name })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return created.id;
 }
 
 export async function findDuplicateDeals(address: string, excludeDealId?: string) {
