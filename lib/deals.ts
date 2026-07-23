@@ -9,6 +9,50 @@
 import { getServiceClient } from "./supabase";
 
 export type MlaStatus = "pending" | "requested" | "provided" | "assumed";
+export type DealType = "acquisition" | "lease";
+
+// Ordered pipeline stages per deal type (excludes the shared 'archived'
+// terminal). Keep these in sync with the deals_stage_for_type DB constraint
+// in 0004_crm_leasing.sql. The leasing board and LeaseStageActions both read
+// LEASE_STAGES so there's a single source of truth for order and labels.
+export const ACQUISITION_STAGES = ["uw", "uw_v1", "offered", "moving_to_psa", "due_diligence"] as const;
+export const LEASE_STAGES = ["prospect", "tour", "proposal", "negotiation", "executed"] as const;
+
+export const STAGE_LABELS: Record<string, string> = {
+  uw: "UW",
+  uw_v1: "UW v1",
+  offered: "Offered",
+  moving_to_psa: "Moving to PSA",
+  due_diligence: "Due Diligence",
+  prospect: "Prospect",
+  tour: "Tour",
+  proposal: "Proposal (LOI)",
+  negotiation: "Negotiation",
+  executed: "Executed",
+  archived: "Archived",
+};
+
+// Opening stage per pipeline. Enforced in the DB by deals_stage_for_type
+// (see 0004_crm_leasing.sql) -- keep these in sync with that constraint.
+export const OPENING_STAGE: Record<DealType, string> = {
+  acquisition: "uw",
+  lease: "prospect",
+};
+
+// The next stage forward in the leasing pipeline, or null if already at the
+// last stage ('executed'). Used to render the single "advance" button.
+export function nextLeaseStage(stage: string): string | null {
+  const idx = LEASE_STAGES.indexOf(stage as (typeof LEASE_STAGES)[number]);
+  if (idx === -1 || idx === LEASE_STAGES.length - 1) return null;
+  return LEASE_STAGES[idx + 1];
+}
+
+// Guard for the API: is `to` a legal leasing stage to move to? We allow moving
+// to any leasing stage (forward or back a step for corrections), but never
+// outside the leasing set -- 'archived' goes through the archive route.
+export function isValidLeaseStage(stage: string): boolean {
+  return (LEASE_STAGES as readonly string[]).includes(stage);
+}
 
 export interface NewDealInput {
   address: string;
@@ -17,17 +61,44 @@ export interface NewDealInput {
   assetType: "ios" | "industrial" | "flex" | "other";
   lotSf?: number;
   buildingSf?: number;
+  // Current occupancy of the building at acquisition. WALT (weighted average
+  // lease term remaining, years) is only meaningful when occupied.
+  occupancyStatus?: "vacant" | "occupied";
+  waltYears?: number;
+  tenancy?: "single_tenant" | "multi_tenant";
   sourceBrokerId?: string;
-  dealType?: "acquisition" | "lease";
+  dealType?: DealType;
   createdBy: string; // who's entering this (Rhett, market lead, or later: "email-intake")
-  mla:
-    | { status: "provided"; askingRent: number; opex?: number; otherAssumptions?: Record<string, unknown> }
+  // MLA is an acquisitions-underwriting concept. Optional so leasing deals,
+  // which don't underwrite an MLA, can be created without one. The "provided"
+  // variant carries the full "MLA - Base Case" field set (0003 schema) so
+  // intake matches the later provide-MLA step -- every field optional so a
+  // partial MLA can still be entered.
+  mla?:
+    | {
+        status: "provided";
+        marketBaseRent?: number;
+        termYears?: number;
+        termMonths?: number;
+        renewalProbability?: number;
+        monthsVacant?: number;
+        freeRentMonths?: number;
+        tiNew?: number;
+        tiRenew?: number;
+        lcNewPct?: number;
+        lcRenewPct?: number;
+        recoveryType?: string;
+        askingRent?: number; // legacy (0002) -- deprecated in favor of marketBaseRent
+        opex?: number;
+        otherAssumptions?: Record<string, unknown>;
+      }
     | { status: "requested" }
     | { status: "assumed" };
 }
 
 export async function createDeal(input: NewDealInput) {
   const supabase = getServiceClient();
+  const dealType: DealType = input.dealType ?? "acquisition";
 
   const { data: property, error: propError } = await supabase
     .from("properties")
@@ -38,24 +109,28 @@ export async function createDeal(input: NewDealInput) {
       asset_type: input.assetType,
       lot_sf: input.lotSf ?? null,
       building_sf: input.buildingSf ?? null,
+      occupancy_status: input.occupancyStatus ?? null,
+      walt_years: input.occupancyStatus === "occupied" ? input.waltYears ?? null : null,
+      tenancy: input.tenancy ?? null,
     })
     .select()
     .single();
 
   if (propError) throw propError;
 
-  // MLA present or assumptions chosen -> straight to UW.
-  // MLA requested -> deal still lands in UW (analyst can start working
-  // other parts of the deal) but mla_status stays "requested" until
-  // someone manually enters the reply.
+  // Acquisitions open in UW; leases open in the leasing pipeline (prospect).
+  // MLA status only applies to acquisitions -- leases default to "assumed"
+  // (i.e. n/a) so the column stays valid without implying a pending request.
+  const mlaStatus: MlaStatus = input.mla?.status ?? "assumed";
+
   const { data: deal, error: dealError } = await supabase
     .from("deals")
     .insert({
       property_id: property.id,
-      deal_type: input.dealType ?? "acquisition",
-      stage: "uw",
+      deal_type: dealType,
+      stage: OPENING_STAGE[dealType],
       source_broker_id: input.sourceBrokerId ?? null,
-      mla_status: input.mla.status,
+      mla_status: mlaStatus,
       created_by: input.createdBy,
     })
     .select()
@@ -63,23 +138,35 @@ export async function createDeal(input: NewDealInput) {
 
   if (dealError) throw dealError;
 
-  if (input.mla.status === "provided") {
+  if (input.mla?.status === "provided") {
+    const m = input.mla;
     const { error: mlaError } = await supabase.from("mla_data").insert({
       deal_id: deal.id,
-      asking_rent: input.mla.askingRent,
-      opex: input.mla.opex ?? null,
-      other_assumptions: input.mla.otherAssumptions ?? {},
+      market_base_rent: m.marketBaseRent ?? null,
+      term_years: m.termYears ?? null,
+      term_months: m.termMonths ?? null,
+      renewal_probability: m.renewalProbability ?? null,
+      months_vacant: m.monthsVacant ?? null,
+      free_rent_months: m.freeRentMonths ?? null,
+      ti_new: m.tiNew ?? null,
+      ti_renew: m.tiRenew ?? null,
+      lc_new_pct: m.lcNewPct ?? null,
+      lc_renew_pct: m.lcRenewPct ?? null,
+      recovery_type: m.recoveryType ?? null,
+      asking_rent: m.askingRent ?? null, // legacy, kept for back-compat
+      opex: m.opex ?? null,
+      other_assumptions: m.otherAssumptions ?? {},
       provided_by: input.createdBy,
       provided_at: new Date().toISOString(),
     });
     if (mlaError) throw mlaError;
   }
 
-  if (input.mla.status === "requested") {
+  if (input.mla?.status === "requested") {
     await notifyMarketLeadForMla(deal.id, input.address);
   }
 
-  await logDealEvent(deal.id, "deal_created", { mla_status: input.mla.status }, input.createdBy);
+  await logDealEvent(deal.id, "deal_created", { deal_type: dealType, mla_status: mlaStatus }, input.createdBy);
 
   // Duplicate detection: check address history now that the deal exists.
   const duplicates = await findDuplicateDeals(input.address, deal.id);

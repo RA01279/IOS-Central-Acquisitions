@@ -1,20 +1,20 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
-import SignOutButton from "@/components/SignOutButton";
+import { ACQUISITION_STAGES, STAGE_LABELS } from "@/lib/deals";
+import Nav from "@/components/Nav";
 
-const STAGES = ["uw", "uw_v1", "offered", "moving_to_psa"] as const;
-const STAGE_LABELS: Record<string, string> = {
-  uw: "UW",
-  uw_v1: "UW v1",
-  offered: "Offered",
-  moving_to_psa: "Moving to PSA",
-};
+// Live, per-request, auth-gated data -- never statically prerender this at
+// build time (doing so also fails the build when Supabase env isn't present).
+export const dynamic = "force-dynamic";
+
+const STAGES = ACQUISITION_STAGES;
 
 export default async function DealsPage() {
   const supabase = getServiceClient();
   const { data: deals } = await supabase
     .from("deals")
     .select("id, stage, mla_status, created_at, properties(address, market)")
+    .eq("deal_type", "acquisition")
     .neq("stage", "archived")
     .order("created_at", { ascending: false });
 
@@ -24,18 +24,19 @@ export default async function DealsPage() {
   }, {});
 
   return (
-    <main>
-      <div className="page-header">
-        <h1>Hopper</h1>
-        <div className="header-actions">
-          <Link href="/deals/new" className="button-link">
-            + New deal
-          </Link>
-          <SignOutButton />
+    <>
+      <Nav active="acquisitions" />
+      <main>
+        <div className="page-header">
+          <h1>Acquisitions</h1>
+          <div className="header-actions">
+            <Link href="/deals/new" className="button-link">
+              + New deal
+            </Link>
+          </div>
         </div>
-      </div>
 
-      <div className="pipeline-board">
+        <div className="pipeline-board pipeline-board-5">
         {STAGES.map((stage) => (
           <section key={stage} className="pipeline-column">
             <h2>
@@ -56,7 +57,8 @@ export default async function DealsPage() {
             </div>
           </section>
         ))}
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }

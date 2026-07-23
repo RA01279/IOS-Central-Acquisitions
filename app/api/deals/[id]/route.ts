@@ -1,19 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { logDealEvent } from "@/lib/deals";
+import { logDealEvent, isValidLeaseStage, STAGE_LABELS } from "@/lib/deals";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 
 // PATCH /api/deals/[id]
 // body:
 //   { action: "mark_offered" }
-//   { action: "confirm_psa" }               -- gated by canConfirmPsa()
-//   { action: "provide_mla", ...mlaFields }  -- fills in MLA after a request
+//   { action: "confirm_psa" }                    -- gated by canConfirmPsa()
+//   { action: "provide_mla", ...mlaFields }       -- fills in MLA after a request
+//   { action: "set_lease_stage", toStage: "tour" } -- leasing pipeline moves
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const body = await req.json();
   const supabase = getServiceClient();
+
+  // Leasing pipeline transition. Any of the three can move a lease along; the
+  // executed/PSA-equivalent isn't gated the way acquisitions PSA is, since a
+  // signed lease is confirmed by document, not by a role check.
+  if (body.action === "set_lease_stage") {
+    const toStage = body.toStage;
+    if (!isValidLeaseStage(toStage)) {
+      return NextResponse.json({ error: "Not a valid leasing stage" }, { status: 400 });
+    }
+    const { error } = await supabase.from("deals").update({ stage: toStage }).eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logDealEvent(
+      params.id,
+      "lease_stage_changed",
+      { to: toStage, label: STAGE_LABELS[toStage] ?? toStage },
+      user.email
+    );
+    return NextResponse.json({ ok: true });
+  }
 
   if (body.action === "mark_offered") {
     const { error } = await supabase.from("deals").update({ stage: "offered" }).eq("id", params.id);
@@ -32,6 +52,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const { error } = await supabase.from("deals").update({ stage: "moving_to_psa" }).eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await logDealEvent(params.id, "confirmed_psa", {}, user.email);
+    return NextResponse.json({ ok: true });
+  }
+
+  // PSA executed -> the deal enters Due Diligence.
+  if (body.action === "move_to_due_diligence") {
+    const { error } = await supabase.from("deals").update({ stage: "due_diligence" }).eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logDealEvent(params.id, "entered_due_diligence", {}, user.email);
     return NextResponse.json({ ok: true });
   }
 

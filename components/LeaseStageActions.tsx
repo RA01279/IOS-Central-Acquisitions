@@ -1,17 +1,25 @@
 "use client";
-// components/StageActions.tsx
+// components/LeaseStageActions.tsx
+//
+// Leasing pipeline controls: advance to the next stage, or archive with a
+// reason. Mirrors StageActions (acquisitions) but drives the leasing flow
+// (prospect -> tour -> proposal -> negotiation -> executed) via the
+// set_lease_stage action. No PSA-style role gate -- a signed lease is
+// confirmed by document, not by an allowlist.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function StageActions({
+export default function LeaseStageActions({
   dealId,
   stage,
-  canConfirmPsa,
+  nextStage,
+  nextStageLabel,
 }: {
   dealId: string;
   stage: string;
-  canConfirmPsa: boolean;
+  nextStage: string | null;
+  nextStageLabel: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -19,19 +27,17 @@ export default function StageActions({
   const [showArchive, setShowArchive] = useState(false);
   const [archiveReason, setArchiveReason] = useState("");
 
-  async function callAction(action: string, extra: Record<string, unknown> = {}) {
-    setBusy(action);
+  async function advance() {
+    if (!nextStage) return;
+    setBusy("advance");
     setError(null);
     try {
       const res = await fetch(`/api/deals/${dealId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...extra }),
+        body: JSON.stringify({ action: "set_lease_stage", toStage: nextStage }),
       });
-      if (!res.ok) {
-        const body = await res.json();
-        throw new Error(body.error ?? "Action failed");
-      }
+      if (!res.ok) throw new Error((await res.json()).error ?? "Action failed");
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -49,11 +55,8 @@ export default function StageActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "archive", stage, reason: archiveReason }),
       });
-      if (!res.ok) {
-        const body = await res.json();
-        throw new Error(body.error ?? "Archive failed");
-      }
-      router.push("/deals");
+      if (!res.ok) throw new Error((await res.json()).error ?? "Archive failed");
+      router.push("/leasing");
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -63,25 +66,9 @@ export default function StageActions({
 
   return (
     <div className="stage-actions">
-      {stage === "uw_v1" && (
-        <button onClick={() => callAction("mark_offered")} disabled={busy !== null}>
-          {busy === "mark_offered" ? "Marking…" : "Mark Offered"}
-        </button>
-      )}
-
-      {stage === "offered" && (
-        <button
-          onClick={() => callAction("confirm_psa")}
-          disabled={busy !== null || !canConfirmPsa}
-          title={canConfirmPsa ? "" : "Only Rhett/John can confirm this"}
-        >
-          {busy === "confirm_psa" ? "Confirming…" : "Confirm Moving to PSA"}
-        </button>
-      )}
-
-      {stage === "moving_to_psa" && (
-        <button onClick={() => callAction("move_to_due_diligence")} disabled={busy !== null}>
-          {busy === "move_to_due_diligence" ? "Moving…" : "PSA executed → Due Diligence"}
+      {nextStage && (
+        <button onClick={advance} disabled={busy !== null}>
+          {busy === "advance" ? "Advancing…" : `Advance to ${nextStageLabel}`}
         </button>
       )}
 

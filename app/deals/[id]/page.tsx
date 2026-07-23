@@ -11,6 +11,7 @@ const STAGE_LABELS: Record<string, string> = {
   uw_v1: "UW v1",
   offered: "Offered",
   moving_to_psa: "Moving to PSA",
+  due_diligence: "Due Diligence",
   archived: "Archived",
 };
 

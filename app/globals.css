@@ -151,6 +151,44 @@ fieldset {
   margin: 0 0 10px;
 }
 
+/* App nav */
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 52px;
+}
+.app-nav-brand a {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.app-nav-links {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.app-nav .nav-link {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.app-nav .nav-link:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+.app-nav .nav-link.active {
+  color: var(--ink);
+  background: var(--bg);
+  font-weight: 500;
+}
+
 /* Page header */
 .page-header {
   display: flex;
@@ -169,6 +207,10 @@ fieldset {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+}
+.pipeline-board-5 {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
 }
 .pipeline-column h2 {
   display: flex;

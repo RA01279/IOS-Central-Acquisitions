@@ -19,7 +19,11 @@ export async function POST(req: NextRequest) {
       assetType: body.assetType,
       lotSf: body.lotSf,
       buildingSf: body.buildingSf,
+      occupancyStatus: body.occupancyStatus,
+      waltYears: body.waltYears,
+      tenancy: body.tenancy,
       sourceBrokerId: body.sourceBrokerId,
+      dealType: body.dealType, // "acquisition" (default) or "lease"
       createdBy: user.email,
       mla: body.mla,
     });

@@ -1,19 +1,24 @@
 "use client";
 // components/DealForm.tsx
 //
-// The single intake point for v1. MLA status drives which fields show:
-// - "provided": asking rent / opex fields open inline
-// - "requested": no extra fields -- notifies the market lead on submit
-// - "assumed": no extra fields -- analyst proceeds on their own judgment
+// The single intake point for v1.
+// - Occupancy: vacant or occupied; if occupied, WALT (weighted average lease
+//   term remaining, in years) opens inline.
+// - MLA status drives which fields show:
+//   - "provided": the full MLA - Base Case field set opens inline
+//   - "requested": no extra fields -- notifies the market lead on submit
+//   - "assumed": no extra fields -- analyst proceeds on their own judgment
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 type MlaChoice = "provided" | "requested" | "assumed";
+type Occupancy = "vacant" | "occupied";
 
 export default function DealForm() {
   const router = useRouter();
   const [mlaChoice, setMlaChoice] = useState<MlaChoice>("requested");
+  const [occupancy, setOccupancy] = useState<Occupancy>("vacant");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,13 +28,23 @@ export default function DealForm() {
     setError(null);
 
     const form = new FormData(e.currentTarget);
+    const num = (key: string) => (form.get(key) ? Number(form.get(key)) : undefined);
 
     const mla =
       mlaChoice === "provided"
         ? {
             status: "provided" as const,
-            askingRent: Number(form.get("askingRent")),
-            opex: form.get("opex") ? Number(form.get("opex")) : undefined,
+            marketBaseRent: num("marketBaseRent"),
+            termYears: num("termYears"),
+            termMonths: num("termMonths"),
+            renewalProbability: num("renewalProbability"),
+            monthsVacant: num("monthsVacant"),
+            freeRentMonths: num("freeRentMonths"),
+            tiNew: num("tiNew"),
+            tiRenew: num("tiRenew"),
+            lcNewPct: num("lcNewPct"),
+            lcRenewPct: num("lcRenewPct"),
+            recoveryType: (form.get("recoveryType") as string) || undefined,
           }
         : { status: mlaChoice };
 
@@ -39,6 +54,10 @@ export default function DealForm() {
       assetType: form.get("assetType"),
       lotSf: form.get("lotSf") ? Number(form.get("lotSf")) : undefined,
       buildingSf: form.get("buildingSf") ? Number(form.get("buildingSf")) : undefined,
+      occupancyStatus: occupancy,
+      // WALT only matters when occupied; send undefined otherwise.
+      waltYears: occupancy === "occupied" ? num("waltYears") : undefined,
+      tenancy: (form.get("tenancy") as string) || undefined,
       sourceBrokerId: form.get("sourceBrokerId") || undefined,
       mla,
     };
@@ -95,6 +114,34 @@ export default function DealForm() {
         </label>
       </div>
 
+      <div className="grid-2">
+        <label>
+          Current occupancy
+          <select
+            name="occupancyStatus"
+            value={occupancy}
+            onChange={(e) => setOccupancy(e.target.value as Occupancy)}
+          >
+            <option value="vacant">Vacant</option>
+            <option value="occupied">Occupied</option>
+          </select>
+        </label>
+        <label>
+          Tenancy
+          <select name="tenancy" defaultValue="">
+            <option value="">—</option>
+            <option value="single_tenant">Single-tenant</option>
+            <option value="multi_tenant">Multi-tenant</option>
+          </select>
+        </label>
+        {occupancy === "occupied" && (
+          <label>
+            WALT (years)
+            <input name="waltYears" type="number" step="0.1" min="0" />
+          </label>
+        )}
+      </div>
+
       <fieldset>
         <legend>MLA status</legend>
         {(["provided", "requested", "assumed"] as MlaChoice[]).map((choice) => (
@@ -116,12 +163,48 @@ export default function DealForm() {
       {mlaChoice === "provided" && (
         <div className="grid-2">
           <label>
-            Asking rent
-            <input name="askingRent" type="number" step="0.01" required />
+            Market base rent ($/SF/mo)
+            <input name="marketBaseRent" type="number" step="0.01" />
           </label>
           <label>
-            Opex
-            <input name="opex" type="number" step="0.01" />
+            Recovery type
+            <input name="recoveryType" placeholder="e.g. Continue Prior" />
+          </label>
+          <label>
+            Term (years)
+            <input name="termYears" type="number" step="0.1" />
+          </label>
+          <label>
+            Term (months, if partial)
+            <input name="termMonths" type="number" />
+          </label>
+          <label>
+            Renewal probability (0–1)
+            <input name="renewalProbability" type="number" step="0.01" min="0" max="1" />
+          </label>
+          <label>
+            Months vacant (blended)
+            <input name="monthsVacant" type="number" step="0.1" />
+          </label>
+          <label>
+            Free rent (months, blended)
+            <input name="freeRentMonths" type="number" step="0.1" />
+          </label>
+          <label>
+            TI — new ($)
+            <input name="tiNew" type="number" />
+          </label>
+          <label>
+            TI — renew ($)
+            <input name="tiRenew" type="number" />
+          </label>
+          <label>
+            LC — new (%)
+            <input name="lcNewPct" type="number" step="0.001" />
+          </label>
+          <label>
+            LC — renew (%)
+            <input name="lcRenewPct" type="number" step="0.001" />
           </label>
         </div>
       )}
