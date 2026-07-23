@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import CardDeleteButton from "@/components/CardDeleteButton";
+import AutoRefresh from "@/components/AutoRefresh";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export default async function LeasingPage() {
   return (
     <>
       <Nav active="leasing" />
+      <AutoRefresh />
       <main>
         <div className="page-header">
           <h1>Leasing</h1>

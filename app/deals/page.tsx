@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { ACQUISITION_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import CardDeleteButton from "@/components/CardDeleteButton";
+import AutoRefresh from "@/components/AutoRefresh";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -27,6 +28,7 @@ export default async function DealsPage() {
   return (
     <>
       <Nav active="acquisitions" />
+      <AutoRefresh />
       <main>
         <div className="page-header">
           <h1>Acquisitions</h1>

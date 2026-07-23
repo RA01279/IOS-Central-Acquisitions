@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import Nav from "@/components/Nav";
 import TaskAddForm from "@/components/TaskAddForm";
 import TaskDoneButton from "@/components/TaskDoneButton";
+import AutoRefresh from "@/components/AutoRefresh";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export default async function TasksPage({
   return (
     <>
       <Nav active="tasks" />
+      <AutoRefresh />
       <main>
         <div className="page-header">
           <h1>Follow-ups</h1>

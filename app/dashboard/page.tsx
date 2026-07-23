@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { ACQUISITION_STAGES, LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import CardDeleteButton from "@/components/CardDeleteButton";
+import AutoRefresh from "@/components/AutoRefresh";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -99,9 +100,21 @@ export default async function DashboardPage() {
   return (
     <>
       <Nav active="dashboard" />
+      <AutoRefresh />
       <main>
         <div className="page-header">
-          <h1>Dashboard</h1>
+          <div>
+            <h1>Dashboard</h1>
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              Data as of{" "}
+              {new Date().toLocaleTimeString("en-US", {
+                timeZone: "America/Chicago",
+                hour: "numeric",
+                minute: "2-digit",
+              })}{" "}
+              CT · refreshes automatically when you return to this tab
+            </p>
+          </div>
         </div>
 
         <div className="stat-grid">
