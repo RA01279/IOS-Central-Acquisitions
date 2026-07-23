@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
+import SignOutButton from "@/components/SignOutButton";
 
 const STAGES = ["uw", "uw_v1", "offered", "moving_to_psa"] as const;
 const STAGE_LABELS: Record<string, string> = {
@@ -25,27 +26,34 @@ export default async function DealsPage() {
   return (
     <main>
       <div className="page-header">
-        <h1>Acquisitions pipeline</h1>
-        <Link href="/deals/new">+ New deal</Link>
+        <h1>Hopper</h1>
+        <div className="header-actions">
+          <Link href="/deals/new" className="button-link">
+            + New deal
+          </Link>
+          <SignOutButton />
+        </div>
       </div>
 
-      {/* TODO(claude-code): replace with a proper board/kanban layout --
-          this is a plain list-by-stage placeholder to get something
-          on screen quickly. */}
-      <div className="pipeline-columns">
+      <div className="pipeline-board">
         {STAGES.map((stage) => (
           <section key={stage} className="pipeline-column">
-            <h2>{STAGE_LABELS[stage]}</h2>
-            <ul>
+            <h2>
+              {STAGE_LABELS[stage]}
+              <span className="count">{byStage[stage].length}</span>
+            </h2>
+            <div className="pipeline-cards">
               {byStage[stage].map((deal: any) => (
-                <li key={deal.id}>
-                  <Link href={`/deals/${deal.id}`}>
-                    {deal.properties?.address ?? "Untitled deal"}
-                  </Link>
-                  {deal.mla_status === "requested" && <span className="badge">awaiting MLA</span>}
-                </li>
+                <Link key={deal.id} href={`/deals/${deal.id}`} className="pipeline-card">
+                  <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
+                  <span className="market muted">{deal.properties?.market ?? ""}</span>
+                  {deal.mla_status === "requested" && (
+                    <span className="badge">awaiting MLA</span>
+                  )}
+                </Link>
               ))}
-            </ul>
+              {byStage[stage].length === 0 && <p className="empty">Nothing here</p>}
+            </div>
           </section>
         ))}
       </div>

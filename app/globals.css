@@ -1,0 +1,317 @@
+/* app/globals.css -- deliberately plain. This is a tracker, not a product. */
+
+:root {
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --border: #e2e5e9;
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --accent: #1f3b4d;
+  --accent-2: #2e6e62;
+  --warn-bg: #fbf0dd;
+  --warn-text: #9c6b10;
+  --error: #b3261e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+h1 {
+  font-size: 26px;
+  margin: 0;
+}
+h2 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+
+a {
+  color: var(--accent-2);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Login */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  max-width: none;
+}
+.login-form {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 32px;
+  width: 320px;
+}
+.login-form .subtitle {
+  margin: 4px 0 24px;
+  color: var(--muted);
+}
+
+/* Forms, generally */
+form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+form input,
+form select {
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink);
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+.button-link {
+  display: inline-block;
+  background: var(--accent);
+  color: white;
+  padding: 9px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  text-decoration: none;
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+}
+.radio-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  color: var(--ink) !important;
+}
+.error {
+  color: var(--error);
+  font-size: 13px;
+}
+.warning {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 12px 0;
+}
+.warning ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.hint {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+/* Page header */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Pipeline board */
+.pipeline-board {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.pipeline-column h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+.pipeline-column .count {
+  background: var(--border);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.pipeline-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pipeline-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  text-decoration: none;
+  color: var(--ink);
+}
+.pipeline-card:hover {
+  border-color: var(--accent-2);
+}
+.pipeline-card .address {
+  font-size: 14px;
+  font-weight: 500;
+}
+.badge {
+  display: inline-block;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-top: 4px;
+  width: fit-content;
+}
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* Deal detail */
+.back-link {
+  display: inline-block;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.deal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.stage-badge {
+  background: var(--accent);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+}
+.archived-banner {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.stage-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.archive-panel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.archive-panel input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.metrics-grid > div {
+  display: flex;
+  flex-direction: column;
+}
+.metrics-grid .label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.metrics-grid .value {
+  font-size: 18px;
+  font-weight: 500;
+}
+.metrics-grid .value.highlight {
+  color: var(--accent-2);
+}
+.version-list,
+.doc-list,
+.event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+.doc-type {
+  font-size: 11px;
+  background: var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+}

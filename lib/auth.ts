@@ -19,8 +19,24 @@ export function getSupabaseServerClient() {
     {
       cookies: {
         get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: any) => cookieStore.set(name, value, options),
-        remove: (name: string, options: any) => cookieStore.set(name, "", { ...options, maxAge: 0 }),
+        set: (name: string, value: string, options: any) => {
+          // Server Components can't set cookies -- this only succeeds
+          // when called from a Route Handler or Server Action. Middleware
+          // already refreshes the session on every request, so it's safe
+          // to swallow this in the Server Component case.
+          try {
+            cookieStore.set(name, value, options);
+          } catch {
+            // no-op: expected when called during a page render
+          }
+        },
+        remove: (name: string, options: any) => {
+          try {
+            cookieStore.set(name, "", { ...options, maxAge: 0 });
+          } catch {
+            // no-op: expected when called during a page render
+          }
+        },
       },
     }
   );
