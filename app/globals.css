@@ -267,6 +267,78 @@ fieldset {
   font-style: italic;
 }
 
+/* Dashboard */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.stat-tile {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stat-value.stat-bad {
+  color: var(--error);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.dash-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.bar-label {
+  font-size: 13px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent-2);
+  min-width: 0;
+}
+.bar-fill-muted {
+  background: var(--muted);
+}
+.bar-count {
+  font-size: 13px;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.panel-link {
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 8px;
+  text-decoration: none;
+}
+
 /* Contacts / CRM */
 .search-bar {
   display: flex;
