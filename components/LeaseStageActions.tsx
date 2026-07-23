@@ -56,8 +56,9 @@ export default function LeaseStageActions({
         body: JSON.stringify({ action: "archive", stage, reason: archiveReason }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Archive failed");
-      router.push("/leasing");
-      router.refresh();
+      // Hard navigation: bypasses the client router cache so the board
+      // re-renders fresh and the archived deal is gone immediately.
+      window.location.assign("/leasing");
     } catch (err: any) {
       setError(err.message);
       setBusy(null);

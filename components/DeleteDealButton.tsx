@@ -7,7 +7,6 @@
 // have existed.
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function DeleteDealButton({
   dealId,
@@ -16,7 +15,6 @@ export default function DeleteDealButton({
   dealId: string;
   redirectTo: string;
 }) {
-  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +25,9 @@ export default function DeleteDealButton({
     try {
       const res = await fetch(`/api/deals/${dealId}`, { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).error ?? "Delete failed");
-      router.push(redirectTo);
-      router.refresh();
+      // Hard navigation: bypasses the client router cache so the board
+      // re-renders fresh without the deleted deal.
+      window.location.assign(redirectTo);
     } catch (err: any) {
       setError(err.message);
       setBusy(false);

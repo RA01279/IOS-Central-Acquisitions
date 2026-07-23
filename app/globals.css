@@ -251,6 +251,15 @@ fieldset {
   font-size: 14px;
   font-weight: 500;
 }
+.pipeline-card .tenant {
+  font-size: 13px;
+  color: var(--accent-2);
+  font-weight: 500;
+}
+.pipeline-card .tenant-missing {
+  font-size: 12px;
+  font-style: italic;
+}
 .badge {
   display: inline-block;
   background: var(--warn-bg);

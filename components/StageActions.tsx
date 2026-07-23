@@ -53,8 +53,9 @@ export default function StageActions({
         const body = await res.json();
         throw new Error(body.error ?? "Archive failed");
       }
-      router.push("/deals");
-      router.refresh();
+      // Hard navigation: bypasses the client router cache so the board
+      // re-renders fresh and the archived deal is gone immediately.
+      window.location.assign("/deals");
     } catch (err: any) {
       setError(err.message);
       setBusy(null);

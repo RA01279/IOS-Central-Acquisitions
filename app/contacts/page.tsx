@@ -3,7 +3,6 @@ import { listCompanies, listContacts, COMPANY_TYPE_LABELS } from "@/lib/crm";
 import Nav from "@/components/Nav";
 import ContactForm from "@/components/ContactForm";
 import CompanyForm from "@/components/CompanyForm";
-import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -20,7 +19,6 @@ export default async function ContactsPage({
     <>
       <Nav active="contacts" />
       <main>
-        <BackButton />
         <div className="page-header">
           <h1>Contacts</h1>
           <div className="header-actions">

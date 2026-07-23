@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
-import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -11,10 +10,21 @@ export default async function LeasingPage() {
   const supabase = getServiceClient();
   const { data: deals } = await supabase
     .from("deals")
-    .select("id, stage, created_at, properties(address, market)")
+    .select(
+      "id, stage, created_at, properties(address, market), deal_contacts(role, contacts(name, companies(name)))"
+    )
     .eq("deal_type", "lease")
     .neq("stage", "archived")
     .order("created_at", { ascending: false });
+
+  // The tenant is the headline counterparty on a lease -- surface them on the
+  // card. Prefer the contact's company name (the tenant firm); fall back to
+  // the person.
+  function tenantName(deal: any): string | null {
+    const t = (deal.deal_contacts ?? []).find((dc: any) => dc.role === "tenant");
+    if (!t?.contacts) return null;
+    return t.contacts.companies?.name ?? t.contacts.name ?? null;
+  }
 
   const byStage = LEASE_STAGES.reduce<Record<string, any[]>>((acc, s) => {
     acc[s] = (deals ?? []).filter((d: any) => d.stage === s);
@@ -25,7 +35,6 @@ export default async function LeasingPage() {
     <>
       <Nav active="leasing" />
       <main>
-        <BackButton />
         <div className="page-header">
           <h1>Leasing</h1>
           <div className="header-actions">
@@ -43,12 +52,20 @@ export default async function LeasingPage() {
                 <span className="count">{byStage[stage].length}</span>
               </h2>
               <div className="pipeline-cards">
-                {byStage[stage].map((deal: any) => (
-                  <Link key={deal.id} href={`/leasing/${deal.id}`} className="pipeline-card">
-                    <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
-                    <span className="market muted">{deal.properties?.market ?? ""}</span>
-                  </Link>
-                ))}
+                {byStage[stage].map((deal: any) => {
+                  const tenant = tenantName(deal);
+                  return (
+                    <Link key={deal.id} href={`/leasing/${deal.id}`} className="pipeline-card">
+                      <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
+                      {tenant ? (
+                        <span className="tenant">{tenant}</span>
+                      ) : (
+                        <span className="muted tenant-missing">no tenant linked</span>
+                      )}
+                      <span className="market muted">{deal.properties?.market ?? ""}</span>
+                    </Link>
+                  );
+                })}
                 {byStage[stage].length === 0 && <p className="empty">Nothing here</p>}
               </div>
             </section>
