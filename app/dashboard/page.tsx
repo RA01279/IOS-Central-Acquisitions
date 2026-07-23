@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ACQUISITION_STAGES, LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
+import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -53,10 +54,12 @@ export default async function DashboardPage() {
 
   const acqByStage = ACQUISITION_STAGES.map((s) => ({
     stage: s,
+    deals: acq.filter((d: any) => d.stage === s),
     count: acq.filter((d: any) => d.stage === s).length,
   }));
   const leaseByStage = LEASE_STAGES.map((s) => ({
     stage: s,
+    deals: lease.filter((d: any) => d.stage === s),
     count: lease.filter((d: any) => d.stage === s).length,
   }));
   const maxAcq = Math.max(1, ...acqByStage.map((r) => r.count));
@@ -87,9 +90,6 @@ export default async function DashboardPage() {
     deathCounts[key] = (deathCounts[key] ?? 0) + 1;
   }
   const deaths = Object.entries(deathCounts).sort((a, b) => b[1] - a[1]);
-  const recentArchived = [...(archived as any[])]
-    .sort((a, b) => new Date(b.updated_at ?? b.created_at).getTime() - new Date(a.updated_at ?? a.created_at).getTime())
-    .slice(0, 5);
 
   const activityCounts: Record<string, number> = {};
   for (const a of recentActivities as any[]) {
@@ -100,6 +100,7 @@ export default async function DashboardPage() {
     <>
       <Nav active="dashboard" />
       <main>
+        <BackButton />
         <div className="page-header">
           <h1>Dashboard</h1>
         </div>
@@ -131,13 +132,23 @@ export default async function DashboardPage() {
               Acquisitions pipeline <Link href="/deals" className="muted panel-link">board →</Link>
             </h2>
             {acqByStage.map((r) => (
-              <CountBar
-                key={r.stage}
-                label={STAGE_LABELS[r.stage] ?? r.stage}
-                count={r.count}
-                max={maxAcq}
-                href="/deals"
-              />
+              <div key={r.stage}>
+                <CountBar
+                  label={STAGE_LABELS[r.stage] ?? r.stage}
+                  count={r.count}
+                  max={maxAcq}
+                  href="/deals"
+                />
+                {r.deals.length > 0 && (
+                  <div className="bar-deals">
+                    {r.deals.map((d: any) => (
+                      <Link key={d.id} href={`/deals/${d.id}`}>
+                        {d.properties?.address ?? "Untitled deal"}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </section>
 
@@ -146,13 +157,23 @@ export default async function DashboardPage() {
               Leasing pipeline <Link href="/leasing" className="muted panel-link">board →</Link>
             </h2>
             {leaseByStage.map((r) => (
-              <CountBar
-                key={r.stage}
-                label={STAGE_LABELS[r.stage] ?? r.stage}
-                count={r.count}
-                max={maxLease}
-                href="/leasing"
-              />
+              <div key={r.stage}>
+                <CountBar
+                  label={STAGE_LABELS[r.stage] ?? r.stage}
+                  count={r.count}
+                  max={maxLease}
+                  href="/leasing"
+                />
+                {r.deals.length > 0 && (
+                  <div className="bar-deals">
+                    {r.deals.map((d: any) => (
+                      <Link key={d.id} href={`/leasing/${d.id}`}>
+                        {d.properties?.address ?? "Untitled deal"}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </section>
         </div>
@@ -199,11 +220,7 @@ export default async function DashboardPage() {
                   </div>
                 ))}
                 <p className="hint" style={{ marginTop: 10 }}>
-                  {archived.length} archived total. Recent: {recentArchived.map((d: any) => (
-                    <span key={d.id} className="muted">
-                      {d.properties?.address ?? "?"}{d.death_reason ? ` (${d.death_reason})` : ""}.{" "}
-                    </span>
-                  ))}
+                  {archived.length} archived total — full list in the Archive below.
                 </p>
               </>
             )}
@@ -238,6 +255,35 @@ export default async function DashboardPage() {
             )}
           </section>
         </div>
+
+        <section className="panel">
+          <h2>Archive</h2>
+          {archived.length === 0 ? (
+            <p className="muted">No archived deals. Deals archived from either board land here.</p>
+          ) : (
+            <ul className="doc-list">
+              {[...(archived as any[])]
+                .sort(
+                  (a, b) =>
+                    new Date(b.updated_at ?? b.created_at).getTime() -
+                    new Date(a.updated_at ?? a.created_at).getTime()
+                )
+                .map((d: any) => (
+                  <li key={d.id}>
+                    <span className="doc-type">{d.deal_type === "lease" ? "LEASE" : "ACQ"}</span>
+                    <Link href={d.deal_type === "lease" ? `/leasing/${d.id}` : `/deals/${d.id}`}>
+                      {d.properties?.address ?? "Untitled deal"}
+                    </Link>
+                    <span className="muted">
+                      {" "}
+                      · died at {STAGE_LABELS[d.death_stage] ?? d.death_stage ?? "?"}
+                      {d.death_reason ? ` — ${d.death_reason}` : ""}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </section>
       </main>
     </>
   );

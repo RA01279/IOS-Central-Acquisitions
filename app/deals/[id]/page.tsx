@@ -8,6 +8,9 @@ import MlaProvideForm from "@/components/MlaProvideForm";
 import ExcelUploadForm from "@/components/ExcelUploadForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealCrmPanels from "@/components/DealCrmPanels";
+import Nav from "@/components/Nav";
+import BackButton from "@/components/BackButton";
+import DeleteDealButton from "@/components/DeleteDealButton";
 
 const STAGE_LABELS: Record<string, string> = {
   prospect: "Prospect",
@@ -63,10 +66,10 @@ export default async function DealDetailPage({ params }: { params: { id: string 
   const userCanConfirmPsa = user ? canConfirmPsa(user.email) : false;
 
   return (
+    <>
+    <Nav active="acquisitions" />
     <main className="deal-detail">
-      <Link href="/deals" className="back-link">
-        ← Pipeline
-      </Link>
+      <BackButton />
 
       <div className="deal-header">
         <div>
@@ -212,6 +215,9 @@ export default async function DealDetailPage({ params }: { params: { id: string 
           ))}
         </ul>
       </section>
+
+      <DeleteDealButton dealId={deal.id} redirectTo="/deals" />
     </main>
+    </>
   );
 }

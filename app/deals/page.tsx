@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ACQUISITION_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
+import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -27,6 +28,7 @@ export default async function DealsPage() {
     <>
       <Nav active="acquisitions" />
       <main>
+        <BackButton />
         <div className="page-header">
           <h1>Acquisitions</h1>
           <div className="header-actions">

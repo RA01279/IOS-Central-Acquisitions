@@ -7,6 +7,7 @@ import Nav from "@/components/Nav";
 import TaskAddForm from "@/components/TaskAddForm";
 import TaskDoneButton from "@/components/TaskDoneButton";
 import ActivityLogForm from "@/components/ActivityLogForm";
+import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -37,9 +38,7 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
     <>
       <Nav active="contacts" />
       <main className="deal-detail">
-        <Link href="/contacts" className="back-link">
-          ← Contacts
-        </Link>
+        <BackButton />
 
         <div className="deal-header">
           <div>

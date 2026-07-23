@@ -7,6 +7,8 @@ import Nav from "@/components/Nav";
 import LeaseStageActions from "@/components/LeaseStageActions";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealCrmPanels from "@/components/DealCrmPanels";
+import BackButton from "@/components/BackButton";
+import DeleteDealButton from "@/components/DeleteDealButton";
 
 export default async function LeaseDealDetailPage({ params }: { params: { id: string } }) {
   const supabase = getServiceClient();
@@ -32,9 +34,7 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
     <>
       <Nav active="leasing" />
       <main className="deal-detail">
-        <Link href="/leasing" className="back-link">
-          ← Leasing
-        </Link>
+        <BackButton />
 
         <div className="deal-header">
           <div>
@@ -87,6 +87,8 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
             </ul>
           )}
         </section>
+
+        <DeleteDealButton dealId={deal.id} redirectTo="/leasing" />
       </main>
     </>
   );

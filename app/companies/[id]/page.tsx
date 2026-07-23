@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCompanyWithRelations, COMPANY_TYPE_LABELS } from "@/lib/crm";
 import Nav from "@/components/Nav";
+import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -20,9 +21,7 @@ export default async function CompanyDetailPage({ params }: { params: { id: stri
     <>
       <Nav active="contacts" />
       <main className="deal-detail">
-        <Link href="/contacts" className="back-link">
-          ← Contacts
-        </Link>
+        <BackButton />
 
         <div className="deal-header">
           <div>

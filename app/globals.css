@@ -267,6 +267,43 @@ fieldset {
   font-style: italic;
 }
 
+/* Back button */
+.back-btn {
+  background: transparent;
+  color: var(--accent-2);
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 16px;
+  display: inline-block;
+}
+.back-btn:hover {
+  text-decoration: underline;
+}
+
+/* Danger zone (delete) */
+.danger-zone {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.danger-link {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+}
+.danger-link:hover {
+  color: var(--error);
+  text-decoration: underline;
+}
+.danger-btn {
+  background: var(--error);
+}
+
 /* Dashboard */
 .stat-grid {
   display: grid;
@@ -337,6 +374,20 @@ fieldset {
   font-size: 12px;
   margin-left: 8px;
   text-decoration: none;
+}
+.bar-deals {
+  margin: -4px 0 10px 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bar-deals a {
+  font-size: 13px;
+  color: var(--accent-2);
+  text-decoration: none;
+}
+.bar-deals a:hover {
+  text-decoration: underline;
 }
 
 /* Contacts / CRM */

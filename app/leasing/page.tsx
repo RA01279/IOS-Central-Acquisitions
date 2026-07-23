@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
+import BackButton from "@/components/BackButton";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export default async function LeasingPage() {
     <>
       <Nav active="leasing" />
       <main>
+        <BackButton />
         <div className="page-header">
           <h1>Leasing</h1>
           <div className="header-actions">

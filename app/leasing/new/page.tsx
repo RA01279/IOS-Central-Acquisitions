@@ -1,15 +1,13 @@
-import Link from "next/link";
 import LeaseDealForm from "@/components/LeaseDealForm";
 import Nav from "@/components/Nav";
+import BackButton from "@/components/BackButton";
 
 export default function NewLeaseDealPage() {
   return (
     <>
       <Nav active="leasing" />
       <main>
-        <Link href="/leasing" className="back-link">
-          ← Leasing
-        </Link>
+        <BackButton />
         <div className="page-header">
           <h1>New lease deal</h1>
         </div>

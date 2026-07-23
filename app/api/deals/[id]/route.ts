@@ -94,3 +94,39 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }
+
+// DELETE /api/deals/[id]
+// Permanent removal, for duplicates and deals entered in error. Child rows
+// (mla_data, uw_versions, documents, deal_events, deal_contacts, activities,
+// tasks) all cascade via FK. The property row is deleted too when no other
+// deal references it, so a duplicate intake leaves nothing behind. Files in
+// storage are left as-is -- harmless orphans, cheap to keep.
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const user = await getCurrentUser(req as any);
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const supabase = getServiceClient();
+
+  const { data: deal, error: findError } = await supabase
+    .from("deals")
+    .select("id, property_id")
+    .eq("id", params.id)
+    .single();
+  if (findError || !deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+
+  const { error: delError } = await supabase.from("deals").delete().eq("id", params.id);
+  if (delError) return NextResponse.json({ error: delError.message }, { status: 500 });
+
+  if (deal.property_id) {
+    const { data: siblings } = await supabase
+      .from("deals")
+      .select("id")
+      .eq("property_id", deal.property_id)
+      .limit(1);
+    if (!siblings || siblings.length === 0) {
+      await supabase.from("properties").delete().eq("id", deal.property_id);
+    }
+  }
+
+  return NextResponse.json({ ok: true });
+}
