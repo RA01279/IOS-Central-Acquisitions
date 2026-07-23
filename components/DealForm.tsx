@@ -59,6 +59,8 @@ export default function DealForm() {
       waltYears: occupancy === "occupied" ? num("waltYears") : undefined,
       tenancy: (form.get("tenancy") as string) || undefined,
       currentOwnerName: (form.get("currentOwnerName") as string) || undefined,
+      buyerBrokerName: (form.get("buyerBrokerName") as string) || undefined,
+      sellerBrokerName: (form.get("sellerBrokerName") as string) || undefined,
       sourceBrokerId: form.get("sourceBrokerId") || undefined,
       mla,
     };
@@ -97,6 +99,17 @@ export default function DealForm() {
         <label>
           Current owner
           <input name="currentOwnerName" placeholder="Seller — created as a contact automatically" />
+        </label>
+      </div>
+
+      <div className="grid-2">
+        <label>
+          Buyer broker
+          <input name="buyerBrokerName" placeholder="Broker repping us" />
+        </label>
+        <label>
+          Sales broker
+          <input name="sellerBrokerName" placeholder="Broker repping the seller" />
         </label>
       </div>
 

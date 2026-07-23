@@ -71,11 +71,16 @@ export interface NewDealInput {
   waltYears?: number;
   tenancy?: "single_tenant" | "multi_tenant";
   // Counterparty names typed at intake. Each becomes a contact (found by
-  // exact name match, or created) linked to the deal via deal_contacts:
-  // tenantName -> role 'tenant' (leases), currentOwnerName -> role 'seller'
-  // (acquisitions). Keeps intake fast without creating dead text columns.
+  // exact name match, or created) linked to the deal via deal_contacts with
+  // the matching role. Keeps intake fast without creating dead text columns.
+  // Leases: tenantName, landlordRepName (listing broker), tenantRepName.
+  // Acquisitions: currentOwnerName (seller), buyerBrokerName, sellerBrokerName.
   tenantName?: string;
+  landlordRepName?: string;
+  tenantRepName?: string;
   currentOwnerName?: string;
+  buyerBrokerName?: string;
+  sellerBrokerName?: string;
   sourceBrokerId?: string;
   dealType?: DealType;
   createdBy: string; // who's entering this (Rhett, market lead, or later: "email-intake")
@@ -176,23 +181,32 @@ export async function createDeal(input: NewDealInput) {
     await notifyMarketLeadForMla(deal.id, input.address);
   }
 
-  // Link the typed counterparty as a contact on the deal.
-  const counterparty =
+  // Link every typed counterparty as a contact on the deal.
+  const counterparties =
     dealType === "lease"
-      ? { name: input.tenantName, role: "tenant" as const }
-      : { name: input.currentOwnerName, role: "seller" as const };
-  if (counterparty.name?.trim()) {
-    const contactId = await findOrCreateContactByName(counterparty.name.trim());
+      ? [
+          { name: input.tenantName, role: "tenant" },
+          { name: input.landlordRepName, role: "listing_broker" },
+          { name: input.tenantRepName, role: "tenant_broker" },
+        ]
+      : [
+          { name: input.currentOwnerName, role: "seller" },
+          { name: input.buyerBrokerName, role: "buyer_broker" },
+          { name: input.sellerBrokerName, role: "seller_broker" },
+        ];
+  for (const cp of counterparties) {
+    if (!cp.name?.trim()) continue;
+    const contactId = await findOrCreateContactByName(cp.name.trim());
     const { error: linkError } = await supabase.from("deal_contacts").insert({
       deal_id: deal.id,
       contact_id: contactId,
-      role: counterparty.role,
+      role: cp.role,
     });
     if (linkError) throw linkError;
     await logDealEvent(
       deal.id,
       "contact_linked",
-      { contact_id: contactId, role: counterparty.role, via: "intake" },
+      { contact_id: contactId, role: cp.role, via: "intake" },
       input.createdBy
     );
   }

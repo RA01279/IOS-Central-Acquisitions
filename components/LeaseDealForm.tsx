@@ -23,6 +23,8 @@ export default function LeaseDealForm() {
     const payload = {
       dealType: "lease",
       tenantName: form.get("tenantName") || undefined,
+      landlordRepName: form.get("landlordRepName") || undefined,
+      tenantRepName: form.get("tenantRepName") || undefined,
       address: form.get("address"),
       market: form.get("market") || undefined,
       submarket: form.get("submarket") || undefined,
@@ -56,6 +58,17 @@ export default function LeaseDealForm() {
         Tenant (prospect)
         <input name="tenantName" placeholder="Company or person — created as a contact automatically" />
       </label>
+
+      <div className="grid-2">
+        <label>
+          Landlord rep
+          <input name="landlordRepName" placeholder="Broker repping us / the landlord" />
+        </label>
+        <label>
+          Tenant rep
+          <input name="tenantRepName" placeholder="Broker repping the tenant" />
+        </label>
+      </div>
 
       <label>
         Property address
