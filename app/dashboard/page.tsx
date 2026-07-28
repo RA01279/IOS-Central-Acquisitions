@@ -182,28 +182,28 @@ export default async function DashboardPage() {
         </div>
 
         <div className="stat-grid">
-          <div className="stat-tile">
+          <Link href="/deals" className="stat-tile">
             <span className="stat-value">{acq.length}</span>
             <span className="stat-label">Active acquisitions</span>
-          </div>
-          <div className="stat-tile">
+          </Link>
+          <Link href="/leasing" className="stat-tile">
             <span className="stat-value">{lease.length}</span>
             <span className="stat-label">Active lease deals</span>
-          </div>
-          <div className="stat-tile">
+          </Link>
+          <Link href="/tasks" className="stat-tile">
             <span className={overdueTasks.length > 0 ? "stat-value stat-bad" : "stat-value"}>
               {openTasks.length}
             </span>
             <span className="stat-label">
               Open follow-ups{overdueTasks.length > 0 ? ` · ${overdueTasks.length} overdue` : ""}
             </span>
-          </div>
-          <div className="stat-tile">
+          </Link>
+          <Link href="/targets" className="stat-tile">
             <span className={targetsDue.length > 0 ? "stat-value stat-bad" : "stat-value"}>
               {targetsDue.length}
             </span>
             <span className="stat-label">Targets due for follow-up</span>
-          </div>
+          </Link>
         </div>
 
         <div className="dash-cols">

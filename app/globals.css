@@ -390,6 +390,11 @@ fieldset {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  text-decoration: none;
+  color: inherit;
+}
+a.stat-tile:hover {
+  border-color: var(--accent-2);
 }
 .stat-value {
   font-size: 28px;
