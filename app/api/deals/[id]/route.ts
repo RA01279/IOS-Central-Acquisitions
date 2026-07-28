@@ -95,6 +95,48 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ ok: true });
   }
 
+  // Edit deal + property details in one shot ("all things editable").
+  if (body.action === "update_details") {
+    const { data: deal } = await supabase
+      .from("deals")
+      .select("property_id")
+      .eq("id", params.id)
+      .single();
+    if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+
+    if (deal.property_id) {
+      const { error: propErr } = await supabase
+        .from("properties")
+        .update({
+          address: body.address,
+          city: body.city || null,
+          market: body.market || null,
+          submarket: body.submarket || null,
+          asset_type: body.assetType || null,
+          lot_sf: body.acres ? Math.round(Number(body.acres) * 43560) : null,
+          building_sf: body.buildingSf ? Number(body.buildingSf) : null,
+          occupancy_status: body.occupancyStatus || null,
+          walt_years:
+            body.occupancyStatus === "occupied" && body.waltYears ? Number(body.waltYears) : null,
+          tenancy: body.tenancy || null,
+        })
+        .eq("id", deal.property_id);
+      if (propErr) return NextResponse.json({ error: propErr.message }, { status: 500 });
+    }
+
+    const { error: dealErr } = await supabase
+      .from("deals")
+      .update({
+        marketing_status: body.marketingStatus || null,
+        acquisition_type: body.acquisitionType || null,
+      })
+      .eq("id", params.id);
+    if (dealErr) return NextResponse.json({ error: dealErr.message }, { status: 500 });
+
+    await logDealEvent(params.id, "details_edited", {}, user.email);
+    return NextResponse.json({ ok: true });
+  }
+
   // PSA executed -> the deal enters Due Diligence.
   if (body.action === "move_to_due_diligence") {
     const { error } = await supabase.from("deals").update({ stage: "due_diligence" }).eq("id", params.id);

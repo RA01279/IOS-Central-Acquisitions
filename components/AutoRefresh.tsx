@@ -11,14 +11,23 @@ import { useEffect } from "react";
 export default function AutoRefresh({ minAgeMs = 15000 }: { minAgeMs?: number }) {
   useEffect(() => {
     const loadedAt = Date.now();
+    // The moment the user types into ANY form on the page, auto-refresh
+    // stands down -- reloading would wipe their input. (Bug: switching away
+    // to copy something and coming back used to reload mid-entry.)
+    let dirty = false;
+    const markDirty = () => {
+      dirty = true;
+    };
     function maybeReload() {
-      if (document.visibilityState === "visible" && Date.now() - loadedAt > minAgeMs) {
+      if (!dirty && document.visibilityState === "visible" && Date.now() - loadedAt > minAgeMs) {
         window.location.reload();
       }
     }
+    document.addEventListener("input", markDirty, true);
     document.addEventListener("visibilitychange", maybeReload);
     window.addEventListener("focus", maybeReload);
     return () => {
+      document.removeEventListener("input", markDirty, true);
       document.removeEventListener("visibilitychange", maybeReload);
       window.removeEventListener("focus", maybeReload);
     };

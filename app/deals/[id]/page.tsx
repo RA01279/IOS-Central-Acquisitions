@@ -7,6 +7,7 @@ import StageActions from "@/components/StageActions";
 import MlaProvideForm from "@/components/MlaProvideForm";
 import ExcelUploadForm from "@/components/ExcelUploadForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
+import DealEditForm from "@/components/DealEditForm";
 import DealCrmPanels from "@/components/DealCrmPanels";
 import OffersPanel from "@/components/OffersPanel";
 import LoiPanel from "@/components/LoiPanel";
@@ -220,6 +221,15 @@ export default async function DealDetailPage({ params }: { params: { id: string 
                     : "—"}
             </span>
           </div>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <DealEditForm
+            dealId={deal.id}
+            dealType="acquisition"
+            property={deal.properties}
+            marketingStatus={deal.marketing_status ?? null}
+            acquisitionType={deal.acquisition_type ?? null}
+          />
         </div>
       </section>
 

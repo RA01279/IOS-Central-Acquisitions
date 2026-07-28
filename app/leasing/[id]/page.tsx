@@ -8,6 +8,7 @@ import Nav from "@/components/Nav";
 import LeaseStageActions from "@/components/LeaseStageActions";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealCrmPanels from "@/components/DealCrmPanels";
+import DealEditForm from "@/components/DealEditForm";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
 
@@ -66,6 +67,17 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
           prevStage={prev}
           prevStageLabel={prev ? STAGE_LABELS[prev] : null}
         />
+
+        <section className="panel">
+          <h2>Property</h2>
+          <DealEditForm
+            dealId={deal.id}
+            dealType="lease"
+            property={deal.properties}
+            marketingStatus={deal.marketing_status ?? null}
+            acquisitionType={deal.acquisition_type ?? null}
+          />
+        </section>
 
         <DealContactsPanel
           dealId={deal.id}

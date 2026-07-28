@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getContactWithRelations, ROLE_LABELS } from "@/lib/crm";
+import { getContactWithRelations, listCompanies, ROLE_LABELS } from "@/lib/crm";
+import ContactEditForm from "@/components/ContactEditForm";
 import { STAGE_LABELS } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
 import Nav from "@/components/Nav";
@@ -33,6 +34,7 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
   if (!contact) return notFound();
 
   const user = await getCurrentUser();
+  const companies = await listCompanies();
   const openTasks = tasks.filter((t: any) => t.status === "open");
 
   return (
@@ -75,6 +77,12 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
               <span className="label">Address</span>
               <span className="value">{contact.address ?? "—"}</span>
             </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <ContactEditForm
+              contact={contact}
+              companies={companies.map((c: any) => ({ id: c.id, name: c.name }))}
+            />
           </div>
         </section>
 
