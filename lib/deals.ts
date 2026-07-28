@@ -196,18 +196,18 @@ export async function createDeal(input: NewDealInput) {
   const counterparties =
     dealType === "lease"
       ? [
-          { name: input.tenantName, role: "tenant" },
-          { name: input.landlordRepName, role: "listing_broker" },
-          { name: input.tenantRepName, role: "tenant_broker" },
+          { name: input.tenantName, role: "tenant", type: "tenant" },
+          { name: input.landlordRepName, role: "listing_broker", type: "broker" },
+          { name: input.tenantRepName, role: "tenant_broker", type: "broker" },
         ]
       : [
-          { name: input.currentOwnerName, role: "seller" },
-          { name: input.buyerBrokerName, role: "buyer_broker" },
-          { name: input.sellerBrokerName, role: "seller_broker" },
+          { name: input.currentOwnerName, role: "seller", type: null }, // owner-user vs institutional: classified by hand
+          { name: input.buyerBrokerName, role: "buyer_broker", type: "broker" },
+          { name: input.sellerBrokerName, role: "seller_broker", type: "broker" },
         ];
   for (const cp of counterparties) {
     if (!cp.name?.trim()) continue;
-    const contactId = await findOrCreateContactByName(cp.name.trim());
+    const contactId = await findOrCreateContactByName(cp.name.trim(), cp.type);
     const { error: linkError } = await supabase.from("deal_contacts").insert({
       deal_id: deal.id,
       contact_id: contactId,
@@ -235,8 +235,9 @@ export async function createDeal(input: NewDealInput) {
 
 // Exact-name match (case-insensitive) or create. Intake types a counterparty
 // name; if that person/firm is already a contact we reuse them so their deal
-// history accumulates on one record.
-async function findOrCreateContactByName(name: string): Promise<string> {
+// history accumulates on one record. New contacts get the classification the
+// intake field implies (tenant/broker); null means "classify by hand".
+async function findOrCreateContactByName(name: string, contactType: string | null = null): Promise<string> {
   const supabase = getServiceClient();
   const { data: existing } = await supabase
     .from("contacts")
@@ -248,7 +249,7 @@ async function findOrCreateContactByName(name: string): Promise<string> {
 
   const { data: created, error } = await supabase
     .from("contacts")
-    .insert({ name })
+    .insert({ name, contact_type: contactType })
     .select("id")
     .single();
   if (error) throw error;

@@ -98,11 +98,21 @@ export async function getCompanyWithRelations(companyId: string) {
 
 // -- Contacts -------------------------------------------------------------
 
+export type ContactType = "broker" | "owner_user" | "institutional_owner" | "tenant" | "other";
+
+export const CONTACT_TYPE_LABELS: Record<string, string> = {
+  broker: "Brokers",
+  owner_user: "Owner Users",
+  institutional_owner: "Institutional Owners",
+  tenant: "Tenants",
+  other: "Other",
+};
+
 export async function listContacts(search?: string) {
   const supabase = getServiceClient();
   let query = supabase
     .from("contacts")
-    .select("id, name, email, phone, title, companies(id, name, company_type)")
+    .select("id, name, email, phone, title, contact_type, companies(id, name, company_type)")
     .order("name");
   if (search) query = query.ilike("name", `%${search}%`);
   const { data, error } = await query;
@@ -117,6 +127,7 @@ export async function createContact(input: {
   title?: string;
   address?: string;
   companyId?: string;
+  contactType?: ContactType;
 }) {
   const supabase = getServiceClient();
   const { data, error } = await supabase
@@ -128,6 +139,7 @@ export async function createContact(input: {
       title: input.title ?? null,
       address: input.address ?? null,
       company_id: input.companyId ?? null,
+      contact_type: input.contactType ?? null,
     })
     .select()
     .single();

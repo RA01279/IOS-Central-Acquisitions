@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
 
     const contact = await createContact({
       name: body.name,
+      contactType: body.contactType,
       email: body.email,
       phone: body.phone,
       title: body.title,

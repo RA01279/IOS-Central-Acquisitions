@@ -34,6 +34,7 @@ export default function ContactForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
+          contactType: form.get("contactType"),
           email: form.get("email") || undefined,
           phone: form.get("phone") || undefined,
           title: form.get("title") || undefined,
@@ -68,6 +69,19 @@ export default function ContactForm({
         <label>
           Last name *
           <input name="lastName" required />
+        </label>
+        <label>
+          Type *
+          <select name="contactType" required defaultValue="">
+            <option value="" disabled>
+              Classify…
+            </option>
+            <option value="broker">Broker</option>
+            <option value="owner_user">Owner User</option>
+            <option value="institutional_owner">Institutional Owner</option>
+            <option value="tenant">Tenant</option>
+            <option value="other">Other</option>
+          </select>
         </label>
         <label>
           Company *
