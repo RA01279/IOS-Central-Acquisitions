@@ -1,12 +1,15 @@
 "use client";
 // components/ContactForm.tsx
 //
-// Inline add-contact form for the Contacts page. Company options come from
-// the server page as props (keeps server-only lib code out of the client
-// bundle).
+// Add-contact form. First and last name are required, and every new contact
+// must be assigned to a company -- either picked from the list or created
+// inline (so assignment is never skipped for lack of a company record).
+// Email, phone, and address are nice-to-haves.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+
+const NEW_COMPANY = "__new__";
 
 export default function ContactForm({
   companies,
@@ -15,6 +18,7 @@ export default function ContactForm({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [companyChoice, setCompanyChoice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,20 +27,25 @@ export default function ContactForm({
     setSubmitting(true);
     setError(null);
     const form = new FormData(e.currentTarget);
+    const name = `${(form.get("firstName") as string).trim()} ${(form.get("lastName") as string).trim()}`;
     try {
       const res = await fetch("/api/contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: form.get("name"),
+          name,
           email: form.get("email") || undefined,
           phone: form.get("phone") || undefined,
           title: form.get("title") || undefined,
-          companyId: form.get("companyId") || undefined,
+          address: form.get("address") || undefined,
+          companyId: companyChoice !== NEW_COMPANY ? companyChoice : undefined,
+          newCompanyName: companyChoice === NEW_COMPANY ? form.get("newCompanyName") : undefined,
+          newCompanyType: companyChoice === NEW_COMPANY ? form.get("newCompanyType") : undefined,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to add contact");
       setOpen(false);
+      setCompanyChoice("");
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -53,20 +62,54 @@ export default function ContactForm({
     <form onSubmit={handleSubmit} className="inline-add-form">
       <div className="grid-2">
         <label>
-          Name
-          <input name="name" required autoFocus />
+          First name *
+          <input name="firstName" required autoFocus />
         </label>
         <label>
-          Company
-          <select name="companyId" defaultValue="">
-            <option value="">— none —</option>
+          Last name *
+          <input name="lastName" required />
+        </label>
+        <label>
+          Company *
+          <select
+            name="companyId"
+            required
+            value={companyChoice}
+            onChange={(e) => setCompanyChoice(e.target.value)}
+          >
+            <option value="" disabled>
+              Select…
+            </option>
             {companies.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
+            <option value={NEW_COMPANY}>+ New company…</option>
           </select>
         </label>
+        <label>
+          Title
+          <input name="title" />
+        </label>
+        {companyChoice === NEW_COMPANY && (
+          <>
+            <label>
+              New company name *
+              <input name="newCompanyName" required />
+            </label>
+            <label>
+              Company type
+              <select name="newCompanyType" defaultValue="broker">
+                <option value="broker">Broker</option>
+                <option value="landlord">Landlord</option>
+                <option value="tenant">Tenant</option>
+                <option value="jv_partner">JV partner</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </>
+        )}
         <label>
           Email
           <input name="email" type="email" />
@@ -75,13 +118,13 @@ export default function ContactForm({
           Phone
           <input name="phone" />
         </label>
-        <label>
-          Title
-          <input name="title" />
-        </label>
       </div>
+      <label>
+        Address
+        <input name="address" placeholder="Street, city, state, zip" />
+      </label>
       {error && <p className="error">{error}</p>}
-      <div className="stage-actions">
+      <div className="stage-actions" style={{ marginBottom: 0 }}>
         <button type="submit" disabled={submitting}>
           {submitting ? "Adding…" : "Add contact"}
         </button>

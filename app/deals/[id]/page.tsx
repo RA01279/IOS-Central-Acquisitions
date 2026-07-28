@@ -9,6 +9,7 @@ import ExcelUploadForm from "@/components/ExcelUploadForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealCrmPanels from "@/components/DealCrmPanels";
 import OffersPanel from "@/components/OffersPanel";
+import LoiPanel from "@/components/LoiPanel";
 import TargetingPanel from "@/components/TargetingPanel";
 import RestoreDealButton from "@/components/RestoreDealButton";
 import TruncatedList from "@/components/TruncatedList";
@@ -72,6 +73,42 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
   const stageIdx = (ACQUISITION_STAGES as readonly string[]).indexOf(deal.stage);
   const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : null;
+
+  // LOI prefill priority: saved terms from a prior LOI on this deal -> live
+  // deal data -> standing defaults. Date always starts at today.
+  const saved = (deal.loi_terms ?? {}) as Record<string, string>;
+  const latestOffer = [...(deal.offers ?? [])].sort((a: any, b: any) =>
+    (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
+  )[0];
+  const brokerLink: any = (dealContacts as any[]).find((l) => l.role === "seller_broker")?.contacts;
+  const sellerLink: any = (dealContacts as any[]).find((l) => l.role === "seller")?.contacts;
+  const brokerFirm = brokerLink?.companies?.name;
+  const loiDefaults = {
+    date: new Date().toISOString().slice(0, 10),
+    tel: saved.tel ?? "(912) 508-4170",
+    attn:
+      saved.attn ??
+      (brokerLink ? `${brokerLink.name}${brokerFirm ? `, ${brokerFirm}` : ""}` : ""),
+    sellerClause: saved.sellerClause ?? (sellerLink?.name ?? "its current ownership"),
+    propertyDescription:
+      saved.propertyDescription ??
+      [deal.properties?.address, deal.properties?.city].filter(Boolean).join(", "),
+    price:
+      saved.price ??
+      (latestOffer?.price ? Math.round(latestOffer.price).toLocaleString("en-US") : ""),
+    depositWords: saved.depositWords ?? "",
+    depositAmount: saved.depositAmount ?? "",
+    ddDays: saved.ddDays ?? "Sixty (60)",
+    closingDays: saved.closingDays ?? "thirty (30)",
+    brokerClauseName:
+      saved.brokerClauseName ??
+      (brokerLink ? `${brokerLink.name}${brokerFirm ? ` of ${brokerFirm}` : ""}` : ""),
+    commissionPayer: saved.commissionPayer ?? "Seller",
+    signer1Name: saved.signer1Name ?? "John Lettieri",
+    signer1Title: saved.signer1Title ?? "Market Officer | Central",
+    signer2Name: saved.signer2Name ?? "Rhett Anderson",
+    signer2Title: saved.signer2Title ?? "IOS Market Lead | Central",
+  };
 
   return (
     <>
@@ -191,6 +228,10 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         offers={deal.offers ?? []}
         lotSf={deal.properties?.lot_sf ?? null}
       />
+
+      {["uw", "offered", "moving_to_psa", "due_diligence"].includes(deal.stage) && (
+        <LoiPanel dealId={deal.id} defaults={loiDefaults} />
+      )}
 
       <section className="panel">
         <h2>Returns summary</h2>

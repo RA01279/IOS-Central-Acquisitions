@@ -1,6 +1,7 @@
 // app/api/contacts/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createContact, listContacts } from "@/lib/crm";
+import { createContact, createCompany, listContacts } from "@/lib/crm";
+import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -24,12 +25,32 @@ export async function POST(req: NextRequest) {
   if (!body.name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
   try {
+    // Inline company creation from the contact form: find an existing
+    // company by that name (case-insensitive) or create it.
+    let companyId = body.companyId;
+    if (!companyId && body.newCompanyName) {
+      const supabase = getServiceClient();
+      const { data: existing } = await supabase
+        .from("companies")
+        .select("id")
+        .ilike("name", String(body.newCompanyName).trim())
+        .limit(1)
+        .maybeSingle();
+      companyId = existing
+        ? existing.id
+        : (await createCompany({
+            name: String(body.newCompanyName).trim(),
+            companyType: body.newCompanyType ?? "other",
+          })).id;
+    }
+
     const contact = await createContact({
       name: body.name,
       email: body.email,
       phone: body.phone,
       title: body.title,
-      companyId: body.companyId,
+      address: body.address,
+      companyId,
     });
     return NextResponse.json({ contact }, { status: 201 });
   } catch (err: any) {

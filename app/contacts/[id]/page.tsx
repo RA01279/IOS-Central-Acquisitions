@@ -71,6 +71,10 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
                 )}
               </span>
             </div>
+            <div>
+              <span className="label">Address</span>
+              <span className="value">{contact.address ?? "—"}</span>
+            </div>
           </div>
         </section>
 

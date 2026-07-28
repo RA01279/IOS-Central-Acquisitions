@@ -466,6 +466,40 @@ a.stat-tile:hover {
   text-decoration: underline;
 }
 
+/* Contacts list */
+.contact-table {
+  display: flex;
+  flex-direction: column;
+}
+.contact-row {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.7fr 1fr;
+  gap: 12px;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  align-items: baseline;
+}
+.contact-row:last-child {
+  border-bottom: none;
+}
+.contact-row a {
+  text-decoration: none;
+}
+.contact-row a:hover {
+  text-decoration: underline;
+}
+.contact-row-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.contact-unassigned {
+  font-style: italic;
+}
+
 /* Contacts / CRM */
 .search-bar {
   display: flex;

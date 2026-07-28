@@ -115,6 +115,7 @@ export async function createContact(input: {
   email?: string;
   phone?: string;
   title?: string;
+  address?: string;
   companyId?: string;
 }) {
   const supabase = getServiceClient();
@@ -125,6 +126,7 @@ export async function createContact(input: {
       email: input.email ?? null,
       phone: input.phone ?? null,
       title: input.title ?? null,
+      address: input.address ?? null,
       company_id: input.companyId ?? null,
     })
     .select()
