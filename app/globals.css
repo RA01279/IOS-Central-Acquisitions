@@ -612,6 +612,50 @@ a.stat-tile:hover {
 .contact-row-6 {
   grid-template-columns: 1.8fr 1.1fr 1.4fr 1.7fr 1fr 28px;
 }
+.contact-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.contact-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.contact-card:hover {
+  border-color: var(--accent-2);
+}
+.contact-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.contact-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.contact-card-name:hover {
+  color: var(--accent-2);
+}
+.contact-card-line {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-card-line a {
+  text-decoration: none;
+}
+.contact-card-foot {
+  margin-top: 6px;
+}
 .row-type-select {
   font-size: 12px;
   padding: 3px 6px;

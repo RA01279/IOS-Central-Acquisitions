@@ -10,6 +10,33 @@ export const dynamic = "force-dynamic";
 
 const TYPE_ORDER = ["broker", "owner_user", "institutional_owner", "tenant", "other"];
 
+function PersonCard({ c }: { c: any }) {
+  return (
+    <div className="contact-card">
+      <div className="contact-card-head">
+        <Link href={`/contacts/${c.id}`} className="contact-card-name">
+          {c.name}
+        </Link>
+        <ContactDeleteButton contactId={c.id} name={c.name} />
+      </div>
+      <div className="contact-card-line muted">
+        {[c.title, c.companies?.name].filter(Boolean).join(" · ") || "no company"}
+      </div>
+      <div className="contact-card-line">
+        {c.email ? (
+          <a href={`mailto:${c.email}`}>{c.email}</a>
+        ) : (
+          <span className="muted">no email</span>
+        )}
+      </div>
+      <div className="contact-card-line muted">{c.phone || "no phone"}</div>
+      <div className="contact-card-foot">
+        <ContactTypeSelect contactId={c.id} contactType={c.contact_type ?? null} />
+      </div>
+    </div>
+  );
+}
+
 export default async function ContactsPage({
   searchParams,
 }: {
@@ -99,47 +126,23 @@ export default async function ContactsPage({
           {visiblePeople.length === 0 ? (
             <p className="muted">No people{typeFilter || q ? " match" : " yet"}.</p>
           ) : (
-            <div className="contact-table">
-              <div className="contact-row contact-row-6 contact-row-head">
-                <span>Name</span>
-                <span>Type</span>
-                <span>Company</span>
-                <span>Email</span>
-                <span>Phone</span>
-                <span></span>
+            <>
+              <div className="contact-cards">
+                {visiblePeople.slice(0, 24).map((c: any) => (
+                  <PersonCard key={c.id} c={c} />
+                ))}
               </div>
-              {visiblePeople.map((c: any) => (
-                <div key={c.id} className="contact-row contact-row-6">
-                  <span>
-                    <Link href={`/contacts/${c.id}`}>
-                      <strong>{c.name}</strong>
-                    </Link>
-                    {c.title && <span className="muted"> · {c.title}</span>}
-                  </span>
-                  <span>
-                    <ContactTypeSelect contactId={c.id} contactType={c.contact_type ?? null} />
-                  </span>
-                  <span>
-                    {c.companies?.name ? (
-                      <Link href={`/companies/${c.companies.id}`}>{c.companies.name}</Link>
-                    ) : (
-                      <span className="muted contact-unassigned">no company</span>
-                    )}
-                  </span>
-                  <span>
-                    {c.email ? (
-                      <a href={`mailto:${c.email}`}>{c.email}</a>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </span>
-                  <span>{c.phone || <span className="muted">—</span>}</span>
-                  <span>
-                    <ContactDeleteButton contactId={c.id} name={c.name} />
-                  </span>
-                </div>
-              ))}
-            </div>
+              {visiblePeople.length > 24 && (
+                <details className="show-more">
+                  <summary>Show all {visiblePeople.length} ({visiblePeople.length - 24} more)</summary>
+                  <div className="contact-cards" style={{ marginTop: 12 }}>
+                    {visiblePeople.slice(24).map((c: any) => (
+                      <PersonCard key={c.id} c={c} />
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
           )}
         </section>
 
@@ -153,34 +156,27 @@ export default async function ContactsPage({
               you add a contact with a new firm.
             </p>
           ) : (
-            <div className="contact-table">
-              <div className="contact-row contact-row-3 contact-row-head">
-                <span>Company</span>
-                <span>Type</span>
-                <span>People</span>
-              </div>
+            <div className="contact-cards">
               {visibleCompanies.map((c: any) => {
                 const members = peopleAt(c.id);
                 return (
-                  <div key={c.id} className="contact-row contact-row-3">
-                    <span>
-                      <Link href={`/companies/${c.id}`}>
-                        <strong>{c.name}</strong>
+                  <div key={c.id} className="contact-card">
+                    <div className="contact-card-head">
+                      <Link href={`/companies/${c.id}`} className="contact-card-name">
+                        {c.name}
                       </Link>
-                    </span>
-                    <span>
                       <span className="doc-type">
                         {CONTACT_TYPE_LABELS[companyType(c)] ?? c.company_type}
                       </span>
-                    </span>
-                    <span className="muted">
+                    </div>
+                    <div className="contact-card-line muted">
                       {members.length === 0
-                        ? "—"
+                        ? "No people yet"
                         : members
                             .slice(0, 3)
                             .map((m: any) => m.name)
                             .join(", ") + (members.length > 3 ? ` +${members.length - 3}` : "")}
-                    </span>
+                    </div>
                   </div>
                 );
               })}
