@@ -112,8 +112,9 @@ export default async function DashboardPage() {
     supabase.from("activities").select("activity_type").gte("occurred_at", thirtyDaysAgo),
     supabase
       .from("offers")
-      .select("id, price, offered_at, deals(id, deal_type, properties(address, lot_sf))")
-      .order("offered_at", { ascending: false }),
+      .select("id, price, offered_at, created_at, deals(id, deal_type, properties(address, lot_sf))")
+      .order("offered_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false }),
   ]);
 
   const deals = dealsRes.data ?? [];
