@@ -466,6 +466,42 @@ a.stat-tile:hover {
   text-decoration: underline;
 }
 
+/* Count pill (generic -- pipeline columns have their own scoped copy) */
+.count {
+  background: var(--border);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+/* Filter chips */
+.filter-chips {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.chip {
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  font-size: 13px;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--panel);
+}
+.chip:hover {
+  border-color: var(--accent-2);
+}
+.chip-active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
 /* Contacts list */
 .contact-table {
   display: flex;

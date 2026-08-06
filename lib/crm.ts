@@ -101,11 +101,29 @@ export async function getCompanyWithRelations(companyId: string) {
 export type ContactType = "broker" | "owner_user" | "institutional_owner" | "tenant" | "other";
 
 export const CONTACT_TYPE_LABELS: Record<string, string> = {
-  broker: "Brokers",
-  owner_user: "Owner Users",
-  institutional_owner: "Institutional Owners",
-  tenant: "Tenants",
+  broker: "Broker",
+  owner_user: "Owner User",
+  institutional_owner: "Institutional Owner",
+  tenant: "Tenant",
   other: "Other",
+};
+
+// A company created through a contact inherits the contact's category, and a
+// contact added to a typed company inherits the company's. These two maps
+// translate between the contact taxonomy and the companies.company_type enum.
+export const CONTACT_TO_COMPANY_TYPE: Record<string, CompanyType> = {
+  broker: "broker",
+  tenant: "tenant",
+  owner_user: "landlord",
+  institutional_owner: "landlord",
+  other: "other",
+};
+export const COMPANY_TO_CONTACT_TYPE: Record<string, ContactType> = {
+  broker: "broker",
+  tenant: "tenant",
+  landlord: "institutional_owner",
+  jv_partner: "other",
+  other: "other",
 };
 
 export async function listContacts(search?: string) {

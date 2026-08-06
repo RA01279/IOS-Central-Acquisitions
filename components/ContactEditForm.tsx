@@ -49,7 +49,6 @@ export default function ContactEditForm({
           address: form.get("address"),
           companyId: companyChoice && companyChoice !== NEW_COMPANY ? companyChoice : undefined,
           newCompanyName: companyChoice === NEW_COMPANY ? form.get("newCompanyName") : undefined,
-          newCompanyType: companyChoice === NEW_COMPANY ? form.get("newCompanyType") : undefined,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Save failed");
@@ -122,22 +121,10 @@ export default function ContactEditForm({
           <input name="title" defaultValue={contact.title ?? ""} />
         </label>
         {companyChoice === NEW_COMPANY && (
-          <>
-            <label>
-              New company name *
-              <input name="newCompanyName" required />
-            </label>
-            <label>
-              Company type
-              <select name="newCompanyType" defaultValue="broker">
-                <option value="broker">Broker</option>
-                <option value="landlord">Landlord</option>
-                <option value="tenant">Tenant</option>
-                <option value="jv_partner">JV partner</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-          </>
+          <label>
+            New company name *
+            <input name="newCompanyName" required />
+          </label>
         )}
         <label>
           Email

@@ -5,42 +5,52 @@ import { getCurrentUser } from "@/lib/auth";
 import { parseReturnsSummary } from "@/lib/excel-parser";
 
 // POST /api/deals/[id]/versions
-// multipart/form-data with an "excel" file field. Reads the workbook's
-// "Summary Table" tab, stores the raw file, and appends a new version
-// row -- never overwrites a prior version.
+// body: { storagePath, fileName } -- the browser has ALREADY uploaded the
+// workbook straight to Supabase Storage via a signed URL (see ../upload-url;
+// Vercel's ~4.5MB request cap made multipart uploads through this route 413
+// on real underwriting models). This route downloads it from storage, reads
+// the "Summary Table" tab, and appends a version row -- never overwrites a
+// prior version.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const form = await req.formData();
-  const file = form.get("excel") as File | null;
-  if (!file) {
-    return NextResponse.json({ error: "Missing excel file" }, { status: 400 });
+  const body = await req.json();
+  if (!body.storagePath) {
+    return NextResponse.json({ error: "Missing storagePath" }, { status: 400 });
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const supabase = getServiceClient();
+
+  const { data: fileData, error: dlError } = await supabase.storage
+    .from("documents")
+    .download(body.storagePath);
+  if (dlError || !fileData) {
+    return NextResponse.json(
+      { error: `Could not read uploaded file: ${dlError?.message ?? "not found"}` },
+      { status: 500 }
+    );
+  }
+  const buffer = Buffer.from(await fileData.arrayBuffer());
 
   let returnsSummary;
   try {
     returnsSummary = await parseReturnsSummary(buffer);
   } catch (err: any) {
-    // Don't silently fail the whole upload -- surface the specific
-    // problem (e.g. missing "Summary Table" tab) so the analyst knows
-    // this isn't a standard-template file.
+    // Don't silently fail the whole upload -- surface the specific problem
+    // (e.g. missing "Summary Table" tab) so the analyst knows this isn't a
+    // standard-template file. The file stays in storage either way.
     return NextResponse.json({ error: `Could not read workbook: ${err.message}` }, { status: 422 });
   }
 
-  const supabase = getServiceClient();
-
-  const storagePath = `deals/${params.id}/uw-${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage
-    .from("documents")
-    .upload(storagePath, buffer, { contentType: file.type });
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
-
   const { data: doc, error: docError } = await supabase
     .from("documents")
-    .insert({ deal_id: params.id, doc_type: "excel", storage_path: storagePath, uploaded_by: user.email })
+    .insert({
+      deal_id: params.id,
+      doc_type: "excel",
+      storage_path: body.storagePath,
+      uploaded_by: user.email,
+    })
     .select()
     .single();
   if (docError) return NextResponse.json({ error: docError.message }, { status: 500 });
@@ -91,8 +101,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await logDealEvent(params.id, "advanced_to_uw", { via: "model_upload" }, "system");
   }
 
-  // Surface parser warnings (e.g. #REF! errors, non-numeric cells) back
-  // to the analyst rather than burying them -- a version with a warning
-  // still saves, but the analyst should know a number might be missing.
+  // Surface parser warnings (e.g. #REF! errors, non-numeric cells) back to
+  // the analyst rather than burying them -- a version with a warning still
+  // saves, but the analyst should know a number might be missing.
   return NextResponse.json({ version, warnings: returnsSummary.warnings }, { status: 201 });
 }

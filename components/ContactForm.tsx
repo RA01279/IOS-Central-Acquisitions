@@ -3,24 +3,43 @@
 //
 // Add-contact form. First and last name are required, and every new contact
 // must be assigned to a company -- either picked from the list or created
-// inline (so assignment is never skipped for lack of a company record).
-// Email, phone, and address are nice-to-haves.
+// inline. Classification flows both ways: picking a typed company auto-fills
+// the contact's Type; creating a new company files it under the contact's
+// Type (a broker's firm becomes a broker company).
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 const NEW_COMPANY = "__new__";
 
+// companies.company_type -> contact classification
+const COMPANY_TO_CONTACT: Record<string, string> = {
+  broker: "broker",
+  tenant: "tenant",
+  landlord: "institutional_owner",
+  jv_partner: "other",
+  other: "other",
+};
+
 export default function ContactForm({
   companies,
 }: {
-  companies: { id: string; name: string }[];
+  companies: { id: string; name: string; company_type?: string | null }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [companyChoice, setCompanyChoice] = useState("");
+  const [typeChoice, setTypeChoice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function pickCompany(id: string) {
+    setCompanyChoice(id);
+    const co = companies.find((c) => c.id === id);
+    if (co?.company_type && COMPANY_TO_CONTACT[co.company_type]) {
+      setTypeChoice(COMPANY_TO_CONTACT[co.company_type]);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -34,19 +53,19 @@ export default function ContactForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          contactType: form.get("contactType"),
+          contactType: typeChoice,
           email: form.get("email") || undefined,
           phone: form.get("phone") || undefined,
           title: form.get("title") || undefined,
           address: form.get("address") || undefined,
           companyId: companyChoice !== NEW_COMPANY ? companyChoice : undefined,
           newCompanyName: companyChoice === NEW_COMPANY ? form.get("newCompanyName") : undefined,
-          newCompanyType: companyChoice === NEW_COMPANY ? form.get("newCompanyType") : undefined,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to add contact");
       setOpen(false);
       setCompanyChoice("");
+      setTypeChoice("");
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -71,25 +90,12 @@ export default function ContactForm({
           <input name="lastName" required />
         </label>
         <label>
-          Type *
-          <select name="contactType" required defaultValue="">
-            <option value="" disabled>
-              Classify…
-            </option>
-            <option value="broker">Broker</option>
-            <option value="owner_user">Owner User</option>
-            <option value="institutional_owner">Institutional Owner</option>
-            <option value="tenant">Tenant</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
-        <label>
           Company *
           <select
             name="companyId"
             required
             value={companyChoice}
-            onChange={(e) => setCompanyChoice(e.target.value)}
+            onChange={(e) => pickCompany(e.target.value)}
           >
             <option value="" disabled>
               Select…
@@ -103,27 +109,33 @@ export default function ContactForm({
           </select>
         </label>
         <label>
+          Type *
+          <select
+            name="contactType"
+            required
+            value={typeChoice}
+            onChange={(e) => setTypeChoice(e.target.value)}
+          >
+            <option value="" disabled>
+              Classify…
+            </option>
+            <option value="broker">Broker</option>
+            <option value="owner_user">Owner User</option>
+            <option value="institutional_owner">Institutional Owner</option>
+            <option value="tenant">Tenant</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        {companyChoice === NEW_COMPANY && (
+          <label>
+            New company name *
+            <input name="newCompanyName" required />
+          </label>
+        )}
+        <label>
           Title
           <input name="title" />
         </label>
-        {companyChoice === NEW_COMPANY && (
-          <>
-            <label>
-              New company name *
-              <input name="newCompanyName" required />
-            </label>
-            <label>
-              Company type
-              <select name="newCompanyType" defaultValue="broker">
-                <option value="broker">Broker</option>
-                <option value="landlord">Landlord</option>
-                <option value="tenant">Tenant</option>
-                <option value="jv_partner">JV partner</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-          </>
-        )}
         <label>
           Email
           <input name="email" type="email" />
@@ -133,6 +145,9 @@ export default function ContactForm({
           <input name="phone" />
         </label>
       </div>
+      {companyChoice === NEW_COMPANY && (
+        <p className="hint">The new company will be filed under the contact's type.</p>
+      )}
       <label>
         Address
         <input name="address" placeholder="Street, city, state, zip" />

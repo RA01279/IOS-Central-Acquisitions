@@ -1,6 +1,12 @@
 // app/api/contacts/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createContact, createCompany, listContacts } from "@/lib/crm";
+import {
+  createContact,
+  createCompany,
+  listContacts,
+  CONTACT_TO_COMPANY_TYPE,
+  COMPANY_TO_CONTACT_TYPE,
+} from "@/lib/crm";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -25,11 +31,14 @@ export async function POST(req: NextRequest) {
   if (!body.name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
   try {
-    // Inline company creation from the contact form: find an existing
-    // company by that name (case-insensitive) or create it.
+    const supabase = getServiceClient();
     let companyId = body.companyId;
+    let contactType = body.contactType || null;
+
+    // Inline company creation: the new company inherits the CONTACT's
+    // category (a broker's firm is a broker company, a tenant's a tenant
+    // company).
     if (!companyId && body.newCompanyName) {
-      const supabase = getServiceClient();
       const { data: existing } = await supabase
         .from("companies")
         .select("id")
@@ -40,13 +49,24 @@ export async function POST(req: NextRequest) {
         ? existing.id
         : (await createCompany({
             name: String(body.newCompanyName).trim(),
-            companyType: body.newCompanyType ?? "other",
+            companyType: CONTACT_TO_COMPANY_TYPE[contactType ?? "other"] ?? "other",
           })).id;
+    }
+
+    // Existing company picked but no type chosen -> the contact inherits the
+    // company's category.
+    if (companyId && !contactType) {
+      const { data: co } = await supabase
+        .from("companies")
+        .select("company_type")
+        .eq("id", companyId)
+        .single();
+      if (co?.company_type) contactType = COMPANY_TO_CONTACT_TYPE[co.company_type] ?? null;
     }
 
     const contact = await createContact({
       name: body.name,
-      contactType: body.contactType,
+      contactType,
       email: body.email,
       phone: body.phone,
       title: body.title,

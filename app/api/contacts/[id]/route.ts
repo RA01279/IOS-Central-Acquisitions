@@ -2,7 +2,7 @@
 // Edit (PATCH) or delete a contact. All fields editable, including
 // classification and company (with inline company creation).
 import { NextRequest, NextResponse } from "next/server";
-import { createCompany } from "@/lib/crm";
+import { createCompany, CONTACT_TO_COMPANY_TYPE } from "@/lib/crm";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ? existing.id
         : (await createCompany({
             name: String(body.newCompanyName).trim(),
-            companyType: body.newCompanyType ?? "other",
+            companyType: CONTACT_TO_COMPANY_TYPE[body.contactType ?? "other"] ?? "other",
           })).id;
     }
 
