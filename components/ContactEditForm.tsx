@@ -47,7 +47,7 @@ export default function ContactEditForm({
           email: form.get("email"),
           phone: form.get("phone"),
           address: form.get("address"),
-          companyId: companyChoice && companyChoice !== NEW_COMPANY ? companyChoice : undefined,
+          companyId: companyChoice === NEW_COMPANY ? undefined : companyChoice || null,
           newCompanyName: companyChoice === NEW_COMPANY ? form.get("newCompanyName") : undefined,
         }),
       });

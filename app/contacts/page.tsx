@@ -3,6 +3,7 @@ import { listCompanies, listContacts, CONTACT_TYPE_LABELS, COMPANY_TO_CONTACT_TY
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import ContactForm from "@/components/ContactForm";
+import { ContactTypeSelect, ContactDeleteButton } from "@/components/ContactRowActions";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -99,15 +100,16 @@ export default async function ContactsPage({
             <p className="muted">No people{typeFilter || q ? " match" : " yet"}.</p>
           ) : (
             <div className="contact-table">
-              <div className="contact-row contact-row-5 contact-row-head">
+              <div className="contact-row contact-row-6 contact-row-head">
                 <span>Name</span>
                 <span>Type</span>
                 <span>Company</span>
                 <span>Email</span>
                 <span>Phone</span>
+                <span></span>
               </div>
               {visiblePeople.map((c: any) => (
-                <div key={c.id} className="contact-row contact-row-5">
+                <div key={c.id} className="contact-row contact-row-6">
                   <span>
                     <Link href={`/contacts/${c.id}`}>
                       <strong>{c.name}</strong>
@@ -115,11 +117,7 @@ export default async function ContactsPage({
                     {c.title && <span className="muted"> · {c.title}</span>}
                   </span>
                   <span>
-                    {c.contact_type ? (
-                      <span className="doc-type">{CONTACT_TYPE_LABELS[c.contact_type] ?? c.contact_type}</span>
-                    ) : (
-                      <span className="muted contact-unassigned">unclassified</span>
-                    )}
+                    <ContactTypeSelect contactId={c.id} contactType={c.contact_type ?? null} />
                   </span>
                   <span>
                     {c.companies?.name ? (
@@ -136,6 +134,9 @@ export default async function ContactsPage({
                     )}
                   </span>
                   <span>{c.phone || <span className="muted">—</span>}</span>
+                  <span>
+                    <ContactDeleteButton contactId={c.id} name={c.name} />
+                  </span>
                 </div>
               ))}
             </div>

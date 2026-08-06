@@ -30,17 +30,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           })).id;
     }
 
+    // Partial update: only fields present in the request change. Lets the
+    // list-row controls send just { contactType } without nulling the rest.
+    const update: Record<string, unknown> = {};
+    if ("name" in body) update.name = body.name;
+    if ("contactType" in body) update.contact_type = body.contactType || null;
+    if ("title" in body) update.title = body.title || null;
+    if ("email" in body) update.email = body.email || null;
+    if ("phone" in body) update.phone = body.phone || null;
+    if ("address" in body) update.address = body.address || null;
+    if ("companyId" in body || body.newCompanyName) {
+      update.company_id = companyId ?? null;
+    }
+
     const { data, error } = await supabase
       .from("contacts")
-      .update({
-        name: body.name,
-        contact_type: body.contactType ?? null,
-        title: body.title || null,
-        email: body.email || null,
-        phone: body.phone || null,
-        address: body.address || null,
-        company_id: companyId,
-      })
+      .update(update)
       .eq("id", params.id)
       .select()
       .single();

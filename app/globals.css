@@ -609,6 +609,21 @@ a.stat-tile:hover {
 .contact-row-3 {
   grid-template-columns: 1.8fr 1fr 2.5fr;
 }
+.contact-row-6 {
+  grid-template-columns: 1.8fr 1.1fr 1.4fr 1.7fr 1fr 28px;
+}
+.row-type-select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--ink);
+  background: var(--panel);
+  max-width: 100%;
+}
+.contact-row-delete {
+  position: static;
+}
 .contact-row:last-child {
   border-bottom: none;
 }
