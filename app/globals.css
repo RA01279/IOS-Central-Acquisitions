@@ -306,6 +306,26 @@ fieldset {
   font-size: 13px;
   font-style: italic;
 }
+.stage-age {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.stage-age-old {
+  color: var(--warn-text);
+}
+.pipeline-more summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent-2);
+  padding: 4px 0;
+}
+.pipeline-more summary:hover {
+  text-decoration: underline;
+}
+.pipeline-more .pipeline-cards {
+  margin-top: 8px;
+}
 
 /* Truncated lists */
 .show-more {
