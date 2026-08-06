@@ -1,15 +1,17 @@
 "use client";
 // components/CompanyForm.tsx
 //
-// Inline add-company form for the Contacts page. Collapsed to a button until
-// opened, so the page stays scannable.
+// Standalone add-company form -- for firms that exist before any person at
+// them (e.g. an institutional owner you're tracking). Types use the team's
+// contact taxonomy; institutional owners are stored as company_type
+// 'landlord' under the hood.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 const COMPANY_TYPES = [
   { value: "broker", label: "Broker" },
-  { value: "landlord", label: "Landlord" },
+  { value: "landlord", label: "Institutional owner" },
   { value: "tenant", label: "Tenant" },
   { value: "jv_partner", label: "JV partner" },
   { value: "other", label: "Other" },
@@ -57,12 +59,15 @@ export default function CompanyForm() {
     <form onSubmit={handleSubmit} className="inline-add-form">
       <div className="grid-2">
         <label>
-          Company name
+          Company name *
           <input name="name" required autoFocus />
         </label>
         <label>
-          Type
-          <select name="companyType" defaultValue="broker">
+          Type *
+          <select name="companyType" required defaultValue="">
+            <option value="" disabled>
+              Classify…
+            </option>
             {COMPANY_TYPES.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
@@ -72,7 +77,7 @@ export default function CompanyForm() {
         </label>
       </div>
       {error && <p className="error">{error}</p>}
-      <div className="stage-actions">
+      <div className="stage-actions" style={{ marginBottom: 0 }}>
         <button type="submit" disabled={submitting}>
           {submitting ? "Adding…" : "Add company"}
         </button>
