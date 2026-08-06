@@ -131,8 +131,15 @@ export async function GET(req: NextRequest) {
   }
 
   // --- send via whichever provider is configured -------------------------------
-  if (process.env.REMINDER_WEBHOOK_URL) {
-    const res = await fetch(process.env.REMINDER_WEBHOOK_URL, {
+  // Webhook URL comes from app_settings (writable without a redeploy) or env.
+  const { data: setting } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "reminder_webhook_url")
+    .maybeSingle();
+  const webhookUrl = setting?.value ?? process.env.REMINDER_WEBHOOK_URL;
+  if (webhookUrl) {
+    const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: recipients.join(";"), subject, html }),
