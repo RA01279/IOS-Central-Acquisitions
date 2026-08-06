@@ -594,10 +594,20 @@ a.stat-tile:hover {
   display: grid;
   grid-template-columns: 2fr 1.5fr 1.7fr 1fr;
   gap: 12px;
-  padding: 9px 4px;
+  padding: 9px 6px;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
   align-items: baseline;
+  border-radius: 6px;
+}
+.contact-row:not(.contact-row-head):hover {
+  background: var(--bg);
+}
+.contact-row-5 {
+  grid-template-columns: 1.8fr 1fr 1.4fr 1.7fr 1fr;
+}
+.contact-row-3 {
+  grid-template-columns: 1.8fr 1fr 2.5fr;
 }
 .contact-row:last-child {
   border-bottom: none;
