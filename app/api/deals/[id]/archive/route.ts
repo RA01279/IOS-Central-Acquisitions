@@ -13,12 +13,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const supabase = getServiceClient();
 
   if (body.action === "archive") {
-    const { error } = await supabase
-      .from("deals")
-      .update({ stage: "archived", death_stage: body.stage, death_reason: body.reason })
-      .eq("id", params.id);
+    // Targeting is captured AT archive time (score 0 = never a target), so
+    // deals don't have to be hunted down later to classify them.
+    const update: Record<string, unknown> = {
+      stage: "archived",
+      death_stage: body.stage,
+      death_reason: body.reason,
+    };
+    if (body.disposition) update.disposition = body.disposition;
+    if (body.pursuitScore !== undefined && body.pursuitScore !== null && body.pursuitScore !== "") {
+      update.pursuit_score = Number(body.pursuitScore);
+    }
+    if (body.followUpOn) update.follow_up_on = body.followUpOn;
+
+    const { error } = await supabase.from("deals").update(update).eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logDealEvent(params.id, "archived", { stage: body.stage, reason: body.reason }, user.email);
+    await logDealEvent(
+      params.id,
+      "archived",
+      {
+        stage: body.stage,
+        reason: body.reason,
+        score: update.pursuit_score ?? null,
+        follow_up: body.followUpOn ?? null,
+      },
+      user.email
+    );
     return NextResponse.json({ ok: true });
   }
 

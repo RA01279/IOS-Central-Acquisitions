@@ -22,6 +22,9 @@ export default function StageActions({
   const [error, setError] = useState<string | null>(null);
   const [showArchive, setShowArchive] = useState(false);
   const [archiveReason, setArchiveReason] = useState("");
+  const [disposition, setDisposition] = useState("");
+  const [pursuitScore, setPursuitScore] = useState("");
+  const [followUpOn, setFollowUpOn] = useState("");
 
   async function callAction(action: string, extra: Record<string, unknown> = {}) {
     setBusy(action);
@@ -51,7 +54,14 @@ export default function StageActions({
       const res = await fetch(`/api/deals/${dealId}/archive`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "archive", stage, reason: archiveReason }),
+        body: JSON.stringify({
+          action: "archive",
+          stage,
+          reason: archiveReason,
+          disposition: disposition || undefined,
+          pursuitScore: pursuitScore === "" ? undefined : Number(pursuitScore),
+          followUpOn: pursuitScore !== "0" && followUpOn ? followUpOn : undefined,
+        }),
       });
       if (!res.ok) {
         const body = await res.json();
@@ -114,18 +124,57 @@ export default function StageActions({
               Archive
             </button>
           ) : (
-            <div className="archive-panel">
-              <input
-                placeholder="Reason (short)"
-                value={archiveReason}
-                onChange={(e) => setArchiveReason(e.target.value)}
-              />
-              <button onClick={handleArchive} disabled={busy !== null}>
-                {busy === "archive" ? "Archiving…" : "Confirm archive"}
-              </button>
-              <button className="secondary" onClick={() => setShowArchive(false)}>
-                Cancel
-              </button>
+            <div className="inline-add-form" style={{ width: "100%" }}>
+              <div className="grid-2">
+                <label>
+                  Reason
+                  <input
+                    placeholder="e.g. seller not ready, lost to another buyer"
+                    value={archiveReason}
+                    onChange={(e) => setArchiveReason(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Why it's parked
+                  <select value={disposition} onChange={(e) => setDisposition(e.target.value)}>
+                    <option value="">—</option>
+                    <option value="not_selling">Not selling (yet)</option>
+                    <option value="lost">Lost to another buyer</option>
+                    <option value="passed">We passed</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  Target score
+                  <select value={pursuitScore} onChange={(e) => setPursuitScore(e.target.value)}>
+                    <option value="">— unscored —</option>
+                    <option value="5">5 — Must have (white whale)</option>
+                    <option value="4">4 — Want it</option>
+                    <option value="3">3 — Would take it</option>
+                    <option value="2">2 — Marginal</option>
+                    <option value="1">1 — Only at a steal</option>
+                    <option value="0">0 — Never a target</option>
+                  </select>
+                </label>
+                {pursuitScore !== "0" && (
+                  <label>
+                    Follow up on
+                    <input
+                      type="date"
+                      value={followUpOn}
+                      onChange={(e) => setFollowUpOn(e.target.value)}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="stage-actions" style={{ marginBottom: 0 }}>
+                <button onClick={handleArchive} disabled={busy !== null}>
+                  {busy === "archive" ? "Archiving…" : "Confirm archive"}
+                </button>
+                <button className="secondary" onClick={() => setShowArchive(false)}>
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </>

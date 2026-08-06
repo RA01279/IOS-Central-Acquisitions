@@ -23,6 +23,7 @@ const SCORES = [
   { value: "3", label: "3 — Would take it" },
   { value: "2", label: "2 — Marginal" },
   { value: "1", label: "1 — Only at a steal" },
+  { value: "0", label: "0 — Never a target" },
 ];
 
 export default function TargetingPanel({

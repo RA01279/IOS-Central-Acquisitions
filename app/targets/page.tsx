@@ -41,10 +41,12 @@ export default async function TargetsPage({
   const { data: deals } = await query;
 
   const today = new Date().toISOString().slice(0, 10);
-  const all = deals ?? [];
+  // 0-star = "never a target": permanently excluded from the target lists
+  // (still browsable via the Show-entire-archive toggle).
+  const all = (deals ?? []).filter((d: any) => showAll || d.pursuit_score !== 0);
 
   const due = all
-    .filter((d: any) => d.follow_up_on && d.follow_up_on <= today)
+    .filter((d: any) => d.follow_up_on && d.follow_up_on <= today && d.pursuit_score !== 0)
     .sort((a: any, b: any) => (a.follow_up_on ?? "").localeCompare(b.follow_up_on ?? ""));
   const dueIds = new Set(due.map((d: any) => d.id));
   const rest = all

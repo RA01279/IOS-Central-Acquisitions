@@ -94,8 +94,15 @@ export default async function DashboardPage() {
   );
 
   // Targets: archived acquisitions with a follow-up date that has arrived.
+  // 0-star ("never a target") deals are excluded.
   const targetsDue = archived
-    .filter((d: any) => d.deal_type === "acquisition" && d.follow_up_on && d.follow_up_on <= today)
+    .filter(
+      (d: any) =>
+        d.deal_type === "acquisition" &&
+        d.follow_up_on &&
+        d.follow_up_on <= today &&
+        d.pursuit_score !== 0
+    )
     .sort((a: any, b: any) => (a.follow_up_on ?? "").localeCompare(b.follow_up_on ?? ""));
   const scoredTargets = archived.filter(
     (d: any) => d.deal_type === "acquisition" && (d.pursuit_score || d.disposition || d.follow_up_on)
