@@ -72,7 +72,8 @@ sub(
   "{rent_phrase}, Triple Net (NNN),"
 );
 
-sub("19,928 SF&", "{building_sf} SF &", { label: "SF& typo fix" });
+// Fix the original letter's "19,928 SF& 4.68" spacing in one shot.
+sub("19,928 SF& 4.68", "{building_sf} SF & {acres}", { label: "SF & acres spacing" });
 sub("19,928", "{building_sf}", { all: true });
 sub("4.68", "{acres}", { all: true });
 sub("3-year", "{lease_term_years}-year", { all: true });
