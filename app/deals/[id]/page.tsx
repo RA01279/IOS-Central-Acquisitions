@@ -75,8 +75,10 @@ export default async function DealDetailPage({ params }: { params: { id: string 
   const stageIdx = (ACQUISITION_STAGES as readonly string[]).indexOf(deal.stage);
   const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : null;
 
-  // LOI prefill priority: saved terms from a prior LOI on this deal -> live
-  // deal data -> standing defaults. Date always starts at today.
+  // LOI prefill priority: LIVE DEAL DATA WINS for everything Hopper owns
+  // (latest offer price, property facts, linked contacts) -- update the deal
+  // and the next LOI follows. Saved terms from a prior LOI only fill fields
+  // Hopper has no source for (deposit, periods, rate...). Date always today.
   const saved = (deal.loi_terms ?? {}) as Record<string, string>;
   const latestOffer = [...(deal.offers ?? [])].sort((a: any, b: any) =>
     (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
@@ -88,22 +90,25 @@ export default async function DealDetailPage({ params }: { params: { id: string 
     date: new Date().toISOString().slice(0, 10),
     tel: saved.tel ?? "(912) 508-4170",
     attn:
+      (brokerLink ? `${brokerLink.name}${brokerFirm ? `, ${brokerFirm}` : ""}` : null) ??
       saved.attn ??
-      (brokerLink ? `${brokerLink.name}${brokerFirm ? `, ${brokerFirm}` : ""}` : ""),
-    sellerClause: saved.sellerClause ?? (sellerLink?.name ?? "its current ownership"),
+      "",
+    sellerClause: sellerLink?.name ?? saved.sellerClause ?? "its current ownership",
     propertyDescription:
-      saved.propertyDescription ??
-      [deal.properties?.address, deal.properties?.city].filter(Boolean).join(", "),
+      [deal.properties?.address, deal.properties?.city].filter(Boolean).join(", ") ||
+      (saved.propertyDescription ?? ""),
     price:
+      (latestOffer?.price ? Math.round(latestOffer.price).toLocaleString("en-US") : null) ??
       saved.price ??
-      (latestOffer?.price ? Math.round(latestOffer.price).toLocaleString("en-US") : ""),
+      "",
     depositWords: saved.depositWords ?? "",
     depositAmount: saved.depositAmount ?? "",
     ddDays: saved.ddDays ?? "Sixty (60)",
-    closingDays: saved.closingDays ?? "thirty (30)",
+    closingDays: saved.closingDays ?? "Thirty (30)",
     brokerClauseName:
+      (brokerLink ? `${brokerLink.name}${brokerFirm ? ` of ${brokerFirm}` : ""}` : null) ??
       saved.brokerClauseName ??
-      (brokerLink ? `${brokerLink.name}${brokerFirm ? ` of ${brokerFirm}` : ""}` : ""),
+      "",
     commissionPayer: saved.commissionPayer ?? "Seller",
     signer1Name: saved.signer1Name ?? "John Lettieri",
     signer1Title: saved.signer1Title ?? "Market Officer | Central",
@@ -114,19 +119,21 @@ export default async function DealDetailPage({ params }: { params: { id: string 
     senderEmail: saved.senderEmail ?? "randerson@dalfen.com",
     expiryDate:
       saved.expiryDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-    sellerName: saved.sellerName ?? (sellerLink?.name ?? ""),
-    brokerFirm: saved.brokerFirm ?? (brokerFirm ?? ""),
-    brokerAddress1: saved.brokerAddress1 ?? (brokerLink?.address ?? ""),
+    sellerName: sellerLink?.name ?? saved.sellerName ?? "",
+    brokerFirm: brokerFirm ?? saved.brokerFirm ?? "",
+    brokerAddress1: brokerLink?.address ?? saved.brokerAddress1 ?? "",
     brokerAddress2: saved.brokerAddress2 ?? "",
     priceWords: saved.priceWords ?? "",
     buildingSf:
-      saved.buildingSf ??
       (deal.properties?.building_sf
         ? Math.round(deal.properties.building_sf).toLocaleString("en-US")
-        : ""),
+        : null) ??
+      saved.buildingSf ??
+      "",
     acres:
+      (deal.properties?.lot_sf ? (deal.properties.lot_sf / 43560).toFixed(2) : null) ??
       saved.acres ??
-      (deal.properties?.lot_sf ? (deal.properties.lot_sf / 43560).toFixed(2) : ""),
+      "",
     leaseTermYears: saved.leaseTermYears ?? "3",
     rentAmount: saved.rentAmount ?? "",
     rentBasis: saved.rentBasis ?? "total_monthly",
