@@ -2,7 +2,9 @@
 // Uploads the tagged LOI template to private Supabase Storage (bucket
 // "documents", path templates/loi-ios.docx). Kept OUT of the git repo on
 // purpose -- it's a company form document.
-//   node scripts/upload-loi-template.mjs <tagged.docx>
+//   node scripts/upload-loi-template.mjs <tagged.docx> [dest-path]
+//   dest-path defaults to templates/loi-ios.docx; use templates/loi-slb.docx
+//   for the sale-leaseback variant.
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
 
@@ -16,7 +18,8 @@ const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
 });
 
 const file = process.argv[2];
-if (!file) { console.error("usage: node upload-loi-template.mjs <tagged.docx>"); process.exit(1); }
+const dest = process.argv[3] ?? "templates/loi-ios.docx";
+if (!file) { console.error("usage: node upload-loi-template.mjs <tagged.docx> [dest-path]"); process.exit(1); }
 
 // Ensure the bucket exists (it's also used for deal uploads).
 const { data: buckets } = await supabase.storage.listBuckets();
@@ -29,9 +32,9 @@ if (!(buckets ?? []).some((b) => b.name === "documents")) {
 const buf = readFileSync(file);
 const { error } = await supabase.storage
   .from("documents")
-  .upload("templates/loi-ios.docx", buf, {
+  .upload(dest, buf, {
     contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     upsert: true,
   });
 if (error) throw error;
-console.log(`Uploaded templates/loi-ios.docx (${buf.length} bytes)`);
+console.log(`Uploaded ${dest} (${buf.length} bytes)`);

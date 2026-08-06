@@ -109,6 +109,28 @@ export default async function DealDetailPage({ params }: { params: { id: string 
     signer1Title: saved.signer1Title ?? "Market Officer | Central",
     signer2Name: saved.signer2Name ?? "Rhett Anderson",
     signer2Title: saved.signer2Title ?? "IOS Market Lead | Central",
+    // SLB variant fields. LOI type follows the deal's acquisition_type.
+    loiType: saved.loiType ?? (deal.acquisition_type === "slb" ? "slb" : "standard"),
+    senderEmail: saved.senderEmail ?? "randerson@dalfen.com",
+    expiryDate:
+      saved.expiryDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+    sellerName: saved.sellerName ?? (sellerLink?.name ?? ""),
+    brokerFirm: saved.brokerFirm ?? (brokerFirm ?? ""),
+    brokerAddress1: saved.brokerAddress1 ?? (brokerLink?.address ?? ""),
+    brokerAddress2: saved.brokerAddress2 ?? "",
+    priceWords: saved.priceWords ?? "",
+    buildingSf:
+      saved.buildingSf ??
+      (deal.properties?.building_sf
+        ? Math.round(deal.properties.building_sf).toLocaleString("en-US")
+        : ""),
+    acres:
+      saved.acres ??
+      (deal.properties?.lot_sf ? (deal.properties.lot_sf / 43560).toFixed(2) : ""),
+    leaseTermYears: saved.leaseTermYears ?? "3",
+    rentAmount: saved.rentAmount ?? "",
+    rentBasis: saved.rentBasis ?? "total_monthly",
+    escalations: saved.escalations ?? "3.5",
   };
 
   return (

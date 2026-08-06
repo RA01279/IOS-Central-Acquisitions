@@ -1,52 +1,48 @@
 "use client";
 // components/LoiPanel.tsx
 //
-// Generate LOI from a deal (UW stage onward). Fields prefill in priority
-// order: previously saved terms for this deal -> live deal data (offer
-// price, broker/seller contacts, address) -> standing defaults. Generating
-// saves every field back to the deal, so terms are typed once.
+// Generate LOI from a deal (UW stage onward), in two flavors:
+//   * Standard        -- straight purchase
+//   * Sale-leaseback  -- adds seller/broker address block, lease term,
+//                        rent (quotable per month / per acre / per building
+//                        SF monthly or annually), escalations, expiry date
+// Fields prefill: previously saved terms -> live deal data -> defaults.
+// Generating saves every field back to the deal.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export type LoiDefaults = {
-  date: string;
-  tel: string;
-  attn: string;
-  sellerClause: string;
-  propertyDescription: string;
-  price: string;
-  depositWords: string;
-  depositAmount: string;
-  ddDays: string;
-  closingDays: string;
-  brokerClauseName: string;
-  commissionPayer: string;
-  signer1Name: string;
-  signer1Title: string;
-  signer2Name: string;
-  signer2Title: string;
-};
+export type LoiDefaults = Record<string, string>;
+
+const FIELDS = [
+  "loiType", "date", "tel", "senderEmail", "attn", "sellerClause", "sellerName",
+  "brokerFirm", "brokerAddress1", "brokerAddress2", "propertyDescription",
+  "price", "priceWords", "buildingSf", "acres", "leaseTermYears", "rentAmount",
+  "rentBasis", "escalations", "expiryDate", "depositWords", "depositAmount",
+  "ddDays", "closingDays", "brokerClauseName", "commissionPayer",
+  "signer1Name", "signer1Title", "signer2Name", "signer2Title",
+];
 
 export default function LoiPanel({ dealId, defaults }: { dealId: string; defaults: LoiDefaults }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [loiType, setLoiType] = useState(defaults.loiType || "standard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isSlb = loiType === "slb";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     const form = new FormData(e.currentTarget);
-    const payload = Object.fromEntries(
-      [
-        "date", "tel", "attn", "sellerClause", "propertyDescription", "price",
-        "depositWords", "depositAmount", "ddDays", "closingDays",
-        "brokerClauseName", "commissionPayer",
-        "signer1Name", "signer1Title", "signer2Name", "signer2Title",
-      ].map((k) => [k, (form.get(k) as string) ?? ""])
-    );
+    const payload: Record<string, string> = { loiType };
+    for (const k of FIELDS) {
+      if (k === "loiType") continue;
+      const v = form.get(k);
+      if (v !== null) payload[k] = v as string;
+    }
     try {
       const res = await fetch(`/api/deals/${dealId}/loi`, {
         method: "POST",
@@ -54,7 +50,6 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "LOI generation failed");
-      // Trigger the browser download of the returned .docx.
       const blob = await res.blob();
       const cd = res.headers.get("Content-Disposition") ?? "";
       const fileName = /filename="([^"]+)"/.exec(cd)?.[1] ?? "LOI.docx";
@@ -65,7 +60,7 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
       a.click();
       URL.revokeObjectURL(url);
       setOpen(false);
-      router.refresh(); // documents list + activity trail update
+      router.refresh();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -87,6 +82,13 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
         <form onSubmit={handleSubmit}>
           <div className="grid-2">
             <label>
+              LOI type
+              <select value={loiType} onChange={(e) => setLoiType(e.target.value)}>
+                <option value="standard">Standard purchase</option>
+                <option value="slb">Sale-leaseback (SLB)</option>
+              </select>
+            </label>
+            <label>
               LOI date
               <input name="date" type="date" defaultValue={defaults.date} required />
             </label>
@@ -94,24 +96,83 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
               Market officer phone
               <input name="tel" defaultValue={defaults.tel} />
             </label>
+            {isSlb ? (
+              <label>
+                Sender email (letterhead)
+                <input name="senderEmail" defaultValue={defaults.senderEmail} />
+              </label>
+            ) : (
+              <label>
+                Seller (name, or leave as-is)
+                <input name="sellerClause" defaultValue={defaults.sellerClause} />
+              </label>
+            )}
             <label>
-              Attn (broker, firm)
+              Attn (broker contact)
               <input name="attn" defaultValue={defaults.attn} required />
             </label>
-            <label>
-              Seller (name, or leave as-is)
-              <input name="sellerClause" defaultValue={defaults.sellerClause} />
-            </label>
+            {isSlb && (
+              <label>
+                Seller / addressee company
+                <input name="sellerName" defaultValue={defaults.sellerName} required />
+              </label>
+            )}
           </div>
+
+          {isSlb && (
+            <div className="grid-2">
+              <label>
+                Broker firm
+                <input name="brokerFirm" defaultValue={defaults.brokerFirm} required />
+              </label>
+              <label>
+                Broker address line 1
+                <input name="brokerAddress1" defaultValue={defaults.brokerAddress1} />
+              </label>
+              <label>
+                Broker address line 2 (city, state, zip)
+                <input name="brokerAddress2" defaultValue={defaults.brokerAddress2} />
+              </label>
+              <label>
+                Offer expires on
+                <input name="expiryDate" type="date" defaultValue={defaults.expiryDate} />
+              </label>
+            </div>
+          )}
+
           <label>
             Property description
             <input name="propertyDescription" defaultValue={defaults.propertyDescription} required />
           </label>
+
           <div className="grid-2">
             <label>
               Price ($)
               <input name="price" defaultValue={defaults.price} required />
             </label>
+            {isSlb && (
+              <label>
+                Price in words
+                <input
+                  name="priceWords"
+                  defaultValue={defaults.priceWords}
+                  placeholder="e.g. Four Million, Two Hundred Thousand"
+                  required
+                />
+              </label>
+            )}
+            {isSlb && (
+              <>
+                <label>
+                  Building SF
+                  <input name="buildingSf" defaultValue={defaults.buildingSf} />
+                </label>
+                <label>
+                  Usable acres
+                  <input name="acres" defaultValue={defaults.acres} />
+                </label>
+              </>
+            )}
             <label>
               Deposit amount ($)
               <input name="depositAmount" defaultValue={defaults.depositAmount} required />
@@ -134,22 +195,52 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
             </label>
             <label>
               Due diligence period
-              <input name="ddDays" defaultValue={defaults.ddDays} placeholder='e.g. Sixty (60)' />
+              <input name="ddDays" defaultValue={defaults.ddDays} placeholder="e.g. Sixty (60)" />
             </label>
             <label>
               Closing (days after DD)
-              <input name="closingDays" defaultValue={defaults.closingDays} placeholder='e.g. thirty (30)' />
+              <input name="closingDays" defaultValue={defaults.closingDays} placeholder="e.g. thirty (30)" />
             </label>
           </div>
-          <label>
-            Broker clause (name of firm)
-            <input
-              name="brokerClauseName"
-              defaultValue={defaults.brokerClauseName}
-              placeholder="e.g. Jane Doe of XYZ Brokerage"
-              required
-            />
-          </label>
+
+          {isSlb && (
+            <div className="grid-2">
+              <label>
+                Leaseback term (years)
+                <input name="leaseTermYears" defaultValue={defaults.leaseTermYears} placeholder="e.g. 3" required />
+              </label>
+              <label>
+                Rent escalations (% / yr)
+                <input name="escalations" defaultValue={defaults.escalations} placeholder="e.g. 3.5" required />
+              </label>
+              <label>
+                Lease rate ($)
+                <input name="rentAmount" defaultValue={defaults.rentAmount} placeholder="e.g. 34,500 or 1.75" required />
+              </label>
+              <label>
+                Rate basis
+                <select name="rentBasis" defaultValue={defaults.rentBasis || "total_monthly"}>
+                  <option value="total_monthly">Total $ / month</option>
+                  <option value="per_acre_monthly">$ / acre / month</option>
+                  <option value="per_sf_monthly">$ / SF of building / month</option>
+                  <option value="per_sf_annual">$ / SF of building / year</option>
+                </select>
+              </label>
+            </div>
+          )}
+
+          {!isSlb && (
+            <label>
+              Broker clause (name of firm)
+              <input
+                name="brokerClauseName"
+                defaultValue={defaults.brokerClauseName}
+                placeholder="e.g. Jane Doe of XYZ Brokerage"
+                required
+              />
+            </label>
+          )}
+
           <div className="grid-2">
             <label>
               Signer 1

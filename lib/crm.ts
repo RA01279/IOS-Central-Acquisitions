@@ -227,7 +227,7 @@ export async function getDealContacts(dealId: string) {
   const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("deal_contacts")
-    .select("id, role, contacts(id, name, email, phone, title, companies(name))")
+    .select("id, role, contacts(id, name, email, phone, title, address, companies(name))")
     .eq("deal_id", dealId);
   if (error) throw error;
   return data ?? [];
