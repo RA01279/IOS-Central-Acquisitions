@@ -73,7 +73,9 @@ sub(
 );
 
 // Fix the original letter's "19,928 SF& 4.68" spacing in one shot.
-sub("19,928 SF& 4.68", "{building_sf} SF & {acres}", { label: "SF & acres spacing" });
+// NB: inserted text lives inside XML -- ampersands MUST be &amp; (a raw "&"
+// here once produced documents Word refused to open).
+sub("19,928 SF& 4.68", "{building_sf} SF &amp; {acres}", { label: "SF & acres spacing" });
 sub("19,928", "{building_sf}", { all: true });
 sub("4.68", "{acres}", { all: true });
 sub("3-year", "{lease_term_years}-year", { all: true });
@@ -114,6 +116,17 @@ sub("IOS Market Lead | Central", "{signer2_title}");
     xml = xml.slice(0, anchor) + tail.replace(re, ", {year}");
   } else {
     console.warn("WARN: acknowledgment year not found after Date:");
+  }
+}
+
+// XML well-formedness gate: any raw ampersand (not part of an entity) makes
+// a document Word cannot open. Fail loudly BEFORE writing.
+{
+  const badAmp = xml.match(/&(?!amp;|lt;|gt;|quot;|apos;|#)/);
+  if (badAmp) {
+    const at = xml.indexOf(badAmp[0]);
+    console.error(`FATAL: raw '&' at position ${at}: ...${xml.slice(at - 60, at + 30).replace(/</g, "‹")}...`);
+    process.exit(1);
   }
 }
 
