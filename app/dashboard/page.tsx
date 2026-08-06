@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 const STALE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_DEALS_PER_STAGE = 5;
+const WEEKS = 12;
 
 function daysAgo(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS);
@@ -19,21 +19,81 @@ function daysAgo(iso: string) {
 function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
 }
+// Bucket dates into trailing weeks, oldest first.
+function weeklyCounts(dates: (string | null)[], weeks = WEEKS): number[] {
+  const now = Date.now();
+  const buckets = Array(weeks).fill(0);
+  for (const d of dates) {
+    if (!d) continue;
+    const idx = Math.floor((now - new Date(d).getTime()) / (7 * DAY_MS));
+    if (idx >= 0 && idx < weeks) buckets[weeks - 1 - idx]++;
+  }
+  return buckets;
+}
 
-// A thin, directly-labeled magnitude bar. Single hue -- the count is the
-// label; no tooltip or legend needed.
-function CountBar({ label, count, max, href }: { label: string; count: number; max: number; href: string }) {
-  const pct = max > 0 ? Math.max((count / max) * 100, count > 0 ? 4 : 0) : 0;
+// Horizontal funnel: one centered bar per stage, width proportional to count.
+function Funnel({
+  rows,
+  boardHref,
+}: {
+  rows: { stage: string; count: number }[];
+  boardHref: string;
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.count));
   return (
-    <div className="bar-row">
-      <Link href={href} className="bar-label">
-        {label}
-      </Link>
-      <div className="bar-track">
-        <div className="bar-fill" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="bar-count">{count}</span>
+    <div className="funnel">
+      {rows.map((r, i) => {
+        const pct = Math.max((r.count / max) * 100, r.count > 0 ? 14 : 5);
+        return (
+          <Link key={r.stage} href={boardHref} className="funnel-row" title={`${STAGE_LABELS[r.stage]}: ${r.count}`}>
+            <span className="funnel-label">{STAGE_LABELS[r.stage] ?? r.stage}</span>
+            <span className="funnel-track">
+              <span
+                className="funnel-bar"
+                style={{ width: `${pct}%`, opacity: 0.45 + (i / Math.max(1, rows.length - 1)) * 0.55 }}
+              >
+                <span className="funnel-count">{r.count}</span>
+              </span>
+            </span>
+          </Link>
+        );
+      })}
     </div>
+  );
+}
+
+// 12-week bar chart, server-rendered SVG. Single hue, direct labels.
+function WeeklyBars({ values, color = "var(--accent-2)" }: { values: number[]; color?: string }) {
+  const W = 300;
+  const H = 72;
+  const max = Math.max(1, ...values);
+  const bw = W / values.length;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="weekly-bars" role="img">
+      {values.map((v, i) => {
+        const h = (v / max) * (H - 20);
+        const y = H - 4 - h;
+        return (
+          <g key={i}>
+            <rect
+              x={i * bw + 3}
+              y={v > 0 ? y : H - 6}
+              width={bw - 6}
+              height={v > 0 ? h : 2}
+              rx={3}
+              fill={color}
+              opacity={v > 0 ? 0.9 : 0.25}
+            />
+            {v > 0 && (
+              <text x={i * bw + bw / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="var(--muted)">
+                {v}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      <line x1="0" y1={H - 4} x2={W} y2={H - 4} stroke="var(--border)" strokeWidth="1" />
+    </svg>
   );
 }
 
@@ -46,45 +106,53 @@ export default async function DashboardPage() {
     supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, created_at, updated_at, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(created_at)"
+        "id, deal_type, stage, created_at, updated_at, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(event_type, created_at)"
       ),
     supabase.from("tasks").select("id, due_date").eq("status", "open"),
     supabase.from("activities").select("activity_type").gte("occurred_at", thirtyDaysAgo),
     supabase
       .from("offers")
-      .select("id, price, offered_at, created_by, deals(id, deal_type, properties(address, lot_sf))")
-      .order("offered_at", { ascending: false })
-      .limit(10),
+      .select("id, price, offered_at, deals(id, deal_type, properties(address, lot_sf))")
+      .order("offered_at", { ascending: false }),
   ]);
 
   const deals = dealsRes.data ?? [];
   const openTasks = tasksRes.data ?? [];
   const recentActivities = activitiesRes.data ?? [];
-  const recentOffers = offersRes.data ?? [];
+  const allOffers = offersRes.data ?? [];
 
   const active = deals.filter((d: any) => d.stage !== "archived");
   const archived = deals.filter((d: any) => d.stage === "archived");
   const acq = active.filter((d: any) => d.deal_type === "acquisition");
   const lease = active.filter((d: any) => d.deal_type === "lease");
 
-  const acqByStage = ACQUISITION_STAGES.map((s) => ({
+  const acqFunnel = ACQUISITION_STAGES.map((s) => ({
     stage: s,
-    deals: acq.filter((d: any) => d.stage === s),
+    count: acq.filter((d: any) => d.stage === s).length,
   }));
-  const leaseByStage = LEASE_STAGES.map((s) => ({
+  const leaseFunnel = LEASE_STAGES.map((s) => ({
     stage: s,
-    deals: lease.filter((d: any) => d.stage === s),
+    count: lease.filter((d: any) => d.stage === s).length,
   }));
-  const maxAcq = Math.max(1, ...acqByStage.map((r) => r.deals.length));
-  const maxLease = Math.max(1, ...leaseByStage.map((r) => r.deals.length));
 
-  // Stale = no event logged in STALE_DAYS (falls back to created_at when a
-  // deal has no events at all).
+  // Weekly velocity (all acquisitions entered, incl. since-archived ones).
+  const intakeWeekly = weeklyCounts(
+    deals.filter((d: any) => d.deal_type === "acquisition").map((d: any) => d.created_at)
+  );
+  const offersWeekly = weeklyCounts(allOffers.map((o: any) => o.offered_at));
+  const newThisWeek = deals.filter(
+    (d: any) => d.deal_type === "acquisition" && daysAgo(d.created_at) < 7
+  ).length;
+  const offersThisWeek = allOffers.filter(
+    (o: any) => o.offered_at && daysAgo(o.offered_at) < 7
+  ).length;
+  const offers30d = allOffers.filter((o: any) => o.offered_at && daysAgo(o.offered_at) < 30);
+  const offers30dTotal = offers30d.reduce((s: number, o: any) => s + (o.price ?? 0), 0);
+
   const stale = active
     .map((d: any) => {
       const lastEvent = (d.deal_events ?? []).map((e: any) => e.created_at).sort().pop();
-      const lastTouch = lastEvent ?? d.created_at;
-      return { ...d, staleDays: daysAgo(lastTouch) };
+      return { ...d, staleDays: daysAgo(lastEvent ?? d.created_at) };
     })
     .filter((d: any) => d.staleDays >= STALE_DAYS)
     .sort((a: any, b: any) => b.staleDays - a.staleDays);
@@ -93,8 +161,6 @@ export default async function DashboardPage() {
     (t: any) => t.due_date && new Date(t.due_date + "T23:59:59") < new Date()
   );
 
-  // Targets: archived acquisitions with a follow-up date that has arrived.
-  // 0-star ("never a target") deals are excluded.
   const targetsDue = archived
     .filter(
       (d: any) =>
@@ -104,12 +170,7 @@ export default async function DashboardPage() {
         d.pursuit_score !== 0
     )
     .sort((a: any, b: any) => (a.follow_up_on ?? "").localeCompare(b.follow_up_on ?? ""));
-  const scoredTargets = archived.filter(
-    (d: any) => d.deal_type === "acquisition" && (d.pursuit_score || d.disposition || d.follow_up_on)
-  );
 
-  // Win/loss from real decisions only -- the imported historical rows
-  // (blank status in the old tracker) say nothing about where deals die.
   const realDeaths = archived.filter(
     (d: any) => !(d.death_reason ?? "").startsWith("Imported: historical")
   );
@@ -125,48 +186,7 @@ export default async function DashboardPage() {
     activityCounts[a.activity_type] = (activityCounts[a.activity_type] ?? 0) + 1;
   }
 
-  function pipelinePanel(
-    title: string,
-    boardHref: string,
-    rows: { stage: string; deals: any[] }[],
-    max: number,
-    dealHref: (d: any) => string
-  ) {
-    return (
-      <section className="panel">
-        <h2>
-          {title}{" "}
-          <Link href={boardHref} className="muted panel-link">
-            board →
-          </Link>
-        </h2>
-        {rows.map((r) => (
-          <div key={r.stage}>
-            <CountBar
-              label={STAGE_LABELS[r.stage] ?? r.stage}
-              count={r.deals.length}
-              max={max}
-              href={boardHref}
-            />
-            {r.deals.length > 0 && (
-              <div className="bar-deals">
-                {r.deals.slice(0, MAX_DEALS_PER_STAGE).map((d: any) => (
-                  <Link key={d.id} href={dealHref(d)}>
-                    {d.properties?.address ?? "Untitled deal"}
-                  </Link>
-                ))}
-                {r.deals.length > MAX_DEALS_PER_STAGE && (
-                  <Link href={boardHref} className="bar-more">
-                    +{r.deals.length - MAX_DEALS_PER_STAGE} more →
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </section>
-    );
-  }
+  const recentOffers = allOffers.slice(0, 8);
 
   return (
     <>
@@ -192,18 +212,23 @@ export default async function DashboardPage() {
           <Link href="/deals" className="stat-tile">
             <span className="stat-value">{acq.length}</span>
             <span className="stat-label">Active acquisitions</span>
+            {newThisWeek > 0 && <span className="stat-delta">+{newThisWeek} this week</span>}
           </Link>
-          <Link href="/leasing" className="stat-tile">
-            <span className="stat-value">{lease.length}</span>
-            <span className="stat-label">Active lease deals</span>
+          <Link href="/deals" className="stat-tile">
+            <span className="stat-value">{offersThisWeek}</span>
+            <span className="stat-label">Offers this week</span>
+            <span className="stat-delta">
+              {offers30d.length} in 30d · {fmtUsd(offers30dTotal)}
+            </span>
           </Link>
           <Link href="/tasks" className="stat-tile">
             <span className={overdueTasks.length > 0 ? "stat-value stat-bad" : "stat-value"}>
               {openTasks.length}
             </span>
-            <span className="stat-label">
-              Open follow-ups{overdueTasks.length > 0 ? ` · ${overdueTasks.length} overdue` : ""}
-            </span>
+            <span className="stat-label">Open follow-ups</span>
+            {overdueTasks.length > 0 && (
+              <span className="stat-delta stat-delta-bad">{overdueTasks.length} overdue</span>
+            )}
           </Link>
           <Link href="/targets" className="stat-tile">
             <span className={targetsDue.length > 0 ? "stat-value stat-bad" : "stat-value"}>
@@ -214,8 +239,43 @@ export default async function DashboardPage() {
         </div>
 
         <div className="dash-cols">
-          {pipelinePanel("Acquisitions pipeline", "/deals", acqByStage, maxAcq, (d) => `/deals/${d.id}`)}
-          {pipelinePanel("Leasing pipeline", "/leasing", leaseByStage, maxLease, (d) => `/leasing/${d.id}`)}
+          <section className="panel">
+            <h2>
+              Acquisitions funnel{" "}
+              <Link href="/deals" className="muted panel-link">
+                board →
+              </Link>
+            </h2>
+            <Funnel rows={acqFunnel} boardHref="/deals" />
+          </section>
+          <section className="panel">
+            <h2>
+              Leasing funnel{" "}
+              <Link href="/leasing" className="muted panel-link">
+                board →
+              </Link>
+            </h2>
+            {lease.length === 0 ? (
+              <p className="muted">No active lease deals.</p>
+            ) : (
+              <Funnel rows={leaseFunnel} boardHref="/leasing" />
+            )}
+          </section>
+        </div>
+
+        <div className="dash-cols">
+          <section className="panel">
+            <h2>Deal intake · last {WEEKS} weeks</h2>
+            <WeeklyBars values={intakeWeekly} />
+            <p className="hint">New acquisition deals entered per week.</p>
+          </section>
+          <section className="panel">
+            <h2>Offers made · last {WEEKS} weeks</h2>
+            <WeeklyBars values={offersWeekly} color="var(--accent)" />
+            <p className="hint">
+              Offers logged per week · {fmtUsd(offers30dTotal)} offered in the last 30 days.
+            </p>
+          </section>
         </div>
 
         <section className="panel">
@@ -244,13 +304,38 @@ export default async function DashboardPage() {
         <div className="dash-cols">
           <section className="panel">
             <h2>
-              Recent offers{" "}
-              <Link href="/deals" className="muted panel-link">
-                board →
+              Targets due{" "}
+              <Link href="/targets" className="muted panel-link">
+                all targets →
               </Link>
             </h2>
+            {targetsDue.length === 0 ? (
+              <p className="muted">No follow-ups due.</p>
+            ) : (
+              <ul className="doc-list">
+                {targetsDue.slice(0, 10).map((d: any) => (
+                  <li key={d.id}>
+                    {d.pursuit_score && (
+                      <span className="target-stars">
+                        {"★".repeat(d.pursuit_score)}
+                        {"☆".repeat(5 - d.pursuit_score)}
+                      </span>
+                    )}
+                    <Link href={`/deals/${d.id}`}>{d.properties?.address ?? "Untitled"}</Link>
+                    <span className="muted">
+                      {" "}
+                      · follow up <span className="overdue">{d.follow_up_on}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>Recent offers</h2>
             {recentOffers.length === 0 ? (
-              <p className="muted">No offers logged yet. Log them from any deal page.</p>
+              <p className="muted">No offers logged yet.</p>
             ) : (
               <ul className="doc-list">
                 {recentOffers.map((o: any) => {
@@ -272,39 +357,6 @@ export default async function DashboardPage() {
                     </li>
                   );
                 })}
-              </ul>
-            )}
-          </section>
-
-          <section className="panel">
-            <h2>
-              Targets{" "}
-              <Link href="/targets" className="muted panel-link">
-                all targets →
-              </Link>
-            </h2>
-            {targetsDue.length === 0 ? (
-              <p className="muted">
-                No follow-ups due. {scoredTargets.length} scored target
-                {scoredTargets.length === 1 ? "" : "s"} in the repository.
-              </p>
-            ) : (
-              <ul className="doc-list">
-                {targetsDue.slice(0, 10).map((d: any) => (
-                  <li key={d.id}>
-                    {d.pursuit_score && (
-                      <span className="target-stars">
-                        {"★".repeat(d.pursuit_score)}
-                        {"☆".repeat(5 - d.pursuit_score)}
-                      </span>
-                    )}
-                    <Link href={`/deals/${d.id}`}>{d.properties?.address ?? "Untitled"}</Link>
-                    <span className="muted">
-                      {" "}
-                      · follow up <span className="overdue">{d.follow_up_on}</span>
-                    </span>
-                  </li>
-                ))}
               </ul>
             )}
           </section>
@@ -331,7 +383,7 @@ export default async function DashboardPage() {
                 ))}
                 <p className="hint" style={{ marginTop: 10 }}>
                   {realDeaths.length} decided deals ({archived.length - realDeaths.length} imported
-                  historical rows excluded) — full list in the Archive below.
+                  historical rows excluded).
                 </p>
               </>
             )}
@@ -340,9 +392,7 @@ export default async function DashboardPage() {
           <section className="panel">
             <h2>Activity, last 30 days</h2>
             {recentActivities.length === 0 ? (
-              <p className="muted">
-                No touchpoints logged yet. Log calls, emails, and tours from any contact or deal page.
-              </p>
+              <p className="muted">No touchpoints logged yet.</p>
             ) : (
               <>
                 {Object.entries(activityCounts)
@@ -372,7 +422,7 @@ export default async function DashboardPage() {
         <section className="panel">
           <h2>Archive</h2>
           {archived.length === 0 ? (
-            <p className="muted">No archived deals. Deals archived from either board land here.</p>
+            <p className="muted">No archived deals.</p>
           ) : (
             <TruncatedList
               items={[...(archived as any[])]

@@ -395,6 +395,69 @@ fieldset {
   background: var(--error);
 }
 
+/* Dashboard v2: funnel + weekly bars + tile deltas */
+.funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.funnel-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  align-items: center;
+  text-decoration: none;
+}
+.funnel-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+.funnel-track {
+  display: flex;
+  justify-content: center;
+}
+.funnel-bar {
+  background: var(--accent-2);
+  border-radius: 5px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s;
+  min-width: 34px;
+}
+.funnel-row:hover .funnel-bar {
+  transform: scaleY(1.12);
+}
+.funnel-count {
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+.weekly-bars {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.stat-delta {
+  font-size: 11px;
+  color: var(--accent-2);
+  margin-top: 2px;
+}
+.stat-delta-bad {
+  color: var(--error);
+}
+.panel h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.panel {
+  box-shadow: 0 1px 2px rgba(31, 59, 77, 0.05);
+}
+
 /* Dashboard */
 .stat-grid {
   display: grid;
