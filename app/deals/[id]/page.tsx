@@ -348,7 +348,11 @@ export default async function DealDetailPage({ params }: { params: { id: string 
       <DealContactsPanel
         dealId={deal.id}
         links={dealContacts as any}
-        contacts={allContacts.map((c: any) => ({ id: c.id, name: c.name }))}
+        contacts={allContacts.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          company: c.companies?.name ?? null,
+        }))}
         roleOptions={ROLES_BY_DEAL_TYPE.acquisition}
         roleLabels={ROLE_LABELS}
       />

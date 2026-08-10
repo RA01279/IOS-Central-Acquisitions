@@ -2,9 +2,9 @@
 // components/DealContactsPanel.tsx
 //
 // The people on a deal: lists linked contacts with their roles, links new
-// ones, unlinks. Shared by the acquisitions and leasing detail pages -- the
-// server page passes in the deal-type-appropriate role options and the
-// contact list for the dropdown.
+// ones, unlinks. Linking uses a type-ahead search over the contact book
+// (name or company) instead of a dropdown -- and can create a brand-new
+// contact from the typed name, auto-classified from the role being assigned.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,6 +21,21 @@ type LinkedContact = {
   } | null;
 };
 
+type PickableContact = { id: string; name: string; company: string | null };
+
+// Role being assigned implies the classification for a newly created contact.
+const ROLE_TO_TYPE: Record<string, string | null> = {
+  seller: null, // owner-user vs institutional: classified by hand later
+  buyer: null,
+  seller_broker: "broker",
+  buyer_broker: "broker",
+  tenant: "tenant",
+  landlord: "institutional_owner",
+  tenant_broker: "broker",
+  listing_broker: "broker",
+  other: null,
+};
+
 export default function DealContactsPanel({
   dealId,
   links,
@@ -30,28 +45,54 @@ export default function DealContactsPanel({
 }: {
   dealId: string;
   links: LinkedContact[];
-  contacts: { id: string; name: string }[];
+  contacts: PickableContact[];
   roleOptions: string[];
   roleLabels: Record<string, string>;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<PickableContact | null>(null);
+  const [role, setRole] = useState(roleOptions[0]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const q = query.trim().toLowerCase();
+  const matches =
+    q.length > 0 && !picked
+      ? contacts
+          .filter(
+            (c) =>
+              c.name.toLowerCase().includes(q) ||
+              (c.company ?? "").toLowerCase().includes(q)
+          )
+          .slice(0, 8)
+      : [];
+  const exactMatch = contacts.some((c) => c.name.toLowerCase() === q);
+
+  function reset() {
+    setAdding(false);
+    setQuery("");
+    setPicked(null);
+    setError(null);
+  }
+
+  async function linkContact(contactId: string) {
+    const res = await fetch(`/api/deals/${dealId}/contacts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId, role }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error ?? "Failed to link contact");
+  }
+
+  async function handleLink() {
+    if (!picked) return;
     setBusy(true);
     setError(null);
-    const form = new FormData(e.currentTarget);
     try {
-      const res = await fetch(`/api/deals/${dealId}/contacts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactId: form.get("contactId"), role: form.get("role") }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to link contact");
-      setAdding(false);
+      await linkContact(picked.id);
+      reset();
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -60,16 +101,21 @@ export default function DealContactsPanel({
     }
   }
 
-  async function handleRemove(linkId: string) {
+  async function handleCreateAndLink() {
+    const name = query.trim();
+    if (!name) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/deals/${dealId}/contacts`, {
-        method: "DELETE",
+      const res = await fetch("/api/contacts", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linkId }),
+        body: JSON.stringify({ name, contactType: ROLE_TO_TYPE[role] ?? undefined }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to remove");
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to create contact");
+      const { contact } = await res.json();
+      await linkContact(contact.id);
+      reset();
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -103,7 +149,19 @@ export default function DealContactsPanel({
               <button
                 type="button"
                 className="link-remove"
-                onClick={() => handleRemove(l.id)}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await fetch(`/api/deals/${dealId}/contacts`, {
+                      method: "DELETE",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ linkId: l.id }),
+                    });
+                    router.refresh();
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
                 disabled={busy}
                 title="Remove from deal"
               >
@@ -121,24 +179,66 @@ export default function DealContactsPanel({
           </button>
         </div>
       ) : (
-        <form onSubmit={handleAdd} className="inline-add-form">
+        <div className="inline-add-form">
           <div className="grid-2">
             <label>
-              Contact
-              <select name="contactId" required defaultValue="">
-                <option value="" disabled>
-                  Select…
-                </option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              Who
+              {picked ? (
+                <span className="picked-contact">
+                  <strong>{picked.name}</strong>
+                  {picked.company ? <span className="muted"> · {picked.company}</span> : null}
+                  <button type="button" className="link-remove" onClick={() => setPicked(null)}>
+                    ×
+                  </button>
+                </span>
+              ) : (
+                <span className="combo">
+                  <input
+                    autoFocus
+                    placeholder="Start typing a name or firm…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (matches.length > 0) setPicked(matches[0]);
+                      }
+                    }}
+                  />
+                  {q.length > 0 && (
+                    <span className="combo-list">
+                      {matches.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className="combo-item"
+                          onClick={() => setPicked(m)}
+                        >
+                          <strong>{m.name}</strong>
+                          {m.company ? <span className="muted"> · {m.company}</span> : null}
+                        </button>
+                      ))}
+                      {!exactMatch && (
+                        <button
+                          type="button"
+                          className="combo-item combo-create"
+                          onClick={handleCreateAndLink}
+                          disabled={busy}
+                        >
+                          + Create “{query.trim()}” as a new {roleLabels[role]?.toLowerCase() ?? "contact"}
+                        </button>
+                      )}
+                      {matches.length === 0 && exactMatch === false && q.length === 0 && (
+                        <span className="combo-item muted">Keep typing…</span>
+                      )}
+                    </span>
+                  )}
+                </span>
+              )}
             </label>
             <label>
               Role on this deal
-              <select name="role" required defaultValue={roleOptions[0]}>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
                 {roleOptions.map((r) => (
                   <option key={r} value={r}>
                     {roleLabels[r] ?? r}
@@ -147,21 +247,17 @@ export default function DealContactsPanel({
               </select>
             </label>
           </div>
-          <p className="hint">
-            Not in the list? Add them on the <Link href="/contacts">Contacts</Link> page first.
-          </p>
+          {error && <p className="error">{error}</p>}
           <div className="stage-actions" style={{ marginBottom: 0 }}>
-            <button type="submit" disabled={busy}>
+            <button type="button" onClick={handleLink} disabled={busy || !picked}>
               {busy ? "Linking…" : "Link contact"}
             </button>
-            <button type="button" className="secondary" onClick={() => setAdding(false)}>
+            <button type="button" className="secondary" onClick={reset}>
               Cancel
             </button>
           </div>
-        </form>
+        </div>
       )}
-
-      {error && <p className="error">{error}</p>}
     </section>
   );
 }

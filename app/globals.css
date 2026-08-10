@@ -778,6 +778,60 @@ a.stat-tile:hover {
 .link-remove:hover {
   color: var(--error);
 }
+
+/* Type-ahead contact picker */
+.combo {
+  position: relative;
+  display: block;
+}
+.combo input {
+  width: 100%;
+}
+.combo-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 4px;
+  box-shadow: 0 4px 12px rgba(31, 59, 77, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.combo-item {
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.combo-item:last-child {
+  border-bottom: none;
+}
+.combo-item:hover {
+  background: var(--bg);
+}
+.combo-create {
+  color: var(--accent-2);
+  font-weight: 500;
+}
+.picked-contact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 14px;
+}
 .task-row {
   display: flex;
   align-items: flex-start;

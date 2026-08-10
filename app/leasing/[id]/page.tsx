@@ -82,7 +82,11 @@ export default async function LeaseDealDetailPage({ params }: { params: { id: st
         <DealContactsPanel
           dealId={deal.id}
           links={contacts as any}
-          contacts={allContacts.map((c: any) => ({ id: c.id, name: c.name }))}
+          contacts={allContacts.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            company: c.companies?.name ?? null,
+          }))}
           roleOptions={ROLES_BY_DEAL_TYPE.lease}
           roleLabels={ROLE_LABELS}
         />
