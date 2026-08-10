@@ -11,6 +11,7 @@
 // duplicate deal entry). An internal tracker takes the tiny speed hit.
 
 import SignOutButton from "./SignOutButton";
+import NavSearch from "./NavSearch";
 
 const LINKS = [
   { href: "/deals", label: "Acquisitions", key: "acquisitions" },
@@ -39,6 +40,7 @@ export default function Nav({ active }: { active?: string }) {
         ))}
       </div>
       <div className="app-nav-actions">
+        <NavSearch />
         <SignOutButton />
       </div>
     </nav>
