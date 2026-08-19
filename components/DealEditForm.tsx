@@ -9,13 +9,17 @@ import { useRouter } from "next/navigation";
 
 export default function DealEditForm({
   dealId,
-  dealType,
   property,
+  assetClass,
   marketingStatus,
   acquisitionType,
+  ddEndOn,
+  closingOn,
 }: {
   dealId: string;
-  dealType: "acquisition" | "lease";
+  assetClass: string | null;
+  ddEndOn: string | null;
+  closingOn: string | null;
   property: {
     address: string | null;
     city: string | null;
@@ -53,6 +57,7 @@ export default function DealEditForm({
           market: form.get("market"),
           submarket: form.get("submarket"),
           assetType: form.get("assetType"),
+          assetClass: form.get("assetClass"),
           acres: form.get("acres"),
           buildingSf: form.get("buildingSf"),
           occupancyStatus: form.get("occupancyStatus"),
@@ -60,6 +65,8 @@ export default function DealEditForm({
           tenancy: form.get("tenancy"),
           marketingStatus: form.get("marketingStatus"),
           acquisitionType: form.get("acquisitionType"),
+          ddEndOn: form.get("ddEndOn"),
+          closingOn: form.get("closingOn"),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Save failed");
@@ -98,6 +105,13 @@ export default function DealEditForm({
         <label>
           Submarket
           <input name="submarket" defaultValue={property.submarket ?? ""} />
+        </label>
+        <label>
+          Pipeline
+          <select name="assetClass" defaultValue={assetClass ?? "ios"}>
+            <option value="ios">IOS</option>
+            <option value="industrial">Industrial</option>
+          </select>
         </label>
         <label>
           Asset type
@@ -162,17 +176,23 @@ export default function DealEditForm({
             <option value="marketed">Marketed</option>
           </select>
         </label>
-        {dealType === "acquisition" && (
-          <label>
-            Acquisition type
-            <select name="acquisitionType" defaultValue={acquisitionType ?? ""}>
-              <option value="">—</option>
-              <option value="standard">Standard</option>
-              <option value="slb">Sale-leaseback (SLB)</option>
-              <option value="unsolicited">Unsolicited</option>
-            </select>
-          </label>
-        )}
+        <label>
+          Acquisition type
+          <select name="acquisitionType" defaultValue={acquisitionType ?? ""}>
+            <option value="">—</option>
+            <option value="standard">Standard</option>
+            <option value="slb">Sale-leaseback (SLB)</option>
+            <option value="unsolicited">Unsolicited</option>
+          </select>
+        </label>
+        <label>
+          DD expires
+          <input name="ddEndOn" type="date" defaultValue={ddEndOn ?? ""} />
+        </label>
+        <label>
+          Target closing
+          <input name="closingOn" type="date" defaultValue={closingOn ?? ""} />
+        </label>
       </div>
       {error && <p className="error">{error}</p>}
       <div className="stage-actions" style={{ marginBottom: 0 }}>

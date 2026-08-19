@@ -2,7 +2,7 @@
 //
 // Server component: the CRM half of a deal page -- open follow-ups and the
 // touchpoint log (calls/emails/tours/notes, distinct from the system event
-// trail). Shared by acquisitions and leasing detail pages.
+// trail).
 
 import { listActivitiesForDeal, listOpenTasksForDeal } from "@/lib/crm";
 import { getCurrentUser } from "@/lib/auth";

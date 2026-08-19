@@ -1,91 +1,119 @@
-# Hopper
+# Central Acquisitions
 
-Deal intake -> underwriting -> offer -> PSA tracker for the acquisitions
-team. Built as a tracker first, not a polished product -- lightweight,
-no IT dependency, running for 3 people this week rather than gated on
-an enterprise review.
+Deal intake -> underwriting -> offer -> PSA -> diligence -> closing tracker for
+the Central acquisitions team. Built as a tracker first, not a polished product
+-- lightweight, no IT dependency, running for the team this week rather than
+gated on an enterprise review.
 
-See `Acquisitions_Tracking_Tool_Spec_v2.docx` for the full feature spec.
+The product is called **Central Acquisitions**. The codebase, repo, and Vercel
+project are still named `hopper` / `ios-central-acquisitions` -- renaming those
+would change the production URL and every bookmark, so only the user-visible
+naming changed. See `Acquisitions_Tracking_Tool_Spec_v2.docx` for the original
+feature spec and `../HOPPER-HANDOFF.md` for the read-only export API.
+
+## Two pipelines
+
+Deals are split into **IOS** and **Industrial** by `deals.asset_class`, and the
+Pipeline board toggles between them. `asset_class` is set at intake (defaulting
+from the property's `asset_type`) and is editable per deal. It's a separate
+field from `properties.asset_type` on purpose: asset_type has four values and
+describes the property, asset_class has two and decides which book a deal is
+reported in.
+
+Stages: `prospect -> uw -> offered -> moving_to_psa -> due_diligence -> closed`,
+with `archived` as the shared terminal. "In contract" in any roll-up means
+`moving_to_psa + due_diligence`.
+
+Leasing was removed from the product in Aug 2026. Lease rows, lease stages, and
+the `deal_type` column all remain in the database -- nothing reads them, nothing
+creates them, and the decision is reversible.
 
 ## Architecture at a glance
 
-- **Next.js (App Router)**, deployed to Vercel from this repo.
-- **Postgres via Supabase** -- see `supabase/migrations/`. If sharing a
-  project with RIDGE Intel, run these against that same Supabase
-  project; RIDGE Intel owns analysis/underwriting fields on shared
-  tables, Hopper owns pipeline/contact/task fields.
-- **Auth: plain Supabase email/password.** No Azure AD, no IT-approved
-  app registration, no SSO. You create the 3 accounts yourself in the
-  Supabase dashboard. If this ever needs Dalfen SSO later, that's a
-  swap of `lib/auth.ts` only -- nothing else in the app changes.
-- **`lib/deals.ts` -> `createDeal()`** is the single entry point for new
-  deals. The New Deal form calls it today; an email-triggered intake
-  agent could become a second caller later, with zero schema changes.
-- **No CI pipeline for now.** Vercel deploys on push regardless; run
-  `npm run build` locally before pushing if you want a sanity check.
+- **Next.js 14 (App Router)**, deployed to Vercel from this repo.
+- **Postgres via Supabase** -- see `supabase/migrations/`. If sharing a project
+  with RIDGE Intel, run these against that same Supabase project; RIDGE Intel
+  owns analysis/underwriting fields on shared tables, this app owns
+  pipeline/contact/task fields.
+- **Auth: plain Supabase email/password.** No Azure AD, no IT-approved app
+  registration, no SSO. You create the accounts yourself in the Supabase
+  dashboard. If this ever needs Dalfen SSO, that's a swap of `lib/auth.ts` only.
+- **`lib/deals.ts`** holds the two write paths worth knowing about:
+  `createDeal()` (single entry point for new deals) and `recordOffer()` (single
+  entry point for offers -- called by the Log-offer form *and* by LOI
+  generation, which is what makes the offer log self-maintaining).
+- **`lib/summary.ts`** computes every number the home screen shows, and is
+  shared with the export API and the morning brief so the three can't disagree.
+  All date bucketing is America/Chicago, not UTC.
+- **`lib/digest.ts`** is the single source of the morning brief; the cron route
+  and the RSS feed are both just senders.
+- **No CI pipeline.** Vercel deploys on push regardless; run `npm run build`
+  locally before pushing if you want a sanity check.
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env.local   # fill in Supabase values
-```
-
-Create your 3 users in the Supabase dashboard (Authentication -> Users
--> Add user) -- Rhett, Jadon, John.
-
-Run migrations against your Supabase project:
-
-```bash
-supabase db push   # or paste the .sql files into the SQL editor
-```
-
-```bash
 npm run dev
 ```
 
-## What's built vs. stubbed
+Create your users in the Supabase dashboard (Authentication -> Users -> Add
+user). `PSA_CONFIRM_ALLOWLIST` gates the Confirm-Moving-to-PSA action.
 
-**Built:**
-- Schema (`supabase/migrations/`)
-- `createDeal()` with duplicate detection and MLA-request logging
-- New Deal form + API route
-- v1 comp scoring (recency + distance blend, see `lib/comps.ts`)
-- Excel parsing (`lib/excel-parser.ts`) -- reads the `Summary Table` tab
-  of the underwriting model for IRR, multiple, cap rates, etc.
-- Archive/restore and UW-version API routes
-- Simple auth with a PSA-confirm allowlist (`canConfirmPsa()`)
+Apply migrations in order:
 
-## What's built vs. stubbed
+```bash
+node scripts/apply-migration.mjs supabase/migrations/0016_pipeline_bifurcation.sql
+node scripts/apply-migration.mjs supabase/migrations/0017_search_ranking.sql
+```
 
-**Built:**
-- Schema (`supabase/migrations/`)
-- `createDeal()` with duplicate detection and MLA-request logging
-- New Deal form + API route
-- v1 comp scoring (recency + distance blend, see `lib/comps.ts`)
-- Excel parsing (`lib/excel-parser.ts`) -- reads the `Summary Table` tab
-  of the underwriting model for IRR, multiple, cap rates, etc.
-- Archive/restore and UW-version API routes
-- Simple auth with a PSA-confirm allowlist (`canConfirmPsa()`) and a
-  login page
-- Pipeline board (kanban-style, by stage)
-- Deal detail page: returns summary, MLA entry/display, Excel upload,
-  version history, document list, activity log, and stage-transition
-  buttons (Mark Offered / Confirm Moving to PSA / Archive)
+(or paste the `.sql` files into the Supabase SQL editor). Both are written to be
+safe to re-run.
 
-**Not yet built:**
-- Any styling polish beyond "clean and legible" -- this is a tracker,
-  not a showpiece, by design.
-- Document download links (documents are stored and listed, but there's
-  no signed-URL download button yet).
-- Duplicate-deal warning surfaced in the UI (the detection logic runs
-  and logs an event on intake, but nothing displays it to the user yet).
+## Screens
 
-## Deferred (see spec doc for reasoning)
+| Route | What it's for |
+|---|---|
+| `/` | Home screen: prospects / underwritten / offers submitted, toggled between last 7 days, month to date, and year to date; IOS vs Industrial subtotals; in-contract and closed roll-ups; DD expirations and closings inside 7 days |
+| `/deals` | Pipeline board, six columns, IOS / Industrial / All toggle |
+| `/deals/[id]` | Deal detail: returns summary, MLA, LOI generation, offers, contacts, documents, activity, stage actions |
+| `/offers` | Offer log — every offer with date, price, land PSF, market, class, provenance; CSV download |
+| `/targets` | Archived deals scored 1–5 with re-approach dates |
+| `/contacts`, `/tasks` | CRM: people grouped by company, follow-ups |
+| `/dashboard` | Operational detail: per-class funnels, intake/offer velocity, stale deals, where deals die, activity mix, archive |
+| `/search` | Fuzzy search across deals, contacts, companies, notes, tasks (`/` focuses the box) |
 
-- Weighted comp scoring (location / SF / lease-commencement date) --
-  `comp_weight_config` table exists but is unused until there's a real
-  basis for the weights.
-- Stage aging / stale-deal flags, pipeline dashboard.
-- Email-triggered intake (if a shared inbox ever gets provisioned).
-- SSO / Azure AD, if this ever needs to go through Dalfen IT review.
+## Automation
+
+- **Morning brief** — `vercel.json` cron hits `/api/cron/digest` each weekday at
+  13:00 UTC. Leads with DD expirations and closings inside 7 days, then overdue
+  follow-ups, targets due, and stale deals. Sends via `REMINDER_WEBHOOK_URL`
+  (a free Power Automate flow) or `RESEND_API_KEY`.
+- **RSS mirror** — `/api/digest/rss?key=<export_token>` is the same brief as a
+  feed with one item per weekday, because Power Automate's HTTP trigger needs a
+  premium licence but Recurrence + RSS + Send-email are free.
+  `node scripts/preview-digest.mjs out.html` renders it to a file.
+- **Export API** — `/api/export?token=...`, read-only JSON for external
+  dashboards. Documented in `../HOPPER-HANDOFF.md`.
+  `node scripts/rollup-dashboard.mjs rollup.html` is a working reference
+  consumer that renders a static roll-up page without ever putting the token in
+  a browser.
+- **Stage-change webhooks** — optional. Set `app_settings.stage_webhook_url`
+  (or `STAGE_WEBHOOK_URL`) and every stage transition POSTs a small JSON body.
+  Fire-and-forget by design: a dead endpoint logs a `webhook_failed` deal event
+  and never fails the user's click. Consumers needing guaranteed delivery should
+  poll the export API instead.
+
+## Known gaps
+
+- Documents are stored and listed but there's no signed-URL download button.
+- Duplicate detection runs and logs an event at intake; nothing surfaces it in
+  the UI yet.
+- Dollar figures everywhere are the most recent **offer** on a deal. There is no
+  contract-price or actual-closing-price field, so "closed value" is last-offer
+  value and is labelled that way. Worth adding if closings need real numbers.
+- `comp_weight_config` exists but is unused -- v1 comp scoring is recency +
+  distance only (`lib/comps.ts`).
+- Restore-from-archive returns a deal to its `death_stage`; that behaviour was
+  never confirmed with Rhett (see the TODO in the archive route).

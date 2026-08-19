@@ -21,6 +21,8 @@ export type ContactRole =
   | "other";
 export type ActivityType = "call" | "email" | "meeting" | "tour" | "note" | "other";
 
+// Every role the DB allows. The leasing roles stay here even though leasing
+// left the UI: contacts linked to old lease deals still need a human label.
 export const ROLE_LABELS: Record<string, string> = {
   seller: "Seller",
   buyer: "Buyer",
@@ -33,12 +35,15 @@ export const ROLE_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-// Which roles make sense per pipeline -- drives the role dropdown when
-// linking a contact to a deal. "other" is always available.
-export const ROLES_BY_DEAL_TYPE: Record<"acquisition" | "lease", ContactRole[]> = {
-  acquisition: ["seller", "buyer", "seller_broker", "buyer_broker", "other"],
-  lease: ["tenant", "landlord", "tenant_broker", "listing_broker", "other"],
-};
+// Roles offered when linking a contact to a deal. Acquisitions only -- the
+// leasing roles above are never assignable now, just renderable.
+export const ACQUISITION_ROLES: ContactRole[] = [
+  "seller",
+  "buyer",
+  "seller_broker",
+  "buyer_broker",
+  "other",
+];
 
 export const COMPANY_TYPE_LABELS: Record<CompanyType, string> = {
   landlord: "Landlord",

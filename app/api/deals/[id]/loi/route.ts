@@ -10,8 +10,17 @@ import { NextRequest, NextResponse } from "next/server";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { getServiceClient } from "@/lib/supabase";
-import { logDealEvent } from "@/lib/deals";
+import { logDealEvent, recordOffer } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
+
+// "$4,200,000" / "4.2M" typed into the price field -> 4200000, or null when
+// there's no usable number. Only a clean figure becomes an offer row; a
+// garbled price should leave the offer log alone rather than record a wrong
+// number, since the LOI itself still renders whatever was typed.
+function parsePrice(v: string | undefined): number | null {
+  const n = Number(String(v ?? "").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
 
 function fmtNumber(v: string | undefined): string {
   const n = Number(String(v ?? "").replace(/[^0-9.]/g, ""));
@@ -162,7 +171,37 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     user.email
   );
 
-  // 4. Hand the file back as a download.
+  // 4. Record the offer. Sending an LOI at a price IS offering that price, and
+  // relying on someone to also press "Log offer" is exactly how the old
+  // tracker's offer count drifted from reality. Deduped on same date + same
+  // price so regenerating the document (typo fix, second download) doesn't
+  // inflate the count. Never fatal: the LOI download must not fail because the
+  // offer row didn't insert.
+  const offerPrice = parsePrice(t.price);
+  if (offerPrice !== null) {
+    try {
+      await recordOffer(
+        params.id,
+        {
+          price: offerPrice,
+          offeredAt: dateIso,
+          notes: `Auto-logged from ${loiType === "slb" ? "SLB " : ""}LOI generation`,
+          source: "loi",
+        },
+        user.email,
+        { dedupeSameDayPrice: true }
+      );
+    } catch (err: any) {
+      await logDealEvent(
+        params.id,
+        "offer_autolog_failed",
+        { error: String(err?.message ?? err), price: offerPrice },
+        "system"
+      );
+    }
+  }
+
+  // 5. Hand the file back as a download.
   return new NextResponse(buffer as any, {
     status: 200,
     headers: {

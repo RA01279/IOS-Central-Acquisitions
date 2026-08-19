@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
-import { STAGE_LABELS } from "@/lib/deals";
+import { ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
 import { CONTACT_TYPE_LABELS } from "@/lib/crm";
 import Nav from "@/components/Nav";
 import NavSearch from "@/components/NavSearch";
@@ -68,8 +68,10 @@ export default async function SearchPage({
             <ul className="doc-list">
               {deals.map((d: any) => (
                 <li key={d.id}>
-                  <span className="doc-type">{d.deal_type === "lease" ? "LEASE" : "ACQ"}</span>
-                  <Link href={d.deal_type === "lease" ? `/leasing/${d.id}` : `/deals/${d.id}`}>
+                  <span className="doc-type">
+                    {ASSET_CLASS_LABELS[d.asset_class] ?? "ACQ"}
+                  </span>
+                  <Link href={`/deals/${d.id}`}>
                     <strong>{d.address ?? "Untitled deal"}</strong>
                   </Link>
                   <span className="muted">
@@ -77,7 +79,9 @@ export default async function SearchPage({
                     · {[d.city, d.market].filter(Boolean).join(", ")} ·{" "}
                     {d.stage === "archived"
                       ? `Archived${d.death_reason ? ` — ${String(d.death_reason).slice(0, 60)}` : ""}`
-                      : STAGE_LABELS[d.stage] ?? d.stage}
+                      : d.stage === "closed"
+                        ? `Closed${d.closed_on ? ` ${d.closed_on}` : ""}`
+                        : STAGE_LABELS[d.stage] ?? d.stage}
                   </span>
                 </li>
               ))}

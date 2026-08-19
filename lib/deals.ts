@@ -7,20 +7,35 @@
 // workflow changes required at that point.
 
 import { getServiceClient } from "./supabase";
+import { fireStageChangeWebhook } from "./webhooks";
 
 export type MlaStatus = "pending" | "requested" | "provided" | "assumed";
+// 'lease' is legacy: leasing was removed from the UI in Aug 2026 but the rows
+// and the deal_type column were deliberately kept, so anything that READS
+// deals still has to cope with lease rows. Nothing creates them any more.
 export type DealType = "acquisition" | "lease";
+export type AssetClass = "ios" | "industrial";
 
-// Ordered pipeline stages per deal type (excludes the shared 'archived'
-// terminal). Keep these in sync with the deals_stage_for_type DB constraint
-// in 0004_crm_leasing.sql. The leasing board and LeaseStageActions both read
-// LEASE_STAGES so there's a single source of truth for order and labels.
-// Acquisitions: deals enter at Prospect and move to UW only when a model
-// (underwriting Excel) is uploaded -- see the versions route. UW v1 was
-// retired when Prospect took over the "no model yet" role; it survives only
-// in STAGE_LABELS so old events/archived deals still render.
-export const ACQUISITION_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
-export const LEASE_STAGES = ["prospect", "tour", "proposal", "negotiation", "executed"] as const;
+// Ordered pipeline stages (excludes the 'archived' terminal). Keep in sync with
+// the deals_stage_check / deals_stage_for_type constraints in
+// 0016_pipeline_bifurcation.sql.
+// Deals enter at Prospect and move to UW only when a model (underwriting Excel)
+// is uploaded -- see the versions route. UW v1 was retired when Prospect took
+// over the "no model yet" role; it survives only in STAGE_LABELS so old events
+// and archived deals still render.
+export const ACQUISITION_STAGES = [
+  "prospect",
+  "uw",
+  "offered",
+  "moving_to_psa",
+  "due_diligence",
+  "closed",
+] as const;
+
+// "In contract" for reporting: the PSA is agreed (Moving to PSA) or executed
+// and we're in diligence. Both are money-on-the-table stages, which is what
+// the home screen's in-contract subtotal means.
+export const IN_CONTRACT_STAGES = ["moving_to_psa", "due_diligence"] as const;
 
 export const STAGE_LABELS: Record<string, string> = {
   uw: "UW",
@@ -28,34 +43,38 @@ export const STAGE_LABELS: Record<string, string> = {
   offered: "Offered",
   moving_to_psa: "Moving to PSA",
   due_diligence: "Due Diligence",
+  closed: "Closed",
   prospect: "Prospect",
+  archived: "Archived",
+  // Legacy leasing stages -- display only, so historical rows and death_stage
+  // values still render a human label.
   tour: "Tour",
   proposal: "Proposal (LOI)",
   negotiation: "Negotiation",
   executed: "Executed",
-  archived: "Archived",
 };
 
-// Opening stage per pipeline. Enforced in the DB by deals_stage_for_type
-// (see 0004_crm_leasing.sql) -- keep these in sync with that constraint.
-export const OPENING_STAGE: Record<DealType, string> = {
-  acquisition: "prospect",
-  lease: "prospect",
+export const ASSET_CLASSES = ["ios", "industrial"] as const;
+export const ASSET_CLASS_LABELS: Record<string, string> = {
+  ios: "IOS",
+  industrial: "Industrial",
 };
 
-// The next stage forward in the leasing pipeline, or null if already at the
-// last stage ('executed'). Used to render the single "advance" button.
-export function nextLeaseStage(stage: string): string | null {
-  const idx = LEASE_STAGES.indexOf(stage as (typeof LEASE_STAGES)[number]);
-  if (idx === -1 || idx === LEASE_STAGES.length - 1) return null;
-  return LEASE_STAGES[idx + 1];
+// Every acquisition opens at Prospect. Enforced in the DB by
+// deals_stage_for_type (see 0016).
+export const OPENING_STAGE = "prospect";
+
+// properties.asset_type has four values; the pipeline has two. IOS is IOS,
+// everything else is Industrial, and an unclassified legacy row is IOS (this
+// started as an IOS-only tracker). Used to seed asset_class at intake and on
+// edit; after that asset_class is authoritative and independently editable.
+export function assetClassFromAssetType(assetType?: string | null): AssetClass {
+  if (!assetType || assetType === "ios") return "ios";
+  return "industrial";
 }
 
-// Guard for the API: is `to` a legal leasing stage to move to? We allow moving
-// to any leasing stage (forward or back a step for corrections), but never
-// outside the leasing set -- 'archived' goes through the archive route.
-export function isValidLeaseStage(stage: string): boolean {
-  return (LEASE_STAGES as readonly string[]).includes(stage);
+export function isValidAcqStage(stage: string): boolean {
+  return (ACQUISITION_STAGES as readonly string[]).includes(stage);
 }
 
 export interface NewDealInput {
@@ -64,6 +83,9 @@ export interface NewDealInput {
   submarket?: string;
   city?: string;
   assetType: "ios" | "industrial" | "flex" | "other";
+  // Which pipeline this deal shows up in. Defaults to whatever assetType
+  // implies, so intake can leave it alone and still land in the right board.
+  assetClass?: AssetClass;
   lotSf?: number;
   // The team thinks in acres (IOS land deals). If lotSf is absent and acres
   // is present, we convert (1 acre = 43,560 SF).
@@ -81,22 +103,15 @@ export interface NewDealInput {
   // Counterparty names typed at intake. Each becomes a contact (found by
   // exact name match, or created) linked to the deal via deal_contacts with
   // the matching role. Keeps intake fast without creating dead text columns.
-  // Leases: tenantName, landlordRepName (listing broker), tenantRepName.
-  // Acquisitions: currentOwnerName (seller), buyerBrokerName, sellerBrokerName.
-  tenantName?: string;
-  landlordRepName?: string;
-  tenantRepName?: string;
   currentOwnerName?: string;
   buyerBrokerName?: string;
   sellerBrokerName?: string;
   sourceBrokerId?: string;
-  dealType?: DealType;
   createdBy: string; // who's entering this (Rhett, market lead, or later: "email-intake")
-  // MLA is an acquisitions-underwriting concept. Optional so leasing deals,
-  // which don't underwrite an MLA, can be created without one. The "provided"
-  // variant carries the full "MLA - Base Case" field set (0003 schema) so
-  // intake matches the later provide-MLA step -- every field optional so a
-  // partial MLA can still be entered.
+  // MLA is an acquisitions-underwriting concept. The "provided" variant
+  // carries the full "MLA - Base Case" field set (0003 schema) so intake
+  // matches the later provide-MLA step -- every field optional so a partial
+  // MLA can still be entered.
   mla?:
     | {
         status: "provided";
@@ -121,7 +136,6 @@ export interface NewDealInput {
 
 export async function createDeal(input: NewDealInput) {
   const supabase = getServiceClient();
-  const dealType: DealType = input.dealType ?? "acquisition";
 
   const { data: property, error: propError } = await supabase
     .from("properties")
@@ -142,17 +156,16 @@ export async function createDeal(input: NewDealInput) {
 
   if (propError) throw propError;
 
-  // Acquisitions open in UW; leases open in the leasing pipeline (prospect).
-  // MLA status only applies to acquisitions -- leases default to "assumed"
-  // (i.e. n/a) so the column stays valid without implying a pending request.
   const mlaStatus: MlaStatus = input.mla?.status ?? "assumed";
+  const assetClass = input.assetClass ?? assetClassFromAssetType(input.assetType);
 
   const { data: deal, error: dealError } = await supabase
     .from("deals")
     .insert({
       property_id: property.id,
-      deal_type: dealType,
-      stage: OPENING_STAGE[dealType],
+      deal_type: "acquisition",
+      stage: OPENING_STAGE,
+      asset_class: assetClass,
       source_broker_id: input.sourceBrokerId ?? null,
       mla_status: mlaStatus,
       marketing_status: input.marketingStatus ?? null,
@@ -193,18 +206,11 @@ export async function createDeal(input: NewDealInput) {
   }
 
   // Link every typed counterparty as a contact on the deal.
-  const counterparties =
-    dealType === "lease"
-      ? [
-          { name: input.tenantName, role: "tenant", type: "tenant" },
-          { name: input.landlordRepName, role: "listing_broker", type: "broker" },
-          { name: input.tenantRepName, role: "tenant_broker", type: "broker" },
-        ]
-      : [
-          { name: input.currentOwnerName, role: "seller", type: null }, // owner-user vs institutional: classified by hand
-          { name: input.buyerBrokerName, role: "buyer_broker", type: "broker" },
-          { name: input.sellerBrokerName, role: "seller_broker", type: "broker" },
-        ];
+  const counterparties = [
+    { name: input.currentOwnerName, role: "seller", type: null }, // owner-user vs institutional: classified by hand
+    { name: input.buyerBrokerName, role: "buyer_broker", type: "broker" },
+    { name: input.sellerBrokerName, role: "seller_broker", type: "broker" },
+  ];
   for (const cp of counterparties) {
     if (!cp.name?.trim()) continue;
     const contactId = await findOrCreateContactByName(cp.name.trim(), cp.type);
@@ -222,7 +228,12 @@ export async function createDeal(input: NewDealInput) {
     );
   }
 
-  await logDealEvent(deal.id, "deal_created", { deal_type: dealType, mla_status: mlaStatus }, input.createdBy);
+  await logDealEvent(
+    deal.id,
+    "deal_created",
+    { deal_type: "acquisition", asset_class: assetClass, mla_status: mlaStatus },
+    input.createdBy
+  );
 
   // Duplicate detection: check address history now that the deal exists.
   const duplicates = await findDuplicateDeals(input.address, deal.id);
@@ -232,6 +243,82 @@ export async function createDeal(input: NewDealInput) {
 
   return { deal, property, duplicates };
 }
+
+// -- Offers ----------------------------------------------------------------
+
+// The one place an offer gets recorded. Two callers: the Log-offer form, and
+// LOI generation (which records the offer automatically -- an LOI at a price
+// IS an offer at that price, and relying on someone to also remember the
+// Log-offer button is how the old tracker's offer count drifted).
+//
+// Making an offer is also what makes a deal "Offered", so an early-stage deal
+// advances here rather than in the caller.
+export async function recordOffer(
+  dealId: string,
+  input: {
+    price?: number | null;
+    offeredAt?: string | null;
+    notes?: string | null;
+    source?: "manual" | "loi";
+  },
+  actor: string,
+  // LOI generation is re-runnable (regenerate to fix a typo, download again);
+  // dedupe stops each regeneration from inflating the offer count.
+  opts: { dedupeSameDayPrice?: boolean } = {}
+) {
+  const supabase = getServiceClient();
+  const offeredAt = input.offeredAt ?? new Date().toISOString().slice(0, 10);
+  const price = input.price ?? null;
+  const source = input.source ?? "manual";
+
+  if (opts.dedupeSameDayPrice) {
+    let dupQuery = supabase
+      .from("offers")
+      .select("id")
+      .eq("deal_id", dealId)
+      .eq("offered_at", offeredAt)
+      .limit(1);
+    dupQuery = price === null ? dupQuery.is("price", null) : dupQuery.eq("price", price);
+    const { data: existing } = await dupQuery;
+    if (existing && existing.length > 0) {
+      return { offer: null as any, deduped: true, advanced: false };
+    }
+  }
+
+  const { data: offer, error } = await supabase
+    .from("offers")
+    .insert({
+      deal_id: dealId,
+      offered_at: offeredAt,
+      price,
+      notes: input.notes ?? null,
+      source,
+      created_by: actor,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  await logDealEvent(dealId, "offer_logged", { price, source }, actor);
+
+  // Making an offer moves an early-stage acquisition to Offered.
+  const { data: advanced } = await supabase
+    .from("deals")
+    .update({ stage: "offered" })
+    .eq("id", dealId)
+    .eq("deal_type", "acquisition")
+    .in("stage", ["prospect", "uw"])
+    .select("id, stage");
+  const didAdvance = !!advanced && advanced.length > 0;
+  if (didAdvance) {
+    await logDealEvent(dealId, "marked_offered", { via: `offer_logged:${source}` }, "system");
+    await fireStageChangeWebhook(dealId, { to: "offered", actor: "system", via: "offer_logged" });
+  }
+
+  return { offer, deduped: false, advanced: didAdvance };
+}
+
+// -- Contacts / duplicates -------------------------------------------------
 
 // Exact-name match (case-insensitive) or create. Intake types a counterparty
 // name; if that person/firm is already a contact we reuse them so their deal

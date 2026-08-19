@@ -1,14 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { logDealEvent, isValidLeaseStage, STAGE_LABELS, ACQUISITION_STAGES } from "@/lib/deals";
+import { logDealEvent, isValidAcqStage, STAGE_LABELS } from "@/lib/deals";
+import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
+
+// Every stage move goes through here so the audit event and the outbound
+// webhook fire in exactly one place per transition.
+async function advance(
+  dealId: string,
+  toStage: string,
+  eventType: string,
+  detail: Record<string, unknown>,
+  actor: string,
+  extraColumns: Record<string, unknown> = {}
+) {
+  const supabase = getServiceClient();
+  const { data: before } = await supabase
+    .from("deals")
+    .select("stage")
+    .eq("id", dealId)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("deals")
+    .update({ stage: toStage, ...extraColumns })
+    .eq("id", dealId);
+  if (error) return { error: error.message };
+
+  await logDealEvent(dealId, eventType, detail, actor);
+  await fireStageChangeWebhook(dealId, { from: before?.stage ?? null, to: toStage, actor });
+  return { error: null };
+}
 
 // PATCH /api/deals/[id]
 // body:
 //   { action: "mark_offered" }
-//   { action: "confirm_psa" }                    -- gated by canConfirmPsa()
-//   { action: "provide_mla", ...mlaFields }       -- fills in MLA after a request
-//   { action: "set_lease_stage", toStage: "tour" } -- leasing pipeline moves
+//   { action: "confirm_psa" }                              -- gated by canConfirmPsa()
+//   { action: "move_to_due_diligence", ddEndOn, closingOn } -- PSA executed
+//   { action: "mark_closed", closedOn }                     -- deal closed
+//   { action: "set_acq_stage", toStage: "uw" }              -- stage correction
+//   { action: "set_targeting", ... }                        -- archive scoring
+//   { action: "update_details", ... }                       -- edit deal + property
+//   { action: "provide_mla", ...mlaFields }                 -- fills in MLA after a request
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -16,29 +49,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json();
   const supabase = getServiceClient();
 
-  // Leasing pipeline transition. Any of the three can move a lease along; the
-  // executed/PSA-equivalent isn't gated the way acquisitions PSA is, since a
-  // signed lease is confirmed by document, not by a role check.
-  if (body.action === "set_lease_stage") {
-    const toStage = body.toStage;
-    if (!isValidLeaseStage(toStage)) {
-      return NextResponse.json({ error: "Not a valid leasing stage" }, { status: 400 });
-    }
-    const { error } = await supabase.from("deals").update({ stage: toStage }).eq("id", params.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logDealEvent(
-      params.id,
-      "lease_stage_changed",
-      { to: toStage, label: STAGE_LABELS[toStage] ?? toStage },
-      user.email
-    );
-    return NextResponse.json({ ok: true });
-  }
-
   if (body.action === "mark_offered") {
-    const { error } = await supabase.from("deals").update({ stage: "offered" }).eq("id", params.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logDealEvent(params.id, "marked_offered", {}, user.email);
+    const { error } = await advance(params.id, "offered", "marked_offered", {}, user.email);
+    if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 
@@ -49,28 +62,63 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { status: 403 }
       );
     }
-    const { error } = await supabase.from("deals").update({ stage: "moving_to_psa" }).eq("id", params.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logDealEvent(params.id, "confirmed_psa", {}, user.email);
+    const { error } = await advance(params.id, "moving_to_psa", "confirmed_psa", {}, user.email);
+    if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 
-  // Stage correction for acquisitions -- lets a deal move BACKWARD when
-  // someone advanced it by mistake. Any acquisition stage is a legal target;
-  // the DB constraint still guards against cross-pipeline stages.
+  // PSA executed -> the deal enters Due Diligence, carrying the two dates the
+  // morning brief warns on. Both optional: a DD period that isn't pinned down
+  // yet shouldn't block the stage move.
+  if (body.action === "move_to_due_diligence") {
+    const { error } = await advance(
+      params.id,
+      "due_diligence",
+      "entered_due_diligence",
+      { dd_end_on: body.ddEndOn ?? null, closing_on: body.closingOn ?? null },
+      user.email,
+      { dd_end_on: body.ddEndOn ?? null, closing_on: body.closingOn ?? null }
+    );
+    if (error) return NextResponse.json({ error }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // Closed. closed_on is what the home screen's date ranges count on, so it's
+  // required rather than defaulted silently to today.
+  if (body.action === "mark_closed") {
+    if (!body.closedOn) {
+      return NextResponse.json({ error: "A closing date is required" }, { status: 400 });
+    }
+    const { error } = await advance(
+      params.id,
+      "closed",
+      "marked_closed",
+      { closed_on: body.closedOn },
+      user.email,
+      { closed_on: body.closedOn }
+    );
+    if (error) return NextResponse.json({ error }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // Stage correction -- lets a deal move BACKWARD when someone advanced it by
+  // mistake. Any acquisition stage is a legal target; the DB constraint still
+  // guards against cross-pipeline stages. Moving back out of Closed clears
+  // closed_on, otherwise the deal would keep showing in closing totals.
   if (body.action === "set_acq_stage") {
     const toStage = body.toStage;
-    if (!(ACQUISITION_STAGES as readonly string[]).includes(toStage)) {
+    if (!isValidAcqStage(toStage)) {
       return NextResponse.json({ error: "Not a valid acquisition stage" }, { status: 400 });
     }
-    const { error } = await supabase.from("deals").update({ stage: toStage }).eq("id", params.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logDealEvent(
+    const { error } = await advance(
       params.id,
+      toStage,
       "stage_corrected",
       { to: toStage, label: STAGE_LABELS[toStage] ?? toStage },
-      user.email
+      user.email,
+      toStage === "closed" ? {} : { closed_on: null }
     );
+    if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 
@@ -124,24 +172,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (propErr) return NextResponse.json({ error: propErr.message }, { status: 500 });
     }
 
+    const dealUpdate: Record<string, unknown> = {
+      marketing_status: body.marketingStatus || null,
+      acquisition_type: body.acquisitionType || null,
+      dd_end_on: body.ddEndOn || null,
+      closing_on: body.closingOn || null,
+    };
+    // asset_class is NOT NULL -- only write it when a valid value came in, so a
+    // caller that omits the field can't null out which pipeline a deal is in.
+    if (body.assetClass === "ios" || body.assetClass === "industrial") {
+      dealUpdate.asset_class = body.assetClass;
+    }
+
     const { error: dealErr } = await supabase
       .from("deals")
-      .update({
-        marketing_status: body.marketingStatus || null,
-        acquisition_type: body.acquisitionType || null,
-      })
+      .update(dealUpdate)
       .eq("id", params.id);
     if (dealErr) return NextResponse.json({ error: dealErr.message }, { status: 500 });
 
     await logDealEvent(params.id, "details_edited", {}, user.email);
-    return NextResponse.json({ ok: true });
-  }
-
-  // PSA executed -> the deal enters Due Diligence.
-  if (body.action === "move_to_due_diligence") {
-    const { error } = await supabase.from("deals").update({ stage: "due_diligence" }).eq("id", params.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logDealEvent(params.id, "entered_due_diligence", {}, user.email);
     return NextResponse.json({ ok: true });
   }
 

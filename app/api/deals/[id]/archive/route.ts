@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent } from "@/lib/deals";
+import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser } from "@/lib/auth";
 
 // POST /api/deals/[id]/archive
@@ -39,6 +40,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       user.email
     );
+    await fireStageChangeWebhook(params.id, {
+      from: body.stage ?? null,
+      to: "archived",
+      actor: user.email,
+      via: "archive",
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -46,12 +53,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // TODO(claude-code): decide which stage a restored deal returns to --
     // probably death_stage, but confirm with Rhett before building.
     const { data: deal } = await supabase.from("deals").select("death_stage").eq("id", params.id).single();
+    const toStage = deal?.death_stage ?? "uw";
     const { error } = await supabase
       .from("deals")
-      .update({ stage: deal?.death_stage ?? "uw", death_stage: null, death_reason: null })
+      .update({ stage: toStage, death_stage: null, death_reason: null })
       .eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await logDealEvent(params.id, "restored", {}, user.email);
+    await fireStageChangeWebhook(params.id, {
+      from: "archived",
+      to: toStage,
+      actor: user.email,
+      via: "restore",
+    });
     return NextResponse.json({ ok: true });
   }
 

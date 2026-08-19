@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
-import { ACQUISITION_STAGES, LEASE_STAGES, STAGE_LABELS } from "@/lib/deals";
+import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
+import { assetClassOf, closedDate, ctToday, rangeStart } from "@/lib/summary";
 import Nav from "@/components/Nav";
 import CardDeleteButton from "@/components/CardDeleteButton";
 import AutoRefresh from "@/components/AutoRefresh";
@@ -12,6 +13,9 @@ export const dynamic = "force-dynamic";
 const STALE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKS = 12;
+// The funnel covers live pipeline only. 'closed' is a terminus that
+// accumulates forever, so it's reported as a count, not a funnel step.
+const FUNNEL_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
 
 function daysAgo(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS);
@@ -106,13 +110,14 @@ export default async function DashboardPage() {
     supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, created_at, updated_at, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(event_type, created_at)"
-      ),
+        "id, stage, asset_class, created_at, updated_at, closed_on, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(event_type, created_at)"
+      )
+      .eq("deal_type", "acquisition"),
     supabase.from("tasks").select("id, due_date").eq("status", "open"),
     supabase.from("activities").select("activity_type").gte("occurred_at", thirtyDaysAgo),
     supabase
       .from("offers")
-      .select("id, price, offered_at, created_at, deals(id, deal_type, properties(address, lot_sf))")
+      .select("id, price, offered_at, created_at, source, deals(id, deal_type, properties(address, lot_sf))")
       .order("offered_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false }),
   ]);
@@ -120,37 +125,37 @@ export default async function DashboardPage() {
   const deals = dealsRes.data ?? [];
   const openTasks = tasksRes.data ?? [];
   const recentActivities = activitiesRes.data ?? [];
-  const allOffers = offersRes.data ?? [];
-
-  const active = deals.filter((d: any) => d.stage !== "archived");
-  const archived = deals.filter((d: any) => d.stage === "archived");
-  const acq = active.filter((d: any) => d.deal_type === "acquisition");
-  const lease = active.filter((d: any) => d.deal_type === "lease");
-
-  const acqFunnel = ACQUISITION_STAGES.map((s) => ({
-    stage: s,
-    count: acq.filter((d: any) => d.stage === s).length,
-  }));
-  const leaseFunnel = LEASE_STAGES.map((s) => ({
-    stage: s,
-    count: lease.filter((d: any) => d.stage === s).length,
-  }));
-
-  // Weekly velocity (all acquisitions entered, incl. since-archived ones).
-  const intakeWeekly = weeklyCounts(
-    deals.filter((d: any) => d.deal_type === "acquisition").map((d: any) => d.created_at)
+  const allOffers = (offersRes.data ?? []).filter(
+    (o: any) => !o.deals || o.deals.deal_type !== "lease"
   );
+
+  const archived = deals.filter((d: any) => d.stage === "archived");
+  const closed = deals.filter((d: any) => d.stage === "closed");
+  // Live pipeline: neither dead (archived) nor done (closed).
+  const acq = deals.filter((d: any) => d.stage !== "archived" && d.stage !== "closed");
+
+  // One funnel per pipeline -- IOS and Industrial are run as separate books, so
+  // a single blended funnel hid which one was actually moving.
+  const funnelFor = (assetClass: string) =>
+    FUNNEL_STAGES.map((s) => ({
+      stage: s,
+      count: acq.filter((d: any) => d.stage === s && assetClassOf(d) === assetClass).length,
+    }));
+
+  const ytdStart = rangeStart("ytd", ctToday());
+  const closedYtd = closed.filter((d: any) => closedDate(d) >= ytdStart);
+
+  // Weekly velocity (all deals entered, incl. since-archived ones).
+  const intakeWeekly = weeklyCounts(deals.map((d: any) => d.created_at));
   const offersWeekly = weeklyCounts(allOffers.map((o: any) => o.offered_at));
-  const newThisWeek = deals.filter(
-    (d: any) => d.deal_type === "acquisition" && daysAgo(d.created_at) < 7
-  ).length;
+  const newThisWeek = deals.filter((d: any) => daysAgo(d.created_at) < 7).length;
   const offersThisWeek = allOffers.filter(
     (o: any) => o.offered_at && daysAgo(o.offered_at) < 7
   ).length;
   const offers30d = allOffers.filter((o: any) => o.offered_at && daysAgo(o.offered_at) < 30);
   const offers30dTotal = offers30d.reduce((s: number, o: any) => s + (o.price ?? 0), 0);
 
-  const stale = active
+  const stale = acq
     .map((d: any) => {
       const lastEvent = (d.deal_events ?? []).map((e: any) => e.created_at).sort().pop();
       return { ...d, staleDays: daysAgo(lastEvent ?? d.created_at) };
@@ -163,13 +168,7 @@ export default async function DashboardPage() {
   );
 
   const targetsDue = archived
-    .filter(
-      (d: any) =>
-        d.deal_type === "acquisition" &&
-        d.follow_up_on &&
-        d.follow_up_on <= today &&
-        d.pursuit_score !== 0
-    )
+    .filter((d: any) => d.follow_up_on && d.follow_up_on <= today && d.pursuit_score !== 0)
     .sort((a: any, b: any) => (a.follow_up_on ?? "").localeCompare(b.follow_up_on ?? ""));
 
   const realDeaths = archived.filter(
@@ -212,10 +211,13 @@ export default async function DashboardPage() {
         <div className="stat-grid">
           <Link href="/deals" className="stat-tile">
             <span className="stat-value">{acq.length}</span>
-            <span className="stat-label">Active acquisitions</span>
-            {newThisWeek > 0 && <span className="stat-delta">+{newThisWeek} this week</span>}
+            <span className="stat-label">Active pipeline</span>
+            <span className="stat-delta">
+              {newThisWeek > 0 ? `+${newThisWeek} this week · ` : ""}
+              {closedYtd.length} closed YTD
+            </span>
           </Link>
-          <Link href="/deals" className="stat-tile">
+          <Link href="/offers" className="stat-tile">
             <span className="stat-value">{offersThisWeek}</span>
             <span className="stat-label">Offers this week</span>
             <span className="stat-delta">
@@ -240,28 +242,25 @@ export default async function DashboardPage() {
         </div>
 
         <div className="dash-cols">
-          <section className="panel">
-            <h2>
-              Acquisitions funnel{" "}
-              <Link href="/deals" className="muted panel-link">
-                board →
-              </Link>
-            </h2>
-            <Funnel rows={acqFunnel} boardHref="/deals" />
-          </section>
-          <section className="panel">
-            <h2>
-              Leasing funnel{" "}
-              <Link href="/leasing" className="muted panel-link">
-                board →
-              </Link>
-            </h2>
-            {lease.length === 0 ? (
-              <p className="muted">No active lease deals.</p>
-            ) : (
-              <Funnel rows={leaseFunnel} boardHref="/leasing" />
-            )}
-          </section>
+          {ASSET_CLASSES.map((ac) => {
+            const rows = funnelFor(ac);
+            const total = rows.reduce((s, r) => s + r.count, 0);
+            return (
+              <section className="panel" key={ac}>
+                <h2>
+                  {ASSET_CLASS_LABELS[ac]} funnel{" "}
+                  <Link href={`/deals?asset=${ac}`} className="muted panel-link">
+                    board →
+                  </Link>
+                </h2>
+                {total === 0 ? (
+                  <p className="muted">No active {ASSET_CLASS_LABELS[ac]} deals.</p>
+                ) : (
+                  <Funnel rows={rows} boardHref={`/deals?asset=${ac}`} />
+                )}
+              </section>
+            );
+          })}
         </div>
 
         <div className="dash-cols">
@@ -287,10 +286,8 @@ export default async function DashboardPage() {
             <TruncatedList
               items={stale.map((d: any) => (
                 <li key={d.id}>
-                  <span className="doc-type">{d.deal_type === "lease" ? "LEASE" : "ACQ"}</span>
-                  <Link href={d.deal_type === "lease" ? `/leasing/${d.id}` : `/deals/${d.id}`}>
-                    {d.properties?.address ?? "Untitled deal"}
-                  </Link>
+                  <span className="doc-type">{ASSET_CLASS_LABELS[assetClassOf(d)]}</span>
+                  <Link href={`/deals/${d.id}`}>{d.properties?.address ?? "Untitled deal"}</Link>
                   <span className="muted">
                     {" "}
                     · {STAGE_LABELS[d.stage] ?? d.stage} ·{" "}
@@ -334,7 +331,12 @@ export default async function DashboardPage() {
           </section>
 
           <section className="panel">
-            <h2>Recent offers</h2>
+            <h2>
+              Recent offers{" "}
+              <Link href="/offers" className="muted panel-link">
+                full log →
+              </Link>
+            </h2>
             {recentOffers.length === 0 ? (
               <p className="muted">No offers logged yet.</p>
             ) : (
@@ -355,6 +357,11 @@ export default async function DashboardPage() {
                         <span className="muted">(deleted deal)</span>
                       )}
                       {o.offered_at && <span className="muted"> · {o.offered_at}</span>}
+                      {o.source === "loi" && (
+                        <span className="doc-type" style={{ marginLeft: 6 }}>
+                          LOI
+                        </span>
+                      )}
                     </li>
                   );
                 })}
@@ -434,8 +441,8 @@ export default async function DashboardPage() {
                 )
                 .map((d: any) => (
                   <li key={d.id} className="archive-row">
-                    <span className="doc-type">{d.deal_type === "lease" ? "LEASE" : "ACQ"}</span>
-                    <Link href={d.deal_type === "lease" ? `/leasing/${d.id}` : `/deals/${d.id}`}>
+                    <span className="doc-type">{ASSET_CLASS_LABELS[assetClassOf(d)]}</span>
+                    <Link href={`/deals/${d.id}`}>
                       {d.properties?.address ?? "Untitled deal"}
                     </Link>
                     <span className="muted">

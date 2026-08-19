@@ -1,6 +1,6 @@
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
-import { getDealContacts, listContacts, ROLE_LABELS, ROLES_BY_DEAL_TYPE } from "@/lib/crm";
+import { ACQUISITION_ROLES, getDealContacts, listContacts, ROLE_LABELS } from "@/lib/crm";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import StageActions from "@/components/StageActions";
@@ -14,20 +14,10 @@ import LoiPanel from "@/components/LoiPanel";
 import TargetingPanel from "@/components/TargetingPanel";
 import RestoreDealButton from "@/components/RestoreDealButton";
 import TruncatedList from "@/components/TruncatedList";
-import { ACQUISITION_STAGES } from "@/lib/deals";
+import { ACQUISITION_STAGES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
-
-const STAGE_LABELS: Record<string, string> = {
-  prospect: "Prospect",
-  uw: "UW",
-  uw_v1: "UW v1", // legacy -- display only
-  offered: "Offered",
-  moving_to_psa: "Moving to PSA",
-  due_diligence: "Due Diligence",
-  archived: "Archived",
-};
 
 function fmtPct(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
@@ -142,7 +132,7 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
   return (
     <>
-    <Nav active="acquisitions" />
+    <Nav active="pipeline" />
     <main className="deal-detail">
       <BackButton />
 
@@ -150,7 +140,11 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         <div>
           <h1>{deal.properties?.address}</h1>
           <p className="muted">
-            {deal.properties?.market ?? "—"} · {deal.properties?.asset_type?.toUpperCase()}
+            {deal.properties?.market ?? "—"} ·{" "}
+            <Link href={`/deals?asset=${deal.asset_class}`}>
+              {ASSET_CLASS_LABELS[deal.asset_class] ?? deal.asset_class}
+            </Link>{" "}
+            pipeline · asset type {deal.properties?.asset_type ?? "—"}
           </p>
         </div>
         <span className={`stage-badge stage-${deal.stage}`}>{STAGE_LABELS[deal.stage] ?? deal.stage}</span>
@@ -170,6 +164,8 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         canConfirmPsa={userCanConfirmPsa}
         prevStage={prevStage}
         prevStageLabel={prevStage ? STAGE_LABELS[prevStage] : null}
+        ddEndOn={deal.dd_end_on ?? null}
+        closingOn={deal.closing_on ?? null}
       />
 
       {deal.stage === "archived" && (
@@ -250,14 +246,26 @@ export default async function DealDetailPage({ params }: { params: { id: string 
                     : "—"}
             </span>
           </div>
+          <div>
+            <span className="label">DD expires</span>
+            <span className="value">{deal.dd_end_on ?? "—"}</span>
+          </div>
+          <div>
+            <span className="label">{deal.stage === "closed" ? "Closed" : "Target closing"}</span>
+            <span className="value">
+              {deal.stage === "closed" ? deal.closed_on ?? "—" : deal.closing_on ?? "—"}
+            </span>
+          </div>
         </div>
         <div style={{ marginTop: 12 }}>
           <DealEditForm
             dealId={deal.id}
-            dealType="acquisition"
             property={deal.properties}
+            assetClass={deal.asset_class}
             marketingStatus={deal.marketing_status ?? null}
             acquisitionType={deal.acquisition_type ?? null}
+            ddEndOn={deal.dd_end_on ?? null}
+            closingOn={deal.closing_on ?? null}
           />
         </div>
       </section>
@@ -353,7 +361,7 @@ export default async function DealDetailPage({ params }: { params: { id: string 
           name: c.name,
           company: c.companies?.name ?? null,
         }))}
-        roleOptions={ROLES_BY_DEAL_TYPE.acquisition}
+        roleOptions={ACQUISITION_ROLES}
         roleLabels={ROLE_LABELS}
       />
 

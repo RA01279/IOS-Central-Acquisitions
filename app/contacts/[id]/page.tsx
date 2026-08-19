@@ -96,14 +96,22 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
                 .filter((d: any) => d.deals)
                 .map((d: any, i: number) => {
                   const deal = d.deals;
-                  const href = deal.deal_type === "lease" ? `/leasing/${deal.id}` : `/deals/${deal.id}`;
+                  // Legacy lease deals have no page any more, so they're shown
+                  // as plain text rather than a link into a 404.
+                  const isLease = deal.deal_type === "lease";
                   return (
                     <li key={`${deal.id}-${d.role}-${i}`}>
                       <span className="doc-type">{ROLE_LABELS[d.role] ?? d.role}</span>
-                      <Link href={href}>{deal.properties?.address ?? "Untitled deal"}</Link>
+                      {isLease ? (
+                        <span>{deal.properties?.address ?? "Untitled deal"}</span>
+                      ) : (
+                        <Link href={`/deals/${deal.id}`}>
+                          {deal.properties?.address ?? "Untitled deal"}
+                        </Link>
+                      )}
                       <span className="muted">
                         {" "}
-                        · {deal.deal_type === "lease" ? "Leasing" : "Acquisition"} ·{" "}
+                        · {isLease ? "Leasing (retired)" : "Acquisition"} ·{" "}
                         {STAGE_LABELS[deal.stage] ?? deal.stage}
                       </span>
                     </li>

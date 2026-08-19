@@ -34,12 +34,14 @@ export async function GET(req: NextRequest) {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Hopper morning digest</title>
-    <link>https://ios-central-acquisitions.vercel.app/dashboard</link>
-    <description>Overdue follow-ups, targets due, and stale deals from Hopper</description>
+    <title>Central Acquisitions morning brief</title>
+    <link>https://ios-central-acquisitions.vercel.app/</link>
+    <description>DD expirations, closings, overdue follow-ups, targets due, and stale deals</description>
     <item>
       <title>${subject.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</title>
-      <link>https://ios-central-acquisitions.vercel.app/dashboard</link>
+      <link>https://ios-central-acquisitions.vercel.app/</link>
+      <!-- guid prefix is historical: changing it would make every past item
+           look new to the Power Automate flow and re-send the backlog. -->
       <guid isPermaLink="false">hopper-digest-${today}</guid>
       <pubDate>${pubDate}</pubDate>
       <description>${cdata(html)}</description>

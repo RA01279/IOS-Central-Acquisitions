@@ -14,8 +14,9 @@ import SignOutButton from "./SignOutButton";
 import NavSearch from "./NavSearch";
 
 const LINKS = [
-  { href: "/deals", label: "Acquisitions", key: "acquisitions" },
-  { href: "/leasing", label: "Leasing", key: "leasing" },
+  { href: "/", label: "Home", key: "home" },
+  { href: "/deals", label: "Pipeline", key: "pipeline" },
+  { href: "/offers", label: "Offers", key: "offers" },
   { href: "/targets", label: "Targets", key: "targets" },
   { href: "/contacts", label: "Contacts", key: "contacts" },
   { href: "/tasks", label: "Tasks", key: "tasks" },
@@ -26,7 +27,7 @@ export default function Nav({ active }: { active?: string }) {
   return (
     <nav className="app-nav">
       <div className="app-nav-brand">
-        <a href="/deals">Hopper</a>
+        <a href="/">Central Acquisitions</a>
       </div>
       <div className="app-nav-links">
         {LINKS.map((l) => (

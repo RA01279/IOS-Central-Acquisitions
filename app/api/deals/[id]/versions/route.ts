@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent } from "@/lib/deals";
+import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser } from "@/lib/auth";
 import { parseReturnsSummary } from "@/lib/excel-parser";
 
@@ -99,6 +100,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .select("id");
   if (advanced && advanced.length > 0) {
     await logDealEvent(params.id, "advanced_to_uw", { via: "model_upload" }, "system");
+    await fireStageChangeWebhook(params.id, {
+      from: "prospect",
+      to: "uw",
+      actor: user.email,
+      via: "model_upload",
+    });
   }
 
   // Surface parser warnings (e.g. #REF! errors, non-numeric cells) back to

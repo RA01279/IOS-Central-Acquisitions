@@ -1,5 +1,14 @@
 "use client";
 // components/StageActions.tsx
+//
+// The forward/back moves available at each stage, plus archiving.
+//
+// Two transitions ask for dates rather than just firing, because those dates
+// are what the morning brief warns on and the home screen counts:
+//   * -> Due Diligence  asks for the DD expiry and target closing date
+//   * -> Closed         asks for the actual closing date
+// Both prefill (DD/closing from the deal, closing date from today) so the
+// common case is one extra Enter, not a data-entry chore.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -10,12 +19,16 @@ export default function StageActions({
   canConfirmPsa,
   prevStage,
   prevStageLabel,
+  ddEndOn,
+  closingOn,
 }: {
   dealId: string;
   stage: string;
   canConfirmPsa: boolean;
   prevStage?: string | null;
   prevStageLabel?: string | null;
+  ddEndOn?: string | null;
+  closingOn?: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -25,6 +38,15 @@ export default function StageActions({
   const [disposition, setDisposition] = useState("");
   const [pursuitScore, setPursuitScore] = useState("");
   const [followUpOn, setFollowUpOn] = useState("");
+
+  // -> Due Diligence
+  const [showDd, setShowDd] = useState(false);
+  const [ddEnd, setDdEnd] = useState(ddEndOn ?? "");
+  const [closing, setClosing] = useState(closingOn ?? "");
+
+  // -> Closed
+  const [showClose, setShowClose] = useState(false);
+  const [closedOn, setClosedOn] = useState(new Date().toISOString().slice(0, 10));
 
   async function callAction(action: string, extra: Record<string, unknown> = {}) {
     setBusy(action);
@@ -39,6 +61,8 @@ export default function StageActions({
         const body = await res.json();
         throw new Error(body.error ?? "Action failed");
       }
+      setShowDd(false);
+      setShowClose(false);
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -100,11 +124,75 @@ export default function StageActions({
         </button>
       )}
 
-      {stage === "moving_to_psa" && (
-        <button onClick={() => callAction("move_to_due_diligence")} disabled={busy !== null}>
-          {busy === "move_to_due_diligence" ? "Moving…" : "PSA executed → Due Diligence"}
-        </button>
-      )}
+      {stage === "moving_to_psa" &&
+        (!showDd ? (
+          <button onClick={() => setShowDd(true)} disabled={busy !== null}>
+            PSA executed → Due Diligence
+          </button>
+        ) : (
+          <div className="inline-add-form" style={{ width: "100%" }}>
+            <p className="hint">
+              These two dates drive the 7-day reminder in the morning brief. Leave either blank if
+              it isn't set yet — you can fill it in later from Edit details.
+            </p>
+            <div className="grid-2">
+              <label>
+                DD expires
+                <input type="date" value={ddEnd} onChange={(e) => setDdEnd(e.target.value)} />
+              </label>
+              <label>
+                Target closing
+                <input type="date" value={closing} onChange={(e) => setClosing(e.target.value)} />
+              </label>
+            </div>
+            <div className="stage-actions" style={{ marginBottom: 0 }}>
+              <button
+                onClick={() =>
+                  callAction("move_to_due_diligence", {
+                    ddEndOn: ddEnd || null,
+                    closingOn: closing || null,
+                  })
+                }
+                disabled={busy !== null}
+              >
+                {busy === "move_to_due_diligence" ? "Moving…" : "Enter Due Diligence"}
+              </button>
+              <button type="button" className="secondary" onClick={() => setShowDd(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ))}
+
+      {stage === "due_diligence" &&
+        (!showClose ? (
+          <button onClick={() => setShowClose(true)} disabled={busy !== null}>
+            Closed →
+          </button>
+        ) : (
+          <div className="inline-add-form" style={{ width: "100%" }}>
+            <label>
+              Closing date
+              <input
+                type="date"
+                value={closedOn}
+                onChange={(e) => setClosedOn(e.target.value)}
+                required
+              />
+            </label>
+            <div className="stage-actions" style={{ marginBottom: 0 }}>
+              <button
+                onClick={() => callAction("mark_closed", { closedOn })}
+                disabled={busy !== null || !closedOn}
+              >
+                {busy === "mark_closed" ? "Closing…" : "Mark Closed"}
+              </button>
+              <button type="button" className="secondary" onClick={() => setShowClose(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ))}
 
       {prevStage && stage !== "archived" && (
         <button

@@ -55,11 +55,7 @@ export default async function TasksPage({
               {tasks.map((t: any) => {
                 const overdue = isOverdue(t.due_date);
                 const deal = t.deals;
-                const dealHref = deal
-                  ? deal.deal_type === "lease"
-                    ? `/leasing/${deal.id}`
-                    : `/deals/${deal.id}`
-                  : null;
+                const dealHref = deal ? `/deals/${deal.id}` : null;
                 return (
                   <li key={t.id} className="task-row">
                     <TaskDoneButton taskId={t.id} />

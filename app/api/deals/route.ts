@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
       submarket: body.submarket,
       city: body.city,
       assetType: body.assetType,
+      // Which pipeline (IOS / Industrial). Omitted -> derived from assetType.
+      assetClass: body.assetClass === "industrial" ? "industrial" : body.assetClass === "ios" ? "ios" : undefined,
       lotSf: body.lotSf,
       acres: body.acres,
       buildingSf: body.buildingSf,
@@ -26,14 +28,10 @@ export async function POST(req: NextRequest) {
       occupancyStatus: body.occupancyStatus,
       waltYears: body.waltYears,
       tenancy: body.tenancy,
-      tenantName: body.tenantName,
-      landlordRepName: body.landlordRepName,
-      tenantRepName: body.tenantRepName,
       currentOwnerName: body.currentOwnerName,
       buyerBrokerName: body.buyerBrokerName,
       sellerBrokerName: body.sellerBrokerName,
       sourceBrokerId: body.sourceBrokerId,
-      dealType: body.dealType, // "acquisition" (default) or "lease"
       createdBy: user.email,
       mla: body.mla,
     });

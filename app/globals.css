@@ -232,6 +232,10 @@ fieldset {
   grid-template-columns: repeat(5, 1fr);
   gap: 12px;
 }
+.pipeline-board-6 {
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
 .pipeline-column h2 {
   display: flex;
   align-items: center;
@@ -971,4 +975,65 @@ form textarea {
   border-radius: 4px;
   padding: 1px 6px;
   margin-right: 6px;
+}
+
+/* Wide pages: the six-column pipeline board and the offer log don't fit the
+   960px reading width the rest of the app uses. */
+main.wide {
+  max-width: 1320px;
+}
+
+.stat-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Roll-up tables: home-screen asset-class matrix and the offer log. Numbers
+   are tabular so columns line up when scanned vertically. */
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.summary-table th,
+.summary-table td {
+  padding: 7px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+.summary-table thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.summary-table th[scope="row"],
+.summary-table thead th:first-child,
+.summary-table td:first-child {
+  text-align: left;
+}
+.summary-table tbody tr:last-child th,
+.summary-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.summary-table .summary-total th,
+.summary-table .summary-total td {
+  font-weight: 600;
+  border-top: 2px solid var(--border);
+}
+/* The offer log is wide -- left-align its text columns, keep rows on one line,
+   and let the wrapper scroll horizontally rather than squeezing columns. */
+.table-scroll {
+  overflow-x: auto;
+}
+.log-table td,
+.log-table th {
+  text-align: left;
+  white-space: nowrap;
+}
+.log-table td:nth-child(5),
+.log-table td:nth-child(6) {
+  text-align: right;
 }

@@ -2,7 +2,7 @@ import "./globals.css";
 import ProductionRedirect from "@/components/ProductionRedirect";
 
 export const metadata = {
-  title: "Hopper",
+  title: "Central Acquisitions",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

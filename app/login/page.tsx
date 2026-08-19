@@ -26,15 +26,15 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/deals");
+    router.push("/");
     router.refresh();
   }
 
   return (
     <main className="login-page">
       <form onSubmit={handleSubmit} className="login-form">
-        <h1>Hopper</h1>
-        <p className="subtitle">Acquisitions deal tracker</p>
+        <h1>Central Acquisitions</h1>
+        <p className="subtitle">IOS &amp; Industrial deal pipeline</p>
 
         <label>
           Email

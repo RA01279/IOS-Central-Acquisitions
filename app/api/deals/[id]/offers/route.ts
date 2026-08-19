@@ -1,11 +1,11 @@
 // app/api/deals/[id]/offers/route.ts
 // Offer history for a deal -- the tracker's "Last Offer Date/Price" and
-// "Times We've Offered" as real rows. Logging an offer on a deal still at
-// Prospect/UW auto-advances it to Offered, since making an offer IS what
-// makes a deal offered.
+// "Times We've Offered" as real rows. The insert itself (plus the
+// prospect/uw -> Offered advance) lives in recordOffer(), shared with LOI
+// generation so an LOI at a price lands in the offer log automatically.
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { logDealEvent } from "@/lib/deals";
+import { logDealEvent, recordOffer } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -13,36 +13,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const body = await req.json();
-  const supabase = getServiceClient();
 
-  const { data: offer, error } = await supabase
-    .from("offers")
-    .insert({
-      deal_id: params.id,
-      offered_at: body.offeredAt ?? new Date().toISOString().slice(0, 10),
-      price: body.price ?? null,
-      notes: body.notes ?? null,
-      created_by: user.email,
-    })
-    .select()
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await logDealEvent(params.id, "offer_logged", { price: body.price ?? null }, user.email);
-
-  // Making an offer moves an early-stage acquisition to Offered.
-  const { data: advanced } = await supabase
-    .from("deals")
-    .update({ stage: "offered" })
-    .eq("id", params.id)
-    .eq("deal_type", "acquisition")
-    .in("stage", ["prospect", "uw"])
-    .select("id");
-  if (advanced && advanced.length > 0) {
-    await logDealEvent(params.id, "marked_offered", { via: "offer_logged" }, "system");
+  try {
+    const { offer } = await recordOffer(
+      params.id,
+      {
+        price: body.price ?? null,
+        offeredAt: body.offeredAt ?? null,
+        notes: body.notes ?? null,
+        source: "manual",
+      },
+      user.email
+    );
+    return NextResponse.json({ offer }, { status: 201 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
-
-  return NextResponse.json({ offer }, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

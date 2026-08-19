@@ -53,6 +53,7 @@ export default function DealForm() {
       market: form.get("market"),
       city: (form.get("city") as string) || undefined,
       assetType: form.get("assetType"),
+      assetClass: form.get("assetClass"),
       acres: form.get("acres") ? Number(form.get("acres")) : undefined,
       buildingSf: form.get("buildingSf") ? Number(form.get("buildingSf")) : undefined,
       marketingStatus: (form.get("marketingStatus") as string) || undefined,
@@ -135,15 +136,24 @@ export default function DealForm() {
         </label>
       </div>
 
-      <label>
-        Asset type
-        <select name="assetType" defaultValue="ios">
-          <option value="ios">IOS</option>
-          <option value="industrial">Industrial</option>
-          <option value="flex">Flex</option>
-          <option value="other">Other</option>
-        </select>
-      </label>
+      <div className="grid-2">
+        <label>
+          Pipeline
+          <select name="assetClass" defaultValue="ios">
+            <option value="ios">IOS</option>
+            <option value="industrial">Industrial</option>
+          </select>
+        </label>
+        <label>
+          Asset type
+          <select name="assetType" defaultValue="ios">
+            <option value="ios">IOS</option>
+            <option value="industrial">Industrial</option>
+            <option value="flex">Flex</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+      </div>
 
       <div className="grid-2">
         <label>
