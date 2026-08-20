@@ -1,4 +1,4 @@
-// lib/ic-deck/iosDemandMap.ts
+﻿// lib/ic-deck/iosDemandMap.ts
 //
 // Shared logic for the IOS Demand Map / IC deck export feature.
 // Calls app/api/deals/[id]/demand-map/route.ts, which geocodes the deal's
@@ -92,12 +92,35 @@ export function computePixelPositions(
 
 // ---- Export to IC deck (.pptx) ----
 
+// pptxgenjs is loaded from a <script> tag (its browser bundle) rather than
+// imported as an npm package. The npm package's main entry pulls in Node
+// builtins (fs, https, crypto...) at module-load time for its universal
+// Node+browser support, which webpack 5 cannot bundle for the client (it
+// throws UnhandledSchemeError on node:fs-style imports -- resolve.alias
+// does not intercept scheme-prefixed specifiers, this is a known webpack 5
+// limitation, not a config mistake). The CDN bundle is built specifically
+// to avoid that: it's plain browser JS with zero Node dependencies.
+let pptxScriptPromise: Promise<void> | null = null;
+function loadPptxScript(): Promise<void> {
+  if (typeof window !== "undefined" && (window as any).PptxGenJS) return Promise.resolve();
+  if (pptxScriptPromise) return pptxScriptPromise;
+  pptxScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/pptxgenjs@3/dist/pptxgen.bundle.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load pptxgenjs from CDN"));
+    document.head.appendChild(script);
+  });
+  return pptxScriptPromise;
+}
+
 export async function exportToPptx(
   data: DemandMapResponse,
   dealMeta: { subtitle?: string; fileName?: string },
   categories: Category[] = DEFAULT_CATEGORIES
 ) {
-  const PptxGenJS = (await import("pptxgenjs")).default;
+  await loadPptxScript();
+  const PptxGenJS = (window as any).PptxGenJS;
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_WIDE";
 
