@@ -15,11 +15,15 @@ export default function DealEditForm({
   acquisitionType,
   ddEndOn,
   closingOn,
+  contractPrice,
+  closedPrice,
 }: {
   dealId: string;
   assetClass: string | null;
   ddEndOn: string | null;
   closingOn: string | null;
+  contractPrice: number | null;
+  closedPrice: number | null;
   property: {
     address: string | null;
     city: string | null;
@@ -67,6 +71,8 @@ export default function DealEditForm({
           acquisitionType: form.get("acquisitionType"),
           ddEndOn: form.get("ddEndOn"),
           closingOn: form.get("closingOn"),
+          contractPrice: form.get("contractPrice"),
+          closedPrice: form.get("closedPrice"),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Save failed");
@@ -192,6 +198,26 @@ export default function DealEditForm({
         <label>
           Target closing
           <input name="closingOn" type="date" defaultValue={closingOn ?? ""} />
+        </label>
+        <label>
+          Contract price ($)
+          <input
+            name="contractPrice"
+            type="number"
+            step="1000"
+            defaultValue={contractPrice ?? ""}
+            placeholder="agreed PSA price"
+          />
+        </label>
+        <label>
+          Final closing price ($)
+          <input
+            name="closedPrice"
+            type="number"
+            step="1000"
+            defaultValue={closedPrice ?? ""}
+            placeholder="what it actually closed at"
+          />
         </label>
       </div>
       {error && <p className="error">{error}</p>}

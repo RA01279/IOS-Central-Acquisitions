@@ -15,6 +15,7 @@ import TargetingPanel from "@/components/TargetingPanel";
 import RestoreDealButton from "@/components/RestoreDealButton";
 import TruncatedList from "@/components/TruncatedList";
 import { ACQUISITION_STAGES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
+import { dealValue, VALUE_BASIS_LABELS } from "@/lib/summary";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
@@ -64,6 +65,9 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
   const stageIdx = (ACQUISITION_STAGES as readonly string[]).indexOf(deal.stage);
   const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : null;
+
+  // The figure this deal contributes to the home screen and export, and why.
+  const reportedValue = dealValue(deal);
 
   // LOI prefill priority: LIVE DEAL DATA WINS for everything Hopper owns
   // (latest offer price, property facts, linked contacts) -- update the deal
@@ -166,6 +170,7 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         prevStageLabel={prevStage ? STAGE_LABELS[prevStage] : null}
         ddEndOn={deal.dd_end_on ?? null}
         closingOn={deal.closing_on ?? null}
+        contractPrice={deal.contract_price ?? null}
       />
 
       {deal.stage === "archived" && (
@@ -256,7 +261,23 @@ export default async function DealDetailPage({ params }: { params: { id: string 
               {deal.stage === "closed" ? deal.closed_on ?? "—" : deal.closing_on ?? "—"}
             </span>
           </div>
+          <div>
+            <span className="label">Contract price</span>
+            <span className="value">{fmtUsd(deal.contract_price)}</span>
+          </div>
+          <div>
+            <span className="label">Final closing price</span>
+            <span className={deal.closed_price ? "value highlight" : "value"}>
+              {fmtUsd(deal.closed_price)}
+            </span>
+          </div>
         </div>
+        {/* Which price the roll-ups will use for this deal, stated plainly so
+            nobody has to reverse-engineer it from the home screen. */}
+        <p className="hint">
+          Reported value: <strong>{fmtUsd(reportedValue.amount)}</strong> (
+          {VALUE_BASIS_LABELS[reportedValue.basis]})
+        </p>
         <div style={{ marginTop: 12 }}>
           <DealEditForm
             dealId={deal.id}
@@ -266,6 +287,8 @@ export default async function DealDetailPage({ params }: { params: { id: string 
             acquisitionType={deal.acquisition_type ?? null}
             ddEndOn={deal.dd_end_on ?? null}
             closingOn={deal.closing_on ?? null}
+            contractPrice={deal.contract_price ?? null}
+            closedPrice={deal.closed_price ?? null}
           />
         </div>
       </section>

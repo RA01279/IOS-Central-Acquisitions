@@ -116,17 +116,29 @@ const stageMatrix = `
     </tbody>
   </table>`;
 
+// `value` is real money (closing price > contract price > last offer).
+// estimatedFromOffers says how much of it is still an offer rather than a
+// settled number -- shown rather than hidden, so nobody quotes it as final.
 const closedBlock = (label, block) => `
   <tr>
     <th>${esc(label)}</th>
     ${classes.map((c) => `<td>${block?.byAssetClass?.[c] ?? 0}</td>`).join("")}
     <td><strong>${block?.count ?? 0}</strong></td>
-    <td>${money(block?.lastOfferValueTotal ?? 0)}</td>
+    <td>${money(block?.valueTotal ?? 0)}</td>
+    <td class="caveat">${
+      block?.estimatedFromOffers
+        ? `${block.estimatedFromOffers} at last offer`
+        : block?.unpriced
+          ? `${block.unpriced} unpriced`
+          : block?.count
+            ? "actual"
+            : "—"
+    }</td>
   </tr>`;
 
 const dealRows = (deals, extra) =>
   !deals?.length
-    ? `<tr><td colspan="6" class="muted">Nothing to show.</td></tr>`
+    ? `<tr><td colspan="7" class="muted">Nothing to show.</td></tr>`
     : deals
         .map(
           (x) => `<tr>
@@ -134,7 +146,16 @@ const dealRows = (deals, extra) =>
             <td>${esc(x.market ?? "—")}</td>
             <td>${esc(CLASS_LABELS[x.assetClass] ?? x.assetClass)}</td>
             <td>${esc(x.stageLabel ?? x.stage)}</td>
-            <td class="num">${money(x.lastOfferPrice)}</td>
+            <td class="num">${money(x.value ?? x.lastOfferPrice)}</td>
+            <td class="caveat">${esc(
+              x.valueBasis === "closed"
+                ? "closed"
+                : x.valueBasis === "contract"
+                  ? "contract"
+                  : x.valueBasis === "last_offer"
+                    ? "last offer"
+                    : "—"
+            )}</td>
             <td>${esc(extra(x))}</td>
           </tr>`
         )
@@ -196,6 +217,7 @@ const html = `<!doctype html>
   tr.total th, tr.total td { font-weight:600; border-top:2px solid var(--border) }
   tr.bad td { color:var(--error) }
   td.num { text-align:right }
+  td.caveat { font-size:12px; color:var(--muted) }
   footer { color:var(--muted); font-size:12px; margin-top:24px }
 </style></head><body><main>
   <h1>Central Acquisitions roll-up</h1>
@@ -209,11 +231,19 @@ const html = `<!doctype html>
     ${tile(d.acquisitions?.activeCount ?? 0, "Active pipeline",
       classes.map((c) => `${CLASS_LABELS[c]} ${d.acquisitions?.byAssetClass?.[c] ?? 0}`).join(" · "))}
     ${tile(d.acquisitions?.inContract?.count ?? 0, "In contract",
-      `${money(d.acquisitions?.inContract?.lastOfferValueTotal ?? 0)} at last offer`)}
+      `${money(d.acquisitions?.inContract?.valueTotal ?? 0)}${
+        d.acquisitions?.inContract?.estimatedFromOffers
+          ? ` · ${d.acquisitions.inContract.estimatedFromOffers} at last offer`
+          : ""
+      }`)}
     ${tile(d.offers?.monthToDate?.count ?? 0, "Offers month to date",
       `${money(d.offers?.monthToDate?.value ?? 0)} offered`)}
     ${tile(d.closed?.yearToDate?.count ?? 0, "Closed year to date",
-      `${money(d.closed?.yearToDate?.lastOfferValueTotal ?? 0)}`)}
+      `${money(d.closed?.yearToDate?.valueTotal ?? 0)}${
+        d.closed?.yearToDate?.estimatedFromOffers
+          ? ` · ${d.closed.yearToDate.estimatedFromOffers} estimated`
+          : ""
+      }`)}
     ${tile(d.tasks?.open ?? 0, "Open follow-ups",
       `${d.tasks?.overdue ?? 0} overdue`)}
     ${tile(d.targets?.dueCount ?? 0, "Targets due", "archived deals to re-approach")}
@@ -225,7 +255,7 @@ const html = `<!doctype html>
     <table>
       <thead><tr><th></th>${classes
         .map((c) => `<th>${esc(CLASS_LABELS[c] ?? c)}</th>`)
-        .join("")}<th>Total</th><th>Last-offer value</th></tr></thead>
+        .join("")}<th>Total</th><th>Value</th><th>Basis</th></tr></thead>
       <tbody>
         ${closedBlock("Last 7 days", d.closed?.last7Days)}
         ${closedBlock("Month to date", d.closed?.monthToDate)}
@@ -243,7 +273,7 @@ const html = `<!doctype html>
 
   <section class="panel"><h2>In contract</h2>
     <table>
-      <thead><tr><th>Property</th><th>Market</th><th>Class</th><th>Stage</th><th>Last offer</th><th>Dates</th></tr></thead>
+      <thead><tr><th>Property</th><th>Market</th><th>Class</th><th>Stage</th><th>Value</th><th>Basis</th><th>Dates</th></tr></thead>
       <tbody>${dealRows(
         d.acquisitions?.deals?.filter((x) =>
           (d.acquisitions?.inContract?.stages ?? ["moving_to_psa", "due_diligence"]).includes(x.stage)
@@ -257,7 +287,7 @@ const html = `<!doctype html>
 
   <section class="panel"><h2>Closed deals</h2>
     <table>
-      <thead><tr><th>Property</th><th>Market</th><th>Class</th><th>Stage</th><th>Last offer</th><th>Closed</th></tr></thead>
+      <thead><tr><th>Property</th><th>Market</th><th>Class</th><th>Stage</th><th>Value</th><th>Basis</th><th>Closed</th></tr></thead>
       <tbody>${dealRows(d.closed?.deals, (x) => x.closedOn ?? "—")}</tbody>
     </table>
   </section>
@@ -272,9 +302,10 @@ const html = `<!doctype html>
   </section>
 
   <footer>
-    Generated by scripts/rollup-dashboard.mjs. Dollar figures are the most recent offer on each
-    deal — the tracker holds no contract price. Deal links require a Central Acquisitions login.
-    No credentials are embedded in this file.
+    Generated by scripts/rollup-dashboard.mjs. Dollar figures use the actual closing price where a
+    deal has closed, the agreed contract price where it is under contract, and the most recent offer
+    otherwise — the Basis column says which. Deal links require a Central Acquisitions login. No
+    credentials are embedded in this file.
   </footer>
 </main></body></html>`;
 

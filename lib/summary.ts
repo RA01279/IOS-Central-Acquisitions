@@ -73,6 +73,9 @@ export interface SummaryDeal {
   assetClass: AssetClass;
   stage: string;
   value: number | null;
+  valueBasis: ValueBasis;
+  contractPrice: number | null;
+  closedPrice: number | null;
   ddEndOn: string | null;
   closingOn: string | null;
   closedOn: string | null;
@@ -102,8 +105,8 @@ export interface Summary {
   // Point-in-time standing counts: what's sitting in each stage right now.
   // Not range-scoped -- a stage count has no date window.
   standing: Record<"prospect" | "uw" | "offered", ClassSplit>;
-  inContract: { count: ClassSplit; value: ClassSplit; deals: SummaryDeal[] };
-  closed: { count: ClassSplit; value: ClassSplit; deals: SummaryDeal[] };
+  inContract: { count: ClassSplit; money: ValueRollup; deals: SummaryDeal[] };
+  closed: { count: ClassSplit; money: ValueRollup; deals: SummaryDeal[] };
   upcoming: Milestone[];
 }
 
@@ -122,14 +125,60 @@ export function assetClassOf(deal: any): AssetClass {
   return deal?.asset_class === "industrial" ? "industrial" : "ios";
 }
 
-// A deal's dollar value for roll-up purposes: its most recent offer. That's the
-// only price Hopper actually holds -- there is no contract-price field -- so
-// every "$" on the home screen is last-offer money and is labelled that way.
 export function lastOffer(deal: any): { price: number | null; offeredAt: string | null } {
   const sorted = [...(deal?.offers ?? [])].sort((a: any, b: any) =>
     (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
   );
   return { price: sorted[0]?.price ?? null, offeredAt: sorted[0]?.offered_at ?? null };
+}
+
+// How solid a deal's dollar figure is. Ordered best-to-worst -- the resolution
+// below walks it in this order.
+export type ValueBasis = "closed" | "contract" | "last_offer" | "none";
+
+export const VALUE_BASIS_LABELS: Record<ValueBasis, string> = {
+  closed: "actual closing price",
+  contract: "contract price",
+  last_offer: "last offer",
+  none: "no price",
+};
+
+// The dollar figure to report for a deal, and where it came from.
+//
+// Prefer what actually happened over what we asked for: the real closing price,
+// then the agreed contract price, then the most recent offer. The basis travels
+// with the number everywhere it's displayed -- a subtotal that's partly guessed
+// has to say so, because "closed $12.4M" reading as fact when it's really the
+// last price we offered is the kind of number a boss repeats in a meeting.
+export function dealValue(deal: any): { amount: number | null; basis: ValueBasis } {
+  if (deal?.closed_price) return { amount: Number(deal.closed_price), basis: "closed" };
+  if (deal?.contract_price) return { amount: Number(deal.contract_price), basis: "contract" };
+  const offer = lastOffer(deal).price;
+  if (offer) return { amount: Number(offer), basis: "last_offer" };
+  return { amount: null, basis: "none" };
+}
+
+// A money subtotal plus how much of it is firm. `estimated` counts the deals
+// contributing a last-offer figure rather than a real price; `missing` counts
+// deals with no price at all, which are silently absent from the total.
+export interface ValueRollup {
+  value: ClassSplit;
+  estimated: number;
+  missing: number;
+}
+
+function emptyRollup(): ValueRollup {
+  return { value: emptySplit(), estimated: 0, missing: 0 };
+}
+
+function addToRollup(rollup: ValueRollup, deal: any, assetClass: AssetClass): void {
+  const { amount, basis } = dealValue(deal);
+  if (amount === null) {
+    rollup.missing++;
+    return;
+  }
+  if (basis === "last_offer") rollup.estimated++;
+  addToSplit(rollup.value, assetClass, amount);
 }
 
 // The date a closed deal closed. closed_on is set when the Closed button is
@@ -140,13 +189,17 @@ export function closedDate(deal: any): string {
 }
 
 function summaryDeal(deal: any): SummaryDeal {
+  const { amount, basis } = dealValue(deal);
   return {
     id: deal.id,
     address: deal.properties?.address ?? null,
     market: deal.properties?.market ?? null,
     assetClass: assetClassOf(deal),
     stage: deal.stage,
-    value: lastOffer(deal).price,
+    value: amount,
+    valueBasis: basis,
+    contractPrice: deal.contract_price === null || deal.contract_price === undefined ? null : Number(deal.contract_price),
+    closedPrice: deal.closed_price === null || deal.closed_price === undefined ? null : Number(deal.closed_price),
     ddEndOn: deal.dd_end_on ?? null,
     closingOn: deal.closing_on ?? null,
     closedOn: deal.closed_on ?? null,
@@ -205,7 +258,7 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
     supabase
       .from("deals")
       .select(
-        "id, stage, asset_class, created_at, updated_at, dd_end_on, closing_on, closed_on, properties(address, market), offers(price, offered_at)"
+        "id, stage, asset_class, created_at, updated_at, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address, market), offers(price, offered_at)"
       )
       .eq("deal_type", "acquisition"),
     // "Deals underwritten" = deals that entered UW in the window. The event
@@ -232,8 +285,8 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
     offersSubmitted: emptySplit(),
     offersValue: emptySplit(),
     standing: { prospect: emptySplit(), uw: emptySplit(), offered: emptySplit() },
-    inContract: { count: emptySplit(), value: emptySplit(), deals: [] },
-    closed: { count: emptySplit(), value: emptySplit(), deals: [] },
+    inContract: { count: emptySplit(), money: emptyRollup(), deals: [] },
+    closed: { count: emptySplit(), money: emptyRollup(), deals: [] },
     upcoming: upcomingMilestones(deals, { today }),
   };
 
@@ -248,15 +301,13 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
 
     if ((IN_CONTRACT_STAGES as readonly string[]).includes(d.stage)) {
       addToSplit(summary.inContract.count, ac);
-      const { price } = lastOffer(d);
-      if (price) addToSplit(summary.inContract.value, ac, price);
+      addToRollup(summary.inContract.money, d, ac);
       summary.inContract.deals.push(summaryDeal(d));
     }
 
     if (d.stage === "closed" && closedDate(d) >= start) {
       addToSplit(summary.closed.count, ac);
-      const { price } = lastOffer(d);
-      if (price) addToSplit(summary.closed.value, ac, price);
+      addToRollup(summary.closed.money, d, ac);
       summary.closed.deals.push(summaryDeal(d));
     }
 

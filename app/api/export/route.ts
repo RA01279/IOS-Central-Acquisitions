@@ -13,6 +13,14 @@
 //   * Every deal carries `assetClass` ("ios" | "industrial"), and the
 //     aggregates are split the same way.
 //
+// Money (added Aug 2026, additive -- no version bump): deals now carry real
+// contractPrice / closedPrice, and every deal reports `value` + `valueBasis`
+// resolving closing price > contract price > last offer. The aggregate blocks
+// gained `value` / `valueTotal` alongside the original `lastOfferValue*` fields,
+// which are unchanged so existing consumers keep working. Prefer `value`, and
+// show `estimatedFromOffers` when it's non-zero -- part of that total is then
+// an offer, not a settled number.
+//
 // Optional, opt-in blocks (off by default, so the default payload stays the
 // same size it always was):
 //   ?include=contacts       -- deal counterparties by role, names only
@@ -26,7 +34,14 @@ import {
   STAGE_LABELS,
   type AssetClass,
 } from "@/lib/deals";
-import { assetClassOf, closedDate, ctToday, rangeStart, upcomingMilestones } from "@/lib/summary";
+import {
+  assetClassOf,
+  closedDate,
+  ctToday,
+  dealValue,
+  rangeStart,
+  upcomingMilestones,
+} from "@/lib/summary";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +81,7 @@ export async function GET(req: NextRequest) {
     supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, asset_class, created_at, dd_end_on, closing_on, closed_on, death_stage, death_reason, disposition, pursuit_score, follow_up_on, marketing_status, acquisition_type, properties(address, city, market, submarket, lot_sf, building_sf, occupancy_status, walt_years, tenancy), offers(price, offered_at), deal_events(created_at), documents(doc_type, uploaded_at)" +
+        "id, deal_type, stage, asset_class, created_at, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, marketing_status, acquisition_type, properties(address, city, market, submarket, lot_sf, building_sf, occupancy_status, walt_years, tenancy), offers(price, offered_at), deal_events(created_at), documents(doc_type, uploaded_at)" +
           (wantContacts ? ", deal_contacts(role, contacts(name, title, contact_type, companies(name)))" : "")
       )
       .eq("deal_type", "acquisition"),
@@ -92,6 +107,7 @@ export async function GET(req: NextRequest) {
     const lastTouch =
       (d.deal_events ?? []).map((e: any) => e.created_at).sort().pop() ?? d.created_at;
     const lois = loiDocs(d);
+    const reported = dealValue(d);
     const shape: Record<string, unknown> = {
       id: d.id,
       url: `${APP_URL}/deals/${d.id}`,
@@ -120,6 +136,16 @@ export async function GET(req: NextRequest) {
       ddEndOn: d.dd_end_on ?? null,
       closingOn: d.closing_on ?? null,
       closedOn: d.closed_on ?? null,
+      // Real prices, where they exist. contractPrice is the agreed PSA price;
+      // closedPrice is what the deal actually closed at.
+      contractPrice: d.contract_price === null || d.contract_price === undefined ? null : Number(d.contract_price),
+      closedPrice: d.closed_price === null || d.closed_price === undefined ? null : Number(d.closed_price),
+      // The figure to report for this deal, and which of the three it came
+      // from: "closed" | "contract" | "last_offer" | "none". Prefer this over
+      // lastOfferPrice for any money display -- and surface the basis, so a
+      // last_offer figure is never shown as though it were settled.
+      value: reported.amount,
+      valueBasis: reported.basis,
       loiCount: lois.length,
       lastLoiAt:
         lois.map((x: any) => x.uploaded_at).sort().pop() ?? null,
@@ -177,8 +203,17 @@ export async function GET(req: NextRequest) {
   const inContractDeals = active.filter((d: any) =>
     (IN_CONTRACT_STAGES as readonly string[]).includes(d.stage)
   );
+  // Two money views, deliberately both present:
+  //   lastOfferValue -- pure last-offer sum. Unchanged from earlier v2 payloads
+  //                     so a consumer built against it keeps working.
+  //   value          -- the real figure (closing price > contract price > last
+  //                     offer), with `estimated`/`missing` counts so a partly
+  //                     inferred total can be labelled honestly.
   const inContractByClass = zeroByClass();
   const inContractValueByClass = zeroByClass();
+  const inContractRealByClass = zeroByClass();
+  let inContractEstimated = 0;
+  let inContractMissing = 0;
   for (const d of inContractDeals as any[]) {
     const ac = assetClassOf(d);
     inContractByClass[ac]++;
@@ -186,6 +221,12 @@ export async function GET(req: NextRequest) {
       (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
     )[0];
     if (last?.price) inContractValueByClass[ac] += last.price;
+    const { amount, basis } = dealValue(d);
+    if (amount === null) inContractMissing++;
+    else {
+      inContractRealByClass[ac] += amount;
+      if (basis === "last_offer") inContractEstimated++;
+    }
   }
 
   // Closings bucketed by window, so a consumer doesn't have to redo the date
@@ -196,20 +237,36 @@ export async function GET(req: NextRequest) {
   }
   function closedSummary(list: any[]) {
     const count = zeroByClass();
+    const lastOfferValue = zeroByClass();
     const value = zeroByClass();
+    let estimated = 0;
+    let missing = 0;
     for (const d of list) {
       const ac = assetClassOf(d);
       count[ac]++;
       const last = [...(d.offers ?? [])].sort((a: any, b: any) =>
         (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
       )[0];
-      if (last?.price) value[ac] += last.price;
+      if (last?.price) lastOfferValue[ac] += last.price;
+      const resolved = dealValue(d);
+      if (resolved.amount === null) missing++;
+      else {
+        value[ac] += resolved.amount;
+        if (resolved.basis === "last_offer") estimated++;
+      }
     }
     return {
       count: list.length,
       byAssetClass: count,
-      lastOfferValue: value,
-      lastOfferValueTotal: value.ios + value.industrial,
+      // Real money: actual closing prices where recorded.
+      value,
+      valueTotal: value.ios + value.industrial,
+      // How much of `valueTotal` is inferred rather than actual.
+      estimatedFromOffers: estimated,
+      unpriced: missing,
+      // Retained for consumers built against the earlier v2 payload.
+      lastOfferValue,
+      lastOfferValueTotal: lastOfferValue.ios + lastOfferValue.industrial,
     };
   }
 
@@ -259,6 +316,10 @@ export async function GET(req: NextRequest) {
       inContract: {
         count: inContractDeals.length,
         byAssetClass: inContractByClass,
+        value: inContractRealByClass,
+        valueTotal: inContractRealByClass.ios + inContractRealByClass.industrial,
+        estimatedFromOffers: inContractEstimated,
+        unpriced: inContractMissing,
         lastOfferValue: inContractValueByClass,
         lastOfferValueTotal: inContractValueByClass.ios + inContractValueByClass.industrial,
         stages: IN_CONTRACT_STAGES,

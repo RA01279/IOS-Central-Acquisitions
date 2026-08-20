@@ -24,6 +24,23 @@ Stages: `prospect -> uw -> offered -> moving_to_psa -> due_diligence -> closed`,
 with `archived` as the shared terminal. "In contract" in any roll-up means
 `moving_to_psa + due_diligence`.
 
+## Money
+
+Three prices, in decreasing order of certainty, and reporting always uses the
+best one available:
+
+| Column | Set when | Meaning |
+|---|---|---|
+| `deals.closed_price` | Marking a deal Closed (**required**) | what it actually closed at |
+| `deals.contract_price` | Confirming Moving to PSA, or entering DD (optional) | the agreed PSA price |
+| latest `offers.price` | Any offer logged, or an LOI generated | what we last asked |
+
+`dealValue()` in `lib/summary.ts` resolves them in that order and returns a
+`valueBasis` alongside the number. **Every money figure carries its basis** --
+subtotals report `estimated` (deals falling back to an offer) and `missing`
+(deals with no price at all), and the UI prints those caveats. A half-inferred
+total quoted as fact is the failure mode this exists to prevent.
+
 Leasing was removed from the product in Aug 2026. Lease rows, lease stages, and
 the `deal_type` column all remain in the database -- nothing reads them, nothing
 creates them, and the decision is reversible.
@@ -66,6 +83,7 @@ Apply migrations in order:
 ```bash
 node scripts/apply-migration.mjs supabase/migrations/0016_pipeline_bifurcation.sql
 node scripts/apply-migration.mjs supabase/migrations/0017_search_ranking.sql
+node scripts/apply-migration.mjs supabase/migrations/0018_deal_prices.sql
 ```
 
 (or paste the `.sql` files into the Supabase SQL editor). Both are written to be
@@ -110,9 +128,9 @@ safe to re-run.
 - Documents are stored and listed but there's no signed-URL download button.
 - Duplicate detection runs and logs an event at intake; nothing surfaces it in
   the UI yet.
-- Dollar figures everywhere are the most recent **offer** on a deal. There is no
-  contract-price or actual-closing-price field, so "closed value" is last-offer
-  value and is labelled that way. Worth adding if closings need real numbers.
+- Historical deals have no `contract_price`, so anything already under contract
+  before Aug 2026 reports at last-offer value until someone fills the price in
+  (the home screen and export both say how many).
 - `comp_weight_config` exists but is unused -- v1 comp scoring is recency +
   distance only (`lib/comps.ts`).
 - Restore-from-archive returns a deal to its `death_stage`; that behaviour was

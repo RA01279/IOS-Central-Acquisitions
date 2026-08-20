@@ -4,6 +4,15 @@ import { logDealEvent, isValidAcqStage, STAGE_LABELS } from "@/lib/deals";
 import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 
+// A price off a form: "4,200,000" / "$4.2M" -> 4200000, or null when there's
+// no usable positive number. The DB has CHECK (> 0) on both price columns, so a
+// zero or a stray character has to become null rather than reach Postgres.
+function parseMoney(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(String(v).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
 // Every stage move goes through here so the audit event and the outbound
 // webhook fire in exactly one place per transition.
 async function advance(
@@ -62,7 +71,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { status: 403 }
       );
     }
-    const { error } = await advance(params.id, "moving_to_psa", "confirmed_psa", {}, user.email);
+    // The PSA price is usually agreed by the time this is confirmed. Optional --
+    // a missing price must not block the stage move -- and only written when
+    // present, so confirming without one can't wipe a price already recorded.
+    const contractPrice = parseMoney(body.contractPrice);
+    const { error } = await advance(
+      params.id,
+      "moving_to_psa",
+      "confirmed_psa",
+      contractPrice === null ? {} : { contract_price: contractPrice },
+      user.email,
+      contractPrice === null ? {} : { contract_price: contractPrice }
+    );
     if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
@@ -71,13 +91,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // morning brief warns on. Both optional: a DD period that isn't pinned down
   // yet shouldn't block the stage move.
   if (body.action === "move_to_due_diligence") {
+    const columns: Record<string, unknown> = {
+      dd_end_on: body.ddEndOn ?? null,
+      closing_on: body.closingOn ?? null,
+    };
+    // By PSA execution the contract price is known for certain. Same rule as
+    // above: only written when present.
+    const contractPrice = parseMoney(body.contractPrice);
+    if (contractPrice !== null) columns.contract_price = contractPrice;
+
     const { error } = await advance(
       params.id,
       "due_diligence",
       "entered_due_diligence",
-      { dd_end_on: body.ddEndOn ?? null, closing_on: body.closingOn ?? null },
+      columns,
       user.email,
-      { dd_end_on: body.ddEndOn ?? null, closing_on: body.closingOn ?? null }
+      columns
     );
     if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
@@ -89,13 +118,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!body.closedOn) {
       return NextResponse.json({ error: "A closing date is required" }, { status: 400 });
     }
+    // The closing price is required here, unlike the contract price. This is the
+    // number that ends up in the boss's closed subtotal, and a closing with no
+    // price forces that subtotal to fall back to an offer -- which is the exact
+    // problem these columns exist to remove.
+    const closedPrice = parseMoney(body.closedPrice);
+    if (closedPrice === null) {
+      return NextResponse.json(
+        { error: "A closing price is required (this is what the closed totals report)" },
+        { status: 400 }
+      );
+    }
+    const columns = { closed_on: body.closedOn, closed_price: closedPrice };
     const { error } = await advance(
       params.id,
       "closed",
       "marked_closed",
-      { closed_on: body.closedOn },
+      columns,
       user.email,
-      { closed_on: body.closedOn }
+      columns
     );
     if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
@@ -103,8 +144,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // Stage correction -- lets a deal move BACKWARD when someone advanced it by
   // mistake. Any acquisition stage is a legal target; the DB constraint still
-  // guards against cross-pipeline stages. Moving back out of Closed clears
-  // closed_on, otherwise the deal would keep showing in closing totals.
+  // guards against cross-pipeline stages. Moving back out of Closed clears the
+  // closing date AND price, otherwise an un-closed deal keeps contributing to
+  // the closing totals. contract_price is deliberately NOT cleared -- the PSA
+  // price is still true after a mis-click is corrected.
   if (body.action === "set_acq_stage") {
     const toStage = body.toStage;
     if (!isValidAcqStage(toStage)) {
@@ -116,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       "stage_corrected",
       { to: toStage, label: STAGE_LABELS[toStage] ?? toStage },
       user.email,
-      toStage === "closed" ? {} : { closed_on: null }
+      toStage === "closed" ? {} : { closed_on: null, closed_price: null }
     );
     if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
@@ -177,6 +220,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       acquisition_type: body.acquisitionType || null,
       dd_end_on: body.ddEndOn || null,
       closing_on: body.closingOn || null,
+      // Both prices are clearable here (unlike the stage transitions, where a
+      // blank must not wipe a recorded price) -- the edit form always submits
+      // both fields, so a cleared input genuinely means "remove this".
+      contract_price: parseMoney(body.contractPrice),
+      closed_price: parseMoney(body.closedPrice),
     };
     // asset_class is NOT NULL -- only write it when a valid value came in, so a
     // caller that omits the field can't null out which pipeline a deal is in.

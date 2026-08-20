@@ -7,22 +7,31 @@ import {
   MILESTONE_LABELS,
   RANGE_KEYS,
   RANGE_LABELS,
+  VALUE_BASIS_LABELS,
   type ClassSplit,
   type RangeKey,
+  type ValueRollup,
 } from "@/lib/summary";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
 
-// Money on this screen is always last-offer money (see lib/summary.ts) --
-// Hopper holds no contract price -- so it's abbreviated and labelled as such
-// rather than presented as a precise figure.
 function fmtMoney(v: number): string {
   if (!v) return "—";
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `$${Math.round(v / 1_000)}K`;
   return `$${Math.round(v)}`;
+}
+
+// A money subtotal never appears without saying how firm it is. Deals priced
+// off their last offer, or carrying no price at all, are called out -- a
+// half-estimated total quoted as fact is worse than no total.
+function moneyCaveat(money: ValueRollup): string | null {
+  const parts: string[] = [];
+  if (money.estimated > 0) parts.push(`${money.estimated} at last offer`);
+  if (money.missing > 0) parts.push(`${money.missing} unpriced`);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 function SplitTile({
@@ -123,7 +132,11 @@ export default async function HomePage({
             label="In contract now"
             split={s.inContract.count}
             href="/deals"
-            sub={`${fmtMoney(s.inContract.value.total)} at last offer`}
+            sub={
+              moneyCaveat(s.inContract.money)
+                ? `${fmtMoney(s.inContract.money.value.total)} · ${moneyCaveat(s.inContract.money)}`
+                : `${fmtMoney(s.inContract.money.value.total)} at contract`
+            }
           />
         </div>
 
@@ -224,7 +237,9 @@ export default async function HomePage({
                       <span className="muted">
                         {" "}
                         · {STAGE_LABELS[d.stage] ?? d.stage}
-                        {d.value ? ` · ${fmtMoney(d.value)}` : ""}
+                        {d.value
+                          ? ` · ${fmtMoney(d.value)}${d.valueBasis === "last_offer" ? " (last offer)" : ""}`
+                          : " · no price"}
                         {d.ddEndOn ? ` · DD to ${d.ddEndOn}` : ""}
                         {d.closingOn ? ` · closes ${d.closingOn}` : ""}
                       </span>
@@ -233,9 +248,11 @@ export default async function HomePage({
                 </ul>
                 <p className="hint" style={{ marginTop: 10 }}>
                   {ASSET_CLASS_LABELS.ios} {s.inContract.count.ios} (
-                  {fmtMoney(s.inContract.value.ios)}) · {ASSET_CLASS_LABELS.industrial}{" "}
-                  {s.inContract.count.industrial} ({fmtMoney(s.inContract.value.industrial)}) ·
-                  Total {s.inContract.count.total} ({fmtMoney(s.inContract.value.total)})
+                  {fmtMoney(s.inContract.money.value.ios)}) · {ASSET_CLASS_LABELS.industrial}{" "}
+                  {s.inContract.count.industrial} (
+                  {fmtMoney(s.inContract.money.value.industrial)}) · Total{" "}
+                  {s.inContract.count.total} ({fmtMoney(s.inContract.money.value.total)})
+                  {moneyCaveat(s.inContract.money) ? ` — ${moneyCaveat(s.inContract.money)}` : ""}
                 </p>
               </>
             )}
@@ -260,16 +277,21 @@ export default async function HomePage({
                       <span className="muted">
                         {" "}
                         {d.closedOn ? `· closed ${d.closedOn}` : ""}
-                        {d.value ? ` · ${fmtMoney(d.value)}` : ""}
+                        {d.value
+                          ? ` · ${fmtMoney(d.value)}${
+                              d.valueBasis === "closed" ? "" : ` (${VALUE_BASIS_LABELS[d.valueBasis]})`
+                            }`
+                          : " · no price"}
                       </span>
                     </li>
                   ))}
                 </ul>
                 <p className="hint" style={{ marginTop: 10 }}>
-                  {ASSET_CLASS_LABELS.ios} {s.closed.count.ios} ({fmtMoney(s.closed.value.ios)}) ·{" "}
-                  {ASSET_CLASS_LABELS.industrial} {s.closed.count.industrial} (
-                  {fmtMoney(s.closed.value.industrial)}) · Total {s.closed.count.total} (
-                  {fmtMoney(s.closed.value.total)})
+                  {ASSET_CLASS_LABELS.ios} {s.closed.count.ios} (
+                  {fmtMoney(s.closed.money.value.ios)}) · {ASSET_CLASS_LABELS.industrial}{" "}
+                  {s.closed.count.industrial} ({fmtMoney(s.closed.money.value.industrial)}) · Total{" "}
+                  {s.closed.count.total} ({fmtMoney(s.closed.money.value.total)})
+                  {moneyCaveat(s.closed.money) ? ` — ${moneyCaveat(s.closed.money)}` : ""}
                 </p>
               </>
             )}
@@ -277,9 +299,10 @@ export default async function HomePage({
         </div>
 
         <p className="hint">
-          Dollar figures are the most recent offer on each deal — the only price this tracker holds.
-          Full operational detail (stale deals, where deals die, activity) is on the{" "}
-          <Link href="/dashboard">dashboard</Link>.
+          Dollar figures use the actual closing price where a deal has closed, the agreed contract
+          price where it's under contract, and the most recent offer otherwise — anything falling
+          back to an offer is marked. Full operational detail (stale deals, where deals die,
+          activity) is on the <Link href="/dashboard">dashboard</Link>.
         </p>
       </main>
     </>

@@ -13,6 +13,7 @@ import {
   assetClassOf,
   ctDate,
   ctToday,
+  dealValue,
   MILESTONE_LABELS,
   upcomingMilestones,
   type Milestone,
@@ -40,7 +41,7 @@ export async function composeDigest() {
     supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, asset_class, created_at, follow_up_on, pursuit_score, dd_end_on, closing_on, closed_on, properties(address), deal_events(created_at)"
+        "id, deal_type, stage, asset_class, created_at, follow_up_on, pursuit_score, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), deal_events(created_at)"
       )
       .eq("deal_type", "acquisition"),
     supabase
@@ -90,6 +91,12 @@ export async function composeDigest() {
   const closedYtd = deals.filter(
     (d: any) => d.stage === "closed" && (d.closed_on ?? ctDate(d.created_at)) >= yearStart
   );
+  // Real closings, in real money, with the caveat attached when any of it is
+  // inferred from an offer rather than a recorded closing price.
+  const closedYtdValue = closedYtd.reduce((sum: number, d: any) => sum + (dealValue(d).amount ?? 0), 0);
+  const closedYtdEstimated = closedYtd.filter((d: any) => dealValue(d).basis !== "closed").length;
+  const fmtM = (v: number) =>
+    v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v > 0 ? `$${Math.round(v / 1_000)}K` : "$0";
 
   const section = (title: string, items: string[], emptyText: string) => `
     <h3 style="margin:18px 0 6px;font-size:14px;color:#1f3b4d;">${title}</h3>
@@ -123,7 +130,9 @@ export async function composeDigest() {
     <h2 style="color:#1f3b4d;margin:0 0 4px;">Central Acquisitions morning brief</h2>
     <p style="margin:0 0 6px;color:#6b7280;font-size:13px;">
       ${ASSET_CLASSES.map(snapshotLine).join("<br/>")}<br/>
-      ${closedYtd.length} closed YTD ·
+      ${closedYtd.length} closed YTD${closedYtd.length ? ` · ${fmtM(closedYtdValue)}` : ""}${
+        closedYtdEstimated ? ` (${closedYtdEstimated} without a recorded closing price)` : ""
+      } ·
       <a href="${APP_URL}/" style="color:#2e6e62;">open home screen</a>
     </p>
     ${section(
