@@ -19,6 +19,7 @@ import { dealValue, VALUE_BASIS_LABELS } from "@/lib/summary";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
+import IcDeckPanel from "@/components/IcDeckPanel";
 
 function fmtPct(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
@@ -292,6 +293,12 @@ export default async function DealDetailPage({ params }: { params: { id: string 
           />
         </div>
       </section>
+
+      <IcDeckPanel
+        dealId={deal.id}
+        addressForSubtitle={[deal.properties?.address, deal.properties?.city].filter(Boolean).join(", ")}
+        fileNameStem={deal.properties?.address?.replace(/[^a-zA-Z0-9]+/g, "_")}
+      />
 
       <OffersPanel
         dealId={deal.id}
