@@ -63,9 +63,16 @@ export default function ExcelUploadForm({ dealId }: { dealId: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="excel-upload-form">
+      {/* Both Excel formats the parser can actually read:
+          .xlsx -- IOS models ("Summary Table" tab)
+          .xlsm -- industrial models ("_Upload_" tab), which ship macro-enabled
+          Listing only .xlsx here made Windows' file dialog HIDE every industrial
+          model, so they looked absent from the folder rather than rejected.
+          Deliberately NOT .xls or .xlsb: ExcelJS can't read either, so offering
+          them would trade an invisible file for a confusing parse failure. */}
       <input
         type="file"
-        accept=".xlsx"
+        accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
       <button type="submit" disabled={!file || status !== null}>
