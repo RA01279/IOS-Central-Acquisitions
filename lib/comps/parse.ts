@@ -47,6 +47,13 @@ export interface ParseResult {
   comps: ParsedComp[];
   /** Problems with the paste as a whole, not with one row. */
   warnings: string[];
+  /**
+   * What the parser actually saw, after flattening. Shown in the UI when
+   * nothing parses, because "no comp rows recognised" on its own is a dead end
+   * -- with this you can see whether the table arrived at all, whether it was
+   * shattered, or whether the header just wasn't recognised.
+   */
+  seen?: { lines: string[]; totalLines: number; headerCandidates: string[] };
 }
 
 const SQFT_PER_ACRE = 43560;
@@ -197,19 +204,52 @@ function splitRow(line: string): string[] {
   return [line.trim()];
 }
 
+const HEADER_LINE = /^\s*(from|sent|to|cc|bcc|subject|date|importance|attachments|reply-to)\s*:/i;
+const QUOTE_MARKER = [
+  /^\s*-{3,}\s*(original message|forwarded message)/i,
+  /^\s*_{5,}\s*$/,
+  /^\s*on .{4,}\s+wrote:\s*$/i,
+  /^\s*>{1,}\s?/,
+];
+
 /**
- * Everything below the first quoted-reply marker is an older message. Comp
- * tables from previous emails in the thread would otherwise be re-imported
- * every time someone replies.
+ * Everything below a quoted-reply marker is an older message, and comp tables
+ * from earlier in the thread would otherwise be re-imported on every reply.
+ *
+ * The subtlety: selecting a whole message in Outlook's reading pane copies its
+ * OWN header block first ("From: Doc Perrier / Sent: ... / To: ... / Subject:
+ * ..."). Treating the first "From:" as a quote boundary therefore discarded the
+ * entire email and produced "no comp rows recognised" on a perfectly good
+ * paste. So a header block is only a boundary once real content has been seen
+ * before it -- a header block at the very top belongs to the message itself.
  */
 function stripQuotedReply(text: string): string {
   const lines = text.split(/\r?\n/);
-  const cut = lines.findIndex((l) =>
-    /^\s*(from|sent|to|cc|subject)\s*:/i.test(l) ||
-    /^\s*-{3,}\s*original message/i.test(l) ||
-    /^\s*_{5,}\s*$/.test(l) ||
-    /^\s*on .+ wrote:\s*$/i.test(l)
-  );
+  let seenContent = false;
+  let cut = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+
+    if (QUOTE_MARKER.some((re) => re.test(line))) {
+      cut = i;
+      break;
+    }
+    if (HEADER_LINE.test(line)) {
+      // A header block only ends the live message if something preceded it.
+      if (seenContent) {
+        cut = i;
+        break;
+      }
+      continue; // the message's own headers -- skip, don't cut
+    }
+    // Outlook's external-sender banner isn't content; it sits above the body
+    // and would otherwise make the message's own header block look quoted.
+    if (/^\s*EXTERNAL\b/i.test(line) || /originated outside of/i.test(line)) continue;
+    seenContent = true;
+  }
+
   return cut === -1 ? text : lines.slice(0, cut).join("\n");
 }
 
@@ -253,29 +293,76 @@ function decodeEntity(match: string, body: string): string {
  * street address containing two spaces, or a table pasted with ragged
  * alignment, breaks the text path and not this one.
  */
+/** Tags, entities and whitespace out; used for the contents of a single cell. */
+function cellToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]*);/gi, decodeEntity)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function htmlToDelimitedText(html: string): string {
-  return (
-    html
-      // Drop anything that isn't content before touching structure. Outlook
-      // signatures carry <style> blocks and tracking images.
-      .replace(/<!--[\s\S]*?-->/g, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      // Cell and row boundaries become delimiters the row parser understands.
-      .replace(/<\/t[dh]\s*>\s*<t[dh][^>]*>/gi, " | ")
-      .replace(/<\/tr\s*>/gi, "\n")
-      .replace(/<\/(table|p|div|h[1-6])\s*>/gi, "\n")
+  // Comments, styles and scripts first: Outlook signatures carry <style>
+  // blocks and conditional comments full of markup that would otherwise be
+  // read as content.
+  const cleaned = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "");
+
+  const out: string[] = [];
+  // Walk tables and the prose between them in document order. Tables are
+  // handled cell by cell rather than by a chain of replaces, because Outlook
+  // wraps every cell's contents in <p class=MsoNormal> -- and turning </p>
+  // into a newline (which prose needs) shatters each table row into one line
+  // per cell, leaving nothing the row parser can recognise.
+  const tableRe = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = tableRe.exec(cleaned)) !== null) {
+    pushProse(cleaned.slice(last, m.index));
+    pushTable(m[1]);
+    last = m.index + m[0].length;
+  }
+  pushProse(cleaned.slice(last));
+
+  function pushProse(segment: string) {
+    if (!segment) return;
+    const text = segment
       .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|tr|h[1-6])\s*>/gi, "\n")
       .replace(/<[^>]+>/g, "")
-      // Entities after tag removal, so a &lt;table&gt; written as literal text
-      // can't be mistaken for markup and re-parsed as structure.
-      .replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]*);/gi, decodeEntity)
-      .replace(/[ \t]+/g, " ")
-      .split("\n")
-      .map((l) => l.replace(/\s*\|\s*/g, " | ").trim())
-      .filter(Boolean)
-      .join("\n")
-  );
+      .replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]*);/gi, decodeEntity);
+    for (const line of text.split("\n")) {
+      const t = line.replace(/[ \t]+/g, " ").trim();
+      if (t) out.push(t);
+    }
+  }
+
+  function pushTable(inner: string) {
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let r: RegExpExecArray | null;
+    let rows = 0;
+    while ((r = rowRe.exec(inner)) !== null) {
+      const cells: string[] = [];
+      const cellRe = /<t([dh])[^>]*>([\s\S]*?)<\/t\1\s*>/gi;
+      let c: RegExpExecArray | null;
+      while ((c = cellRe.exec(r[1])) !== null) cells.push(cellToText(c[2]));
+      // Trailing empty cells are Outlook's layout padding, not data.
+      while (cells.length && cells[cells.length - 1] === "") cells.pop();
+      if (cells.some((x) => x !== "")) {
+        out.push(cells.join(" | "));
+        rows++;
+      }
+    }
+    // A <table> used purely for layout (signature blocks, tracking pixels)
+    // yields nothing, which is correct -- it just isn't a comp table.
+    if (rows === 0) pushProse(inner);
+  }
+
+  return out.join("\n");
 }
 
 /** Parse comps from an email's HTML body (clipboard text/html, .eml, .msg). */
@@ -463,9 +550,34 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
   }
 
   if (!comps.length) {
-    warnings.push(
-      "No comp rows recognised. Paste the table including its header row (Address, SF, AC, Price...)."
-    );
+    // Say WHY, not just that it failed. The three causes look identical from
+    // the outside and need different fixes.
+    const multiCell = lines.filter((l) => splitRow(l).length >= 3);
+    if (!lines.length) {
+      warnings.push(
+        "Nothing left to read after removing quoted reply history. Try selecting just the comp table rather than the whole thread."
+      );
+    } else if (!multiCell.length) {
+      warnings.push(
+        "Found text but no table — every line came through as a single column. If you pasted from a PDF or plain-text email, the columns are lost; paste from the email's formatted body or drop the spreadsheet instead."
+      );
+    } else {
+      warnings.push(
+        `Found ${multiCell.length} table row${multiCell.length === 1 ? "" : "s"} but no header row I recognised. The header needs a column named Address, plus at least two of: SF, AC, Coverage, Sale Date, Price, Lease Type, Monthly Base.`
+      );
+    }
+    return {
+      comps,
+      warnings,
+      seen: {
+        lines: multiCell.length ? multiCell.slice(0, 12) : lines.slice(0, 12),
+        totalLines: lines.length,
+        // Rows that look like headers, to show which names went unrecognised.
+        headerCandidates: multiCell
+          .filter((l) => splitRow(l).every((c) => num(c) === null))
+          .slice(0, 3),
+      },
+    };
   }
   return { comps, warnings };
 }

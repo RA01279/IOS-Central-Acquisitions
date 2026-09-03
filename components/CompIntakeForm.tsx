@@ -61,6 +61,7 @@ export default function CompIntakeForm({
   const [drafts, setDrafts] = useState<DraftComp[] | null>(null);
   const [source, setSource] = useState<string>("manual");
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [seen, setSeen] = useState<{ lines: string[]; totalLines: number; headerCandidates: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -89,6 +90,7 @@ export default function CompIntakeForm({
         }))
       );
       setWarnings(body.warnings ?? []);
+      setSeen(body.seen ?? null);
       setSource(body.source ?? "manual");
     } catch (e: any) {
       setError(e.message);
@@ -185,6 +187,7 @@ export default function CompIntakeForm({
       setResult(body);
       setDrafts(null);
       setWarnings([]);
+      setSeen(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -283,6 +286,34 @@ export default function CompIntakeForm({
             ))}
           </ul>
         </div>
+      )}
+
+      {/* When nothing parses, show what actually arrived. "No rows recognised"
+          on its own is a dead end; seeing the flattened text distinguishes a
+          table that never came through from one whose header wasn't matched. */}
+      {seen && (
+        <details className="pipeline-more" style={{ marginBottom: 12 }}>
+          <summary>Show what Hopper received ({seen.totalLines} lines)</summary>
+          {seen.headerCandidates.length > 0 && (
+            <p className="hint" style={{ marginTop: 8 }}>
+              Rows that look like headers — if your header is here, one of its column names isn&apos;t
+              recognised yet. Send it over and I&apos;ll add the alias.
+            </p>
+          )}
+          <pre
+            style={{
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              padding: 10,
+              fontSize: 12,
+              overflowX: "auto",
+              whiteSpace: "pre",
+            }}
+          >
+            {[...seen.headerCandidates, ...seen.lines].join("\n") || "(nothing)"}
+          </pre>
+        </details>
       )}
 
       {result && (

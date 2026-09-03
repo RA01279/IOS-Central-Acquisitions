@@ -208,11 +208,118 @@ check("falls back to text", textOnly.comps.length, 10);
 const htmlNoTable = parseCompInput({ html: "<p>no tables here</p>", text: REAL_EMAIL }, {});
 check("ignores HTML without a table", htmlNoTable.comps.length, 10);
 
+// ------------------------------------------- regressions from a real failure
+// A Ctrl+C of the whole message in Outlook's reading pane. Two things here
+// broke the first implementation and neither was in the earlier fixture:
+//   1. every cell's contents are wrapped in <p class=MsoNormal>, and turning
+//      </p> into a newline shattered each row into one line per cell;
+//   2. the copy begins with the message's OWN From:/Sent:/To:/Subject: block,
+//      which the quoted-reply stripper treated as a quote boundary and so
+//      discarded the entire email.
+console.log("\n== real Outlook reading-pane copy (regression) ==");
+const OUTLOOK_COPY = `
+<div>
+<p class=MsoNormal>From: Doc Perrier &lt;doc.perrier@matthews.com&gt;<br>
+Sent: Thursday, September 3, 2026 5:59 AM<br>
+To: Jadon Potts &lt;jpotts@dalfen.com&gt;; Rhett Anderson &lt;randerson@dalfen.com&gt;<br>
+Subject: Re: Stabalized Deals</p>
+<p class=MsoNormal>EXTERNAL: This email originated outside of DALFEN INDUSTRIAL</p>
+<p class=MsoNormal>Hey Jadon/ Rhett-</p>
+<p class=MsoNormal>See below comps. These sold at low 7 caps.</p>
+<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0 width=0>
+ <tr>
+  <td width=140 valign=top style='padding:0in 5.4pt'><p class=MsoNormal><b>Addres</b></p></td>
+  <td width=70 valign=top style='padding:0in 5.4pt'><p class=MsoNormal><b>Year Built</b></p></td>
+  <td width=60 valign=top><p class=MsoNormal><b>SF</b></p></td>
+  <td width=50 valign=top><p class=MsoNormal><b>AC</b></p></td>
+  <td width=60 valign=top><p class=MsoNormal><b>Coverage</b></p></td>
+  <td width=70 valign=top><p class=MsoNormal><b>Sale Date</b></p></td>
+  <td width=80 valign=top><p class=MsoNormal><b>Price</b></p></td>
+  <td width=60 valign=top><p class=MsoNormal><b>Price/SF</b></p></td>
+ </tr>
+ <tr>
+  <td valign=top><p class=MsoNormal>2933 E Davis St</p></td>
+  <td valign=top><p class=MsoNormal>2017</p></td>
+  <td valign=top><p class=MsoNormal>&plusmn;9,900</p></td>
+  <td valign=top><p class=MsoNormal>&plusmn;1.40</p></td>
+  <td valign=top><p class=MsoNormal>16.40%</p></td>
+  <td valign=top><p class=MsoNormal>Jan 2026</p></td>
+  <td valign=top><p class=MsoNormal>$1,485,000</p></td>
+  <td valign=top><p class=MsoNormal>$150.00</p></td>
+ </tr>
+ <tr>
+  <td valign=top><p class=MsoNormal>2346 FM 1484 Rd</p></td>
+  <td valign=top><p class=MsoNormal>2024</p></td>
+  <td valign=top><p class=MsoNormal>&plusmn;7,500</p></td>
+  <td valign=top><p class=MsoNormal>&plusmn;1.00</p></td>
+  <td valign=top><p class=MsoNormal>17.00%</p></td>
+  <td valign=top><p class=MsoNormal>Jan 2025</p></td>
+  <td valign=top><p class=MsoNormal>$1,350,000</p></td>
+  <td valign=top><p class=MsoNormal>$180.00</p></td>
+ </tr>
+</table>
+<p class=MsoNormal>Thank you,</p>
+<table class=MsoNormalTable><tr><td><p class=MsoNormal>Doc Perrier</p></td></tr>
+<tr><td><p class=MsoNormal>First Vice President | Matthews</p></td></tr></table>
+</div>`;
+
+const oc = parseCompHtml(OUTLOOK_COPY, { city: "Conroe", market: "Houston" });
+check("survives the message's own header block", oc.comps.length, 2);
+check("MsoNormal <p> inside <td> doesn't shatter the row", oc.comps[0].address, "2933 E Davis St");
+check("cell numbers intact", oc.comps[0].buildingSf, 9900);
+check("cell acres intact", oc.comps[0].acres, 1.4);
+check("cell price intact", oc.comps[0].salePrice, 1485000);
+check("cell date intact", oc.comps[0].closedOn, "2026-01-01");
+check("second row too", oc.comps[1].address, "2346 FM 1484 Rd");
+check("signature layout table ignored", oc.comps.some((c) => /Doc Perrier|Vice President/.test(c.address)), false);
+check("clean rows, no warnings", oc.comps[0].warnings, []);
+
+// The stripper must still cut a genuine quoted reply -- the fix must not
+// simply disable it.
+console.log("\n== quoted reply is still stripped ==");
+const WITH_QUOTE = `Hey Rhett, see below.
+Address | SF | AC | Sale Date | Price
+1 Live St | 10,000 | 2.00 | Jan 2026 | $1,500,000
+Thanks,
+Doc
+From: Rhett Anderson <randerson@dalfen.com>
+Sent: Tuesday
+Address | SF | AC | Sale Date | Price
+2 Old Quoted St | 9,000 | 1.00 | Jan 2020 | $900,000`;
+const wq = parseCompTable(WITH_QUOTE, {});
+check("live table kept", wq.comps.length, 1);
+check("quoted table dropped", wq.comps[0].address, "1 Live St");
+
+const HEADER_FIRST_THEN_QUOTE = `From: Doc Perrier <doc.perrier@matthews.com>
+Sent: Thursday
+Subject: comps
+Address | SF | AC | Sale Date | Price
+1 Live St | 10,000 | 2.00 | Jan 2026 | $1,500,000
+From: Rhett Anderson <randerson@dalfen.com>
+Address | SF | AC | Sale Date | Price
+2 Old Quoted St | 9,000 | 1.00 | Jan 2020 | $900,000`;
+const hq = parseCompTable(HEADER_FIRST_THEN_QUOTE, {});
+check("own headers skipped, later quote still cut", hq.comps.length, 1);
+check("...keeping the live row", hq.comps[0].address, "1 Live St");
+
+// ---------------------------------------------------------- diagnostics
+console.log("\n== failure explains itself ==");
+const noHeader = parseCompTable("1 Somewhere St | 10,000 | 2.00 | Jan 2026 | $1,000,000", {});
+check("no comps without a header", noHeader.comps.length, 0);
+check("says the header wasn't recognised", noHeader.warnings.some((w) => w.includes("no header row I recognised")), true);
+check("returns what it saw", (noHeader.seen?.lines ?? []).length > 0, true);
+
+const singleColumn = parseCompTable("2933 E Davis St\n$1,485,000\nJan 2026", {});
+check("single-column paste explained", singleColumn.warnings.some((w) => w.includes("single column")), true);
+
 // ------------------------------------------------------------------ garbage
 console.log("\n== nothing parseable ==");
 const empty = parseCompTable("Hey Rhett, give me a call about Conroe when you get a sec.", {});
 check("no comps", empty.comps.length, 0);
-check("explains itself", empty.warnings.some((w) => w.includes("No comp rows recognised")), true);
+// Prose with no columns takes the single-column branch, which tells the user
+// the columns were lost rather than just that parsing failed.
+check("explains itself", empty.warnings.some((w) => w.includes("single column")), true);
+check("offers a way forward", empty.warnings.some((w) => w.includes("drop the spreadsheet")), true);
 
 unlinkSync(fileURLToPath(tmpUrl));
 console.log(`\n${pass} passed, ${fail} failed`);
