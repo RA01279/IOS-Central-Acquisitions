@@ -355,6 +355,22 @@ fieldset {
 .show-more {
   margin-top: 10px;
 }
+/* A block nested inside a .panel that needs to read as its own thing -- the
+   property-report picker, which sits between the drop zone and the drafts. */
+.panel-inset {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2, transparent);
+}
+.panel-inset > h3 {
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.panel-inset .hint:last-child {
+  margin-bottom: 0;
+}
+
 /* The two rent-roll-only fields on the comp intake form. Collapsed by default
    because they're wrong for every other kind of comp source. */
 .comp-rentroll {

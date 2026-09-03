@@ -3,7 +3,7 @@
 // NOTHING -- the review step in the UI is what saves, via POST /api/comps.
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { parseCompInput } from "@/lib/comps/parse";
+import { asPropertyReport, parseCompInput } from "@/lib/comps/parse";
 import { workbookToDelimitedText } from "@/lib/comps/fromWorkbook";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,15 @@ export async function POST(req: NextRequest) {
       // each comp is tagged with the tab it came from and the reviewer can
       // exclude a whole sheet that doesn't belong.
       const comps: any[] = [];
-      const perSheet: { name: string; count: number; warnings: string[] }[] = [];
+      // Buildings from a property report: not comps, but the address/market a
+      // rent roll can't supply for itself.
+      const properties: any[] = [];
+      const perSheet: {
+        name: string;
+        count: number;
+        warnings: string[];
+        propertyReport?: boolean;
+      }[] = [];
       for (const sheet of sheets) {
         // The tab's own name is the last word on comp type when the header
         // columns are ambiguous -- "Sale Comps" and "Lease Comps" are not
@@ -78,16 +86,33 @@ export async function POST(req: NextRequest) {
           { text: sheet.text },
           { ...context, defaultCompType: nameHint }
         );
+        const asProperties = asPropertyReport(parsed.comps);
+        if (asProperties) {
+          for (const p of asProperties) properties.push({ ...p, sheet: sheet.name });
+          perSheet.push({ name: sheet.name, count: 0, warnings: [], propertyReport: true });
+          continue;
+        }
         for (const c of parsed.comps) comps.push({ ...c, sheet: sheet.name });
         perSheet.push({ name: sheet.name, count: parsed.comps.length, warnings: parsed.warnings });
       }
 
       const sheetWarnings = perSheet
-        .filter((s) => s.count === 0)
+        .filter((s) => s.count === 0 && !s.propertyReport)
         .map((s) => `Sheet "${s.name}": ${s.warnings[0] ?? "no comps found"}`);
+
+      // A file that is ONLY a property report isn't a failure -- say what it is
+      // and what it's good for, rather than "no comps found".
+      if (properties.length && !comps.length) {
+        sheetWarnings.push(
+          `This is a property report, not a comp table — no rents and no closed sales in it. ` +
+            `Its ${properties.length} building${properties.length === 1 ? "" : "s"} can fill in the ` +
+            `address and market for a rent roll instead; pick one below.`
+        );
+      }
 
       return NextResponse.json({
         comps,
+        properties,
         warnings: [...warnings, ...sheetWarnings],
         source: "excel",
         sheetNames,
@@ -100,7 +125,22 @@ export async function POST(req: NextRequest) {
     }
 
     const result = parseCompInput({ html: body.html, text: body.text }, context);
-    return NextResponse.json({ ...result, source: body.html ? "email" : "manual" });
+    // A pasted property report gets the same treatment as a dropped one.
+    const asProperties = asPropertyReport(result.comps);
+    if (asProperties) {
+      return NextResponse.json({
+        comps: [],
+        properties: asProperties,
+        warnings: [
+          ...result.warnings,
+          `That's a property report, not a comp table — no rents and no closed sales in it. ` +
+            `Its ${asProperties.length} building${asProperties.length === 1 ? "" : "s"} can fill in ` +
+            `the address and market for a rent roll instead; pick one below.`,
+        ],
+        source: body.html ? "email" : "manual",
+      });
+    }
+    return NextResponse.json({ ...result, properties: [], source: body.html ? "email" : "manual" });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

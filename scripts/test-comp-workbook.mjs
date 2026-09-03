@@ -23,7 +23,7 @@ const compile = (rel, out) => {
 };
 const parseUrl = compile("../lib/comps/parse.ts", "../lib/comps/.x1.mjs");
 const wbUrl = compile("../lib/comps/fromWorkbook.ts", "../lib/comps/.x2.mjs");
-const { parseCompTable } = await import(parseUrl.href);
+const { parseCompTable, asPropertyReport } = await import(parseUrl.href);
 const { workbookToDelimitedText, parseCsv } = await import(wbUrl.href);
 
 let pass = 0, fail = 0;
@@ -224,6 +224,81 @@ const rrClamp = parseCompTable(
   { address: "1 Somewhere Rd", defaultCompType: "lease" }
 );
 ok("day clamped when the target month is shorter", rrClamp.comps[0].dateCommenced === "2030-02-28", String(rrClamp.comps[0].dateCommenced));
+
+// ---- CoStar property report ----
+// The real Oakbrook export: 38 columns of attributes, two buildings sharing a
+// street address, and no transaction anywhere in it. Not a comp table -- but
+// it holds exactly the address and market a rent roll leaves out.
+console.log("  -- property report --");
+const PR_HEADER = [
+  "Property Address", "Property Name", "Property Type", "Building Class", "Building Status",
+  "RBA", "Total Available Space (SF)", "Market Name", "Submarket Name", "Leasing Company Name",
+  "Submarket Cluster", "City", "State", "Zip", "County Name", "For Sale Price", "For Sale Status",
+  "Last Sale Date", "Last Sale Price", "Percent Leased", "Year Built", "Tenancy",
+  "Clear Height", "Land Area (AC)", "Land Area (SF)", "Zoning",
+];
+const prRow = (name, rba, ac, sf, saleDate = "", salePrice = "") => [
+  "2025 Louisville Rd", name, "Industrial", "C", "Existing", rba, "", "Savannah, GA",
+  "Greater Savannah", "Greenspace Management", "Greater Savannah", "Savannah", "GA", "31415",
+  "Chatham", "", "N", saleDate, salePrice, "100", "1987", "Multi", "", ac, sf, "I-L",
+];
+const prText = [PR_HEADER, prRow("B", 24975, 1.62, 70567), prRow("A", 24430, 3.01, 131116)]
+  .map((r) => r.join(" | ")).join("\n");
+const prRes = parseCompTable(prText, {});
+
+ok("both buildings read", prRes.comps.length === 2, `got ${prRes.comps.length}`);
+// "Property Name" holds "B", not a street -- it used to alias to address, and
+// was only right by accident of Property Address coming first.
+ok("street address, not the building letter", prRes.comps[0].address === "2025 Louisville Rd", prRes.comps[0].address);
+ok('"Property Name" is the project', prRes.comps[0].projectName === "B", String(prRes.comps[0].projectName));
+ok('"Market Name" aliased', prRes.comps[0].market === "Savannah, GA", String(prRes.comps[0].market));
+ok('"Submarket Name" beats "Submarket Cluster"', prRes.comps[0].submarket === "Greater Savannah", String(prRes.comps[0].submarket));
+ok("RBA is building SF", prRes.comps[0].buildingSf === 24975, String(prRes.comps[0].buildingSf));
+ok('"Land Area (SF)" aliased', prRes.comps[0].lotSf === 70567, String(prRes.comps[0].lotSf));
+ok('"Land Area (AC)" aliased', prRes.comps[0].acres === 1.62, String(prRes.comps[0].acres));
+ok("zoning captured", prRes.comps[0].zoning === "I-L", String(prRes.comps[0].zoning));
+ok("no sale price invented", prRes.comps[0].salePrice === null, String(prRes.comps[0].salePrice));
+
+// The classifier: attributes with no transaction is a property report.
+const prClass = asPropertyReport(prRes.comps);
+ok("recognised as a property report", prClass !== null && prClass.length === 2);
+
+// "For Sale Price" is an ASKING price. Letting it through would seed the
+// repository with list prices dressed as comps.
+const asking = parseCompTable(
+  [PR_HEADER.join(" | "),
+   prRow("B", 24975, 1.62, 70567).map((c, i) => (i === 15 ? "2750000" : c)).join(" | ")].join("\n"),
+  {}
+);
+ok("asking price is not a sale price", asking.comps[0].salePrice === null, String(asking.comps[0].salePrice));
+ok("...so it's still just a property report", asPropertyReport(asking.comps) !== null);
+
+// But a populated Last Sale IS a comp, and must stop being a property report.
+const traded = parseCompTable(
+  [PR_HEADER.join(" | "), prRow("B", 24975, 1.62, 70567, "3/14/2025", "2450000").join(" | ")].join("\n"),
+  {}
+);
+ok('"Last Sale Price" is a sale price', traded.comps[0].salePrice === 2450000, String(traded.comps[0].salePrice));
+ok('"Last Sale Date" is the close date', traded.comps[0].closedOn === "2025-03-14", String(traded.comps[0].closedOn));
+ok("a traded building is a comp, not a report", asPropertyReport(traded.comps) === null);
+
+// One row missing its rent inside a real comp table must stay a visible
+// rejected comp -- never get reclassified into something the reviewer's
+// drafts list won't show.
+const gappy = parseCompTable(
+  ["Address | City | Market | Building SF | Year Built | Rent $/SF/Yr | Commenced",
+   "1 Real Comp Rd | Conroe | Houston | 10,000 | 2019 | 9.00 | 1/1/2026",
+   "2 Missing Rent Rd | Conroe | Houston | 12,000 | 2020 |  | 1/1/2026"].join("\n"),
+  {}
+);
+ok("gappy comp table is not a property report", asPropertyReport(gappy.comps) === null,
+  `${gappy.comps.length} rows`);
+
+// And a table we simply failed to read shouldn't masquerade as a report.
+const unreadable = parseCompTable(
+  ["Address | Some Column", "1 Nothing Rd | x", "2 Nothing Rd | y"].join("\n"), {}
+);
+ok("unreadable table is not a property report", asPropertyReport(unreadable.comps) === null);
 
 // ---- a formula cell, which is what a Price PSF column usually is ----
 const wb3 = new ExcelJS.Workbook();

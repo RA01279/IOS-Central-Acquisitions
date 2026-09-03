@@ -49,6 +49,23 @@ interface DraftComp {
   _include: boolean;
 }
 
+/**
+ * One building out of a CoStar property report. Carries attributes and no
+ * transaction, so it can't be a comp -- but it holds exactly the address and
+ * market a rent roll leaves out.
+ */
+interface PropertyRecord {
+  address: string;
+  projectName: string | null;
+  city: string | null;
+  market: string | null;
+  submarket: string | null;
+  buildingSf: number | null;
+  yearBuilt: number | null;
+  acres: number | null;
+  zoning: string | null;
+}
+
 function fmtNum(v: number | null) {
   return v === null || v === undefined ? "" : String(v);
 }
@@ -73,6 +90,9 @@ export default function CompIntakeForm({
   const [assumedTerm, setAssumedTerm] = useState("");
   const [sourceRef, setSourceRef] = useState("");
   const [drafts, setDrafts] = useState<DraftComp[] | null>(null);
+  // Buildings off a property report. Not comps -- they're what a rent roll is
+  // missing, so they're offered as a pre-fill rather than saved.
+  const [properties, setProperties] = useState<PropertyRecord[]>([]);
   const [source, setSource] = useState<string>("manual");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [seen, setSeen] = useState<{ lines: string[]; totalLines: number; headerCandidates: string[] } | null>(null);
@@ -109,6 +129,7 @@ export default function CompIntakeForm({
           assetClass: assetClass || null,
         }))
       );
+      setProperties(body.properties ?? []);
       setWarnings(body.warnings ?? []);
       setSeen(body.seen ?? null);
       setSource(body.source ?? "manual");
@@ -417,6 +438,73 @@ export default function CompIntakeForm({
               <li key={i}>{w}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* A property report can't be saved as comps -- it has no transaction in
+          it. What it can do is answer the two questions a rent roll can't, so
+          it's offered as a pre-fill instead of reported as a failure. */}
+      {properties.length > 0 && (
+        <div className="panel-inset" style={{ marginBottom: 14 }}>
+          <h3 style={{ marginTop: 0 }}>
+            Buildings in that report <span className="count">{properties.length}</span>
+          </h3>
+          <div className="table-scroll">
+            <table className="summary-table log-table">
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Bldg</th>
+                  <th>Market · Submarket</th>
+                  <th>RBA</th>
+                  <th>Acres</th>
+                  <th>Built</th>
+                  <th>Zoning</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {properties.map((p, i) => (
+                  <tr key={i}>
+                    <td>{p.address}</td>
+                    <td>{p.projectName ?? "—"}</td>
+                    <td className="muted">
+                      {[p.market, p.submarket].filter(Boolean).join(" · ") || "—"}
+                    </td>
+                    <td>{p.buildingSf ? Math.round(p.buildingSf).toLocaleString() : "—"}</td>
+                    <td>{p.acres ?? "—"}</td>
+                    <td>{p.yearBuilt ?? "—"}</td>
+                    <td>{p.zoning ?? "—"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setRollAddress(p.address);
+                          if (p.city) setCity(p.city);
+                          if (p.market) setMarket(p.market);
+                          if (p.submarket) setSubmarket(p.submarket);
+                          setProperties([]);
+                          setWarnings([
+                            `Using ${[p.address, p.projectName].filter(Boolean).join(" · ")} — ` +
+                              `now drop the rent roll for that building.`,
+                          ]);
+                        }}
+                      >
+                        Use for a rent roll
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="hint">
+            These are property attributes, not transactions — no rent and no closed sale, so there
+            is nothing here to save as a comp. Pick the building your rent roll belongs to and its
+            address, city, market and submarket fill in above. Where a report <em>does</em> carry a
+            Last Sale Date and Last Sale Price, those rows come through as sale comps instead.
+          </p>
         </div>
       )}
 

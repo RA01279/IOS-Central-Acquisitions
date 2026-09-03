@@ -203,7 +203,11 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // "propertyaddress" and "streetaddress" matter: without them the address is
   // only found by the "first column" fallback, which works right up until a
   // broker's sheet puts something else first.
-  [/^(address|addres|adress|property|site|location|propertyaddress|streetaddress|propertyname|siteaddress)$/, "address"],
+  // "propertyname" is deliberately NOT here. In a CoStar property export it's
+  // the building identifier next to a separate Property Address -- literally
+  // "A" and "B" for the two Oakbrook buildings -- so treating it as the address
+  // is only ever right by accident of column order. It's a project name.
+  [/^(address|addres|adress|property|site|location|propertyaddress|streetaddress|siteaddress)$/, "address"],
   [/^(yearbuilt|yrbuilt|built|vintage|year)$/, "yearBuilt"],
   [/^(sf|buildingsf|bldgsf|buildingarea|size|squarefeet|squarefootage|buildingsize|gla|rba|totalsf)$/, "buildingSf"],
   [/^(ac|acres|acreage|landac|siteacres|landacres)$/, "acres"],
@@ -225,7 +229,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // Distinguishes buildings that share a street address ("Pine Crossing
   // Business Park - Bldg. C" vs "- Bldg. D"), which is what stops one of them
   // being dropped as a duplicate.
-  [/^(projectname|project|buildingname|park|development|propertyname2)$/, "projectName"],
+  [/^(projectname|project|buildingname|propertyname|park|development)$/, "projectName"],
   [/^(city|municipality)$/, "city"],
   [/^(market|metro)$/, "market"],
   [/^(submarket|subarea)$/, "submarket"],
@@ -264,6 +268,20 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(cammo|cammonth|campermonth|camrecoverymo|cam|camrent)$/, "camMonthly"],
   [/^(camsfyr|campsfyr|camsfyear|campersfyr|nnnpsf|nnnsfyr|opexpsf|opexsfyr)$/, "camPsfAnnual"],
   [/^(totalmonthly|grossmonthly|totalrentmo|totalrentmonthly)$/, "totalMonthly"],
+  // CoStar property exports, which name every column "<Thing> Name" and split
+  // land area by unit. "Last Sale Date"/"Last Sale Price" are the two that turn
+  // a property report into an actual sale comp -- when they're populated, which
+  // in the Oakbrook export they are not.
+  //
+  // "For Sale Price" is deliberately absent: it's what someone is ASKING today,
+  // not what anything traded for, and letting it through as a sale price would
+  // seed the repository with list prices dressed as comps.
+  [/^(marketname|marketarea)$/, "market"],
+  [/^(submarketname|submarketcluster)$/, "submarket"],
+  [/^(lastsaledate|previoussaledate|priorsaledate)$/, "saleDate"],
+  [/^(lastsaleprice|previoussaleprice|priorsaleprice)$/, "salePrice"],
+  [/^(landareaac|landareaacres)$/, "acres"],
+  [/^(landareasf|landareasqft)$/, "lotSf"],
 ];
 
 /**
@@ -527,6 +545,38 @@ export function htmlToDelimitedText(html: string): string {
   }
 
   return out.join("\n");
+}
+
+/**
+ * A property report is not a comp table. A CoStar property export carries the
+ * address, market, submarket, RBA, year built, land area and zoning for a set
+ * of buildings -- and no rent and no transaction. Two of its 38 columns, "Last
+ * Sale Date" and "Last Sale Price", DO make a real sale comp, but only where
+ * they're populated; in the Oakbrook export they're empty.
+ *
+ * That's worth recognising rather than reporting as failed comps, because a
+ * property report is the natural companion to a rent roll: it supplies exactly
+ * the address and market that a roll lacks.
+ *
+ * Judged over the whole set, never row by row. A single row missing its rent
+ * inside a genuine comp table must stay visible as a rejected comp instead of
+ * quietly reclassifying itself into something the reviewer never sees.
+ *
+ * Returns null when this looks like an ordinary comp table.
+ */
+export function asPropertyReport(comps: ParsedComp[]): ParsedComp[] | null {
+  if (!comps.length) return null;
+  // Any priced or rented row and this is a comp table with gaps in it.
+  if (comps.some((c) => c.salePrice !== null || c.rent !== null || c.quotedPsf !== null)) {
+    return null;
+  }
+  // And it has to actually carry property attributes, or it's just a table we
+  // failed to read -- which the reviewer should see as exactly that.
+  const attributes = (c: ParsedComp) =>
+    [c.market, c.submarket, c.city, c.buildingSf, c.yearBuilt, c.lotSf].filter(
+      (v) => v !== null && v !== ""
+    ).length;
+  return comps.every((c) => attributes(c) >= 3) ? comps : null;
 }
 
 /** Parse comps from an email's HTML body (clipboard text/html, .eml, .msg). */
