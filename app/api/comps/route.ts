@@ -128,7 +128,16 @@ export async function POST(req: NextRequest) {
     return ok ? { lat, lng } : null;
   });
   const needGeo = valid.filter((_, i) => !preset[i]);
-  const resolved = await geocodeMany(needGeo, (c) => [c.address, c.city, c.market]);
+  // The state is passed explicitly where the comp knows it. Geocoding is
+  // state-restricted, so this is the difference between Savannah, Georgia and
+  // Savannah, Texas -- and where the comp doesn't know, geocodeAddress infers
+  // it from these same parts rather than assuming.
+  const resolved = await geocodeMany(
+    needGeo,
+    (c) => [c.address, c.city, c.market],
+    5,
+    (c) => c.state
+  );
   let nextResolved = 0;
   const geo = valid.map((_, i) =>
     preset[i]
@@ -158,6 +167,10 @@ export async function POST(req: NextRequest) {
       // colliding, which is exactly what a rent roll delivers.
       suite: str(c.suite),
       city: str(c.city),
+      state: (() => {
+        const s = str(c.state);
+        return s && /^[A-Za-z]{2}$/.test(s) ? s.toUpperCase() : null;
+      })(),
       market: str(c.market),
       submarket: str(c.submarket),
       asset_class: c.assetClass === "industrial" ? "industrial" : c.assetClass === "ios" ? "ios" : null,

@@ -57,6 +57,13 @@ const FIELDS: Record<string, { column: string; coerce: (v: unknown) => unknown }
   projectName: { column: "project_name", coerce: str },
   suite: { column: "suite", coerce: str },
   city: { column: "city", coerce: str },
+  state: {
+    column: "state",
+    coerce: (v) => {
+      const s = str(v);
+      return s && /^[A-Za-z]{2}$/.test(s) ? s.toUpperCase() : null;
+    },
+  },
   market: { column: "market", coerce: str },
   submarket: { column: "submarket", coerce: str },
   assetClass: { column: "asset_class", coerce: (v) => enumOf(v, ["ios", "industrial"]) },
@@ -197,9 +204,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const addressChanged =
     ("address" in body && update.address !== existing.address) ||
     ("city" in body && update.city !== existing.city) ||
+    // Correcting the STATE is the whole point of storing it: a comp geocoded
+    // into the wrong state is fixed by fixing the state, which has to re-run
+    // the lookup or the coordinates stay where they were.
+    ("state" in body && update.state !== existing.state) ||
     ("market" in body && update.market !== existing.market);
   if (addressChanged && merged.address) {
-    const g = await geocodeAddress([merged.address as string, merged.city as string, merged.market as string]);
+    const g = await geocodeAddress(
+      [merged.address as string, merged.city as string, merged.market as string],
+      { state: merged.state as string | null }
+    );
     update.latitude = g?.lat ?? null;
     update.longitude = g?.lng ?? null;
     update.geocode_precision = g?.precision ?? null;

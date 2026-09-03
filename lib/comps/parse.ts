@@ -46,6 +46,8 @@ export interface ParsedComp {
   /** The row's own provenance, e.g. "CBRE MLA - TX IOS Portfolio 07.02.26". */
   sourceRef: string | null;
   city: string | null;
+  /** Two-letter state code. Drives geocoding, which is state-restricted. */
+  state: string | null;
   market: string | null;
   submarket: string | null;
   yearBuilt: number | null;
@@ -373,6 +375,27 @@ function coord(raw: string | undefined, limit: number): number | null {
   const n = num(raw);
   if (n === null || n === 0) return null;
   return Math.abs(n) <= limit ? n : null;
+}
+
+/**
+ * A State column as a two-letter code. Only accepts what is already a code or
+ * a full state name written out -- no guessing from free text, which is the
+ * geocoder's job and needs the whole table of names to do safely.
+ */
+function stateCode(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
+  // A handful of full names, spelled out, is all a sheet ever carries here.
+  const named: Record<string, string> = {
+    texas: "TX", georgia: "GA", oklahoma: "OK", louisiana: "LA", arkansas: "AR",
+    florida: "FL", tennessee: "TN", alabama: "AL", mississippi: "MS",
+    "new mexico": "NM", arizona: "AZ", colorado: "CO", kansas: "KS", missouri: "MO",
+    "south carolina": "SC", "north carolina": "NC", virginia: "VA", ohio: "OH",
+    indiana: "IN", illinois: "IL", california: "CA", nevada: "NV", utah: "UT",
+    pennsylvania: "PA", "new jersey": "NJ", "new york": "NY", maryland: "MD",
+  };
+  return named[s.toLowerCase().replace(/\s+/g, " ")] ?? null;
 }
 
 /** A Yes/No column, which is how the IOS template asks most of its questions. */
@@ -825,6 +848,12 @@ export interface ParseOptions {
    * rather than in a column.
    */
   address?: string | null;
+  /**
+   * Two-letter state for every row, when the sheet doesn't say. Geocoding is
+   * state-restricted, so getting this wrong puts a comp in another state
+   * entirely rather than merely nearby.
+   */
+  state?: string | null;
   /** Used when the headers don't reveal whether a table is lease or sale. */
   defaultCompType?: CompType;
   /**
@@ -1002,6 +1031,11 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       // "Conroe". The sheet is the fallback, not the authority -- and where it
       // does fill in, the review table shows what each row got.
       city: (opts.city ?? get("city")) || null,
+      // Only what the sheet actually SAYS, plus the caller's context. Working
+      // a state out of an address string is the geocoder's job -- it's the
+      // thing that needs it, it has the tables, and keeping the inference in
+      // one place means there's one rule to get right rather than two.
+      state: stateCode(get("state")) ?? stateCode(opts.state),
       market: (opts.market ?? get("market")) || null,
       submarket: (opts.submarket ?? get("submarket")) || null,
       yearBuilt: num(get("yearBuilt")),

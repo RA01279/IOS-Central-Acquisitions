@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
   const term = Number(body.assumedTermMonths);
   const context = {
     city: body.city || null,
+    state: body.state || null,
     market: body.market || null,
     submarket: body.submarket || null,
     address: body.address || null,

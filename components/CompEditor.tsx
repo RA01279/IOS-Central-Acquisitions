@@ -22,6 +22,7 @@ export interface CompRow {
   cam_psf_annual: number | null;
   date_estimated: boolean | null;
   city: string | null;
+  state: string | null;
   market: string | null;
   submarket: string | null;
   asset_class: string | null;
@@ -175,6 +176,7 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
     projectName: v(comp.project_name),
     suite: v(comp.suite),
     city: v(comp.city),
+    state: v(comp.state),
     market: v(comp.market),
     submarket: v(comp.submarket),
     assetClass: v(comp.asset_class),
@@ -245,7 +247,7 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
       // left untouched rather than nulled.
       const shared = [
         "address", "projectName", "suite",
-        "city", "market", "submarket", "assetClass", "buildingSf", "acres",
+        "city", "state", "market", "submarket", "assetClass", "buildingSf", "acres",
         "yardAcres", "coveragePct", "yearBuilt", "clearHeightFt", "officeSf",
         "dockHighDoors", "gradeLevelDoors", "powerAmps", "surfaceType", "fenced",
         "trailerStalls", "zoning", "outdoorStoragePermitted", "occupancyStatus",
@@ -330,6 +332,10 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
         {field("Project / building", "projectName")}
         {field("Suite", "suite")}
         {field("City", "city")}
+        {/* Editable because geocoding restricts to it: correcting the state is
+            how a comp that landed in the wrong one gets moved. Saving a change
+            here re-runs the lookup. */}
+        {field("State", "state")}
         {field("Market", "market")}
         {field("Submarket", "submarket")}
         {choice("Asset class", "assetClass", [["", "—"], ["ios", "IOS"], ["industrial", "Industrial"]])}

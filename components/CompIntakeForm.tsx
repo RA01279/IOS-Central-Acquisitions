@@ -68,6 +68,7 @@ interface PropertyRecord {
   address: string;
   projectName: string | null;
   city: string | null;
+  state: string | null;
   market: string | null;
   submarket: string | null;
   buildingSf: number | null;
@@ -92,6 +93,7 @@ export default function CompIntakeForm({
   const [market, setMarket] = useState(defaultMarket ?? "");
   const [city, setCity] = useState(defaultCity ?? "");
   const [submarket, setSubmarket] = useState("");
+  const [stateCode, setStateCode] = useState("");
   const [assetClass, setAssetClass] = useState("");
   // Rent-roll only. A roll's rows are suites in one building, so the address is
   // in the title block instead of a column, and the rows give an expiration
@@ -114,6 +116,7 @@ export default function CompIntakeForm({
 
   const context = () => ({
     city: city || null,
+    state: stateCode || null,
     market: market || null,
     submarket: submarket || null,
     address: rollAddress || null,
@@ -376,6 +379,19 @@ export default function CompIntakeForm({
           City *
           <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Conroe" />
         </label>
+        {/* Geocoding is restricted to this state, so it decides between
+            Savannah GA and Savannah TX. Left blank, it's read off the sheet's
+            own State column or inferred from the address. */}
+        <label>
+          State
+          <input
+            value={stateCode}
+            onChange={(e) => setStateCode(e.target.value.toUpperCase().slice(0, 2))}
+            placeholder="TX"
+            maxLength={2}
+            style={{ width: 70 }}
+          />
+        </label>
         <label>
           Submarket — within the metro
           <input
@@ -541,6 +557,10 @@ export default function CompIntakeForm({
                           if (p.city) setCity(p.city);
                           if (p.market) setMarket(p.market);
                           if (p.submarket) setSubmarket(p.submarket);
+                          // A CoStar property report carries the State column,
+                          // which is exactly what the rent roll it pairs with
+                          // is missing -- and what decides Savannah GA vs TX.
+                          if (p.state) setStateCode(p.state);
                           setProperties([]);
                           setWarnings([
                             `Using ${[p.address, p.projectName].filter(Boolean).join(" · ")} — ` +
