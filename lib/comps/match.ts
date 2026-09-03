@@ -46,6 +46,8 @@ export interface CompRecord {
   date_estimated?: boolean | null;
   suite?: string | null;
   cam_psf_annual?: number | null;
+  /** Usable yard acreage — what a per-acre rate is actually priced on. */
+  yard_acres?: number | string | null;
   sale_price?: number | null;
   closed_on?: string | null;
   cap_rate?: number | null;
@@ -159,7 +161,18 @@ export function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: n
   return R * 2 * Math.atan2(Math.sqrt(q), Math.sqrt(1 - q));
 }
 
+/**
+ * The acreage a per-acre rent was priced on: usable yard first, then the whole
+ * parcel. A yard deal is negotiated on the acreage the tenant can actually use,
+ * which on a site with a detention pond or an unusable slope is not the parcel.
+ *
+ * Must stay identical to billableAcres() in rates.ts -- if the two disagree,
+ * the same comp shows one number in the panel's ranking and a different one on
+ * the line right underneath it.
+ */
 function acresOf(comp: CompRecord): number | null {
+  const yard = comp.yard_acres ? Number(comp.yard_acres) : null;
+  if (yard && Number.isFinite(yard)) return yard;
   return comp.lot_sf ? Number(comp.lot_sf) / SQFT_PER_ACRE : null;
 }
 

@@ -291,18 +291,54 @@ export default function CompIntakeForm({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/comps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          comps: included.map((d) => ({ ...d, assetClass: assetClass || null })),
-          source,
-          sourceRef: sourceRef || null,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok && !body.saved) throw new Error(body.error ?? "Save failed");
-      setResult(body);
+      const rows = included.map((d) => ({ ...d, assetClass: assetClass || null }));
+
+      // Saved in batches rather than one request.
+      //
+      // Row count was never the binding constraint -- 272 comps is 0.35 MB, and
+      // the body cap would take ~3,500. TIME is. Rows that arrive with their
+      // own coordinates cost nothing, but a file without them geocodes at five
+      // concurrent Google calls, so ~500 rows is ~20 seconds and a serverless
+      // function will cut that off. One request meant one timeout lost the
+      // whole import with no way to tell what had landed.
+      //
+      // Batching also makes a partial failure legible: each batch reports its
+      // own saved/duplicate/rejected counts and they add up.
+      const BATCH = 100;
+      const totals: any = {
+        saved: 0, duplicates: 0, rejected: [], failed: [],
+        geocoding: { centroidOnly: 0, failed: 0, fromFile: 0 },
+        batches: 0,
+      };
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const slice = rows.slice(i, i + BATCH);
+        const res = await fetch("/api/comps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ comps: slice, source, sourceRef: sourceRef || null }),
+        });
+        const body = await res.json();
+        if (!res.ok && body.saved === undefined) {
+          // Say what already landed, so a mid-way failure isn't a mystery.
+          throw new Error(
+            totals.saved > 0
+              ? `${body.error ?? "Save failed"} — ${totals.saved} comps from earlier batches were saved and are in the repository.`
+              : (body.error ?? "Save failed")
+          );
+        }
+        totals.saved += body.saved ?? 0;
+        totals.duplicates += body.duplicates ?? 0;
+        totals.rejected.push(...(body.rejected ?? []));
+        totals.failed.push(...(body.failed ?? []));
+        totals.geocoding.centroidOnly += body.geocoding?.centroidOnly ?? 0;
+        totals.geocoding.failed += body.geocoding?.failed ?? 0;
+        totals.geocoding.fromFile += body.geocoding?.fromFile ?? 0;
+        totals.batches++;
+        // Progress, because 300 rows is several seconds of nothing otherwise.
+        setWarnings([`Saving… ${Math.min(i + BATCH, rows.length)} of ${rows.length}`]);
+      }
+      setWarnings([]);
+      setResult(totals);
       setDrafts(null);
       setWarnings([]);
       setSeen(null);
@@ -562,7 +598,25 @@ export default function CompIntakeForm({
             {result.geocoding?.centroidOnly
               ? ` · ${result.geocoding.centroidOnly} only resolved to a centroid (won't distance-match)`
               : ""}
+            {/* Worth saying: it means the file's own coordinates were kept
+                rather than re-resolved, which is both cheaper and better. */}
+            {result.geocoding?.fromFile
+              ? ` · ${result.geocoding.fromFile} used coordinates from the file`
+              : ""}
+            {result.geocoding?.failed
+              ? ` · ${result.geocoding.failed} couldn't be geocoded`
+              : ""}
+            {result.batches > 1 ? ` · saved in ${result.batches} batches` : ""}
           </p>
+          {result.failed?.length > 0 && (
+            <ul>
+              {result.failed.slice(0, 10).map((f: any, i: number) => (
+                <li key={i}>
+                  {f.address} — {f.reason}
+                </li>
+              ))}
+            </ul>
+          )}
           {result.rejected?.length > 0 && (
             <ul>
               {result.rejected.map((r: any, i: number) => (

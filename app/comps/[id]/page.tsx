@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getServiceClient } from "@/lib/supabase";
 import { ASSET_CLASS_LABELS } from "@/lib/deals";
 import { isUsableForDistance } from "@/lib/geocode";
+import { fmtTotalMonthly, rateLines, rateViews } from "@/lib/comps/rates";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
@@ -177,8 +178,22 @@ export default async function CompDetailPage({ params }: { params: { id: string 
               </>
             ) : (
               <>
-                <Metric label="Rent" value={usd(comp.rent)} highlight />
-                <Metric label="Rate" value={rate(comp)} highlight />
+                {/* One rate, three ways. IOS is quoted per acre per month and
+                    industrial per SF per year, and the same deal gets argued
+                    about in both rooms -- so all three are shown rather than
+                    leaving the arithmetic to whoever is reading. The basis the
+                    comp was actually quoted in is marked; the others are
+                    derived from it, and a view is omitted entirely when the
+                    acreage or building size needed to derive it is missing. */}
+                {rateLines(comp).map((l) => (
+                  <Metric
+                    key={l.label}
+                    label={l.quoted ? `${l.label} (as quoted)` : l.label}
+                    value={l.value}
+                    highlight={l.quoted}
+                  />
+                ))}
+                <Metric label="Total / mo" value={fmtTotalMonthly(rateViews(comp).totalMonthly) ?? "—"} />
                 <Metric
                   label="Commenced"
                   value={

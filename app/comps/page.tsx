@@ -1,6 +1,7 @@
 import { getServiceClient } from "@/lib/supabase";
 import { ASSET_CLASS_LABELS } from "@/lib/deals";
 import { isUsableForDistance } from "@/lib/geocode";
+import { rateSummary } from "@/lib/comps/rates";
 import Nav from "@/components/Nav";
 import CompIntakeForm from "@/components/CompIntakeForm";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
@@ -25,20 +26,10 @@ function unitRate(c: any): string {
     return "—";
   }
   if (!c.rent) return "—";
-  switch (c.rent_basis) {
-    case "total_monthly":
-      return c.building_sf ? `$${(c.rent / c.building_sf).toFixed(2)}/SF/mo` : `${fmtUsd(c.rent)}/mo`;
-    case "per_sf_bldg_monthly":
-      return `$${Number(c.rent).toFixed(2)}/SF/mo`;
-    case "per_sf_bldg_annual":
-      return `$${(Number(c.rent) / 12).toFixed(2)}/SF/mo`;
-    case "per_acre_monthly":
-      return `$${Number(c.rent).toLocaleString()}/ac/mo`;
-    case "per_sf_land_monthly":
-      return `$${Number(c.rent).toFixed(3)}/SF land/mo`;
-    default:
-      return fmtUsd(c.rent);
-  }
+  // All three views, so the list can be read by someone thinking in per-acre
+  // (IOS) and someone thinking in $/SF/yr (industrial) without either doing
+  // arithmetic. Views that can't be derived are simply absent.
+  return rateSummary(c);
 }
 
 export default async function CompsPage() {

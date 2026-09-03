@@ -13,6 +13,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import MapView, { type MapPoint } from "./MapView";
+import { rateSummary } from "@/lib/comps/rates";
 import {
   DEFAULT_WEIGHTS,
   formatUnit,
@@ -289,6 +290,14 @@ export default function DealCompsPanel({
                       {" "}
                       +{(Number(s.comp.cam_psf_annual) / 12).toFixed(2)} CAM
                     </span>
+                  )}
+                  {/* The same rent in the other units, because an IOS comp is
+                      quoted per acre per month and an industrial one per SF
+                      per year, and a committee will ask for both. */}
+                  {compType === "lease" && (
+                    <div className="muted" style={{ fontSize: "0.85em" }}>
+                      {rateSummary(s.comp)}
+                    </div>
                   )}
                 </td>
                 <td>{s.distanceMi != null ? `${s.distanceMi.toFixed(1)} mi` : "—"}</td>

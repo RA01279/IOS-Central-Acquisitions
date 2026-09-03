@@ -21,6 +21,17 @@ const { unitValue, ageMonths, scoreComps, suggestRange, haversineMiles, formatUn
   tmp.href
 );
 
+// rates.ts is the display side of the same arithmetic; the two must not drift.
+const ratesSrc = fileURLToPath(new URL("../lib/comps/rates.ts", import.meta.url));
+const ratesTmp = new URL("../lib/comps/.rates.test.mjs", import.meta.url);
+writeFileSync(
+  fileURLToPath(ratesTmp),
+  ts.transpileModule(readFileSync(ratesSrc, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
+  }).outputText
+);
+const { rateViews, rateSummary, rateLines } = await import(ratesTmp.href);
+
 let pass = 0, fail = 0;
 function near(label, actual, expected, tol = 0.005) {
   const ok = actual !== null && Math.abs(actual - expected) <= tol;
@@ -272,6 +283,49 @@ const estNone = suggestRange(
 );
 eq("stated dates raise no estimate caveat", estNone.caveats.some((c) => /dated by estimate/i.test(c)), false);
 
+console.log("\n== rate views: one rent, three ways ==");
+// The real first row of the standard IOS template: 6.19 usable acres, 20,200
+// SF building, $6,785.137/AC/mo. Every derived figure below is checkable by
+// hand against that.
+const IOS = { rent: 6785.13731825525, rent_basis: "per_acre_monthly", yard_acres: 6.19, building_sf: 20200,
+              lot_sf: 6.19 * 43560 };
+const v = rateViews(IOS);
+eq("quoted basis reported", v.quoted, "per_acre_monthly");
+eq("per-acre view is the quoted number, untouched", v.perAcreMonthly, 6785.13731825525);
+eq("total monthly", Math.round(v.totalMonthly), 42000);
+eq("per SF building / month", v.perSfBldgMonthly.toFixed(2), "2.08");
+// 2.079 x 12 = 24.95 -- which is exactly what the template's mislabelled
+// "per month" column contains, and now it's derived honestly instead.
+eq("per SF building / year", v.perSfBldgAnnual.toFixed(2), "24.95");
+eq("summary line", rateSummary(IOS), "$6,785/AC/mo · $2.08/SF/mo · $24.95/SF/yr");
+
+// Round trip: quote the same deal per SF per year and every view must match.
+const ANNUAL = { rent: 24.9505, rent_basis: "per_sf_bldg_annual", yard_acres: 6.19, building_sf: 20200 };
+const va = rateViews(ANNUAL);
+eq("annual quote -> same per-acre", Math.round(va.perAcreMonthly), 6785);
+eq("annual quote -> same monthly PSF", va.perSfBldgMonthly.toFixed(2), "2.08");
+eq("...and it knows it was quoted annually", va.quoted, "per_sf_bldg_annual");
+
+// Nothing may be invented. No building size means no per-SF view at all.
+const noBldg = rateViews({ rent: 6785, rent_basis: "per_acre_monthly", yard_acres: 6.19 });
+eq("no building SF -> no per-SF rate", noBldg.perSfBldgMonthly, null);
+eq("...but the per-acre rate survives", noBldg.perAcreMonthly, 6785);
+eq("...and the summary just omits it", rateSummary({ rent: 6785, rent_basis: "per_acre_monthly", yard_acres: 6.19 }),
+   "$6,785/AC/mo");
+const noArea = rateViews({ rent: 2.08, rent_basis: "per_sf_bldg_monthly" });
+eq("no acreage -> no per-acre rate", noArea.perAcreMonthly, null);
+eq("...but both per-SF views still derive from each other", noArea.perSfBldgAnnual.toFixed(2), "24.96");
+eq("nothing at all", rateSummary({ rent: null, rent_basis: null }), "—");
+
+// Usable yard beats the whole parcel, and the matcher must agree with the
+// display -- otherwise a comp ranks on one number and reads as another.
+const PARTIAL = { id: "p", comp_type: "lease", address: "1 Yard Rd", rent: 10000,
+                  rent_basis: "per_acre_monthly", yard_acres: 4, lot_sf: 8 * 43560, building_sf: 10000 };
+eq("per-acre priced on usable yard, not the parcel", Math.round(rateViews(PARTIAL).totalMonthly), 40000);
+eq("matcher uses the same acreage as the display",
+   Number(unitValue(PARTIAL, "building").toFixed(4)),
+   Number((rateViews(PARTIAL).perSfBldgMonthly).toFixed(4)));
+
 console.log("\n== formatting ==");
 eq("lease building unit", formatUnit(1.15, "lease", "building"), "$1.15/SF/mo");
 eq("lease land unit", formatUnit(0.103, "lease", "land"), "$0.103/SF land/mo");
@@ -280,5 +334,6 @@ eq("sale land unit", formatUnit(24.34, "sale", "land"), "$24.34/SF land");
 eq("null unit", formatUnit(null, "sale", "building"), "—");
 
 unlinkSync(fileURLToPath(tmp));
+unlinkSync(fileURLToPath(ratesTmp));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -81,7 +81,10 @@ export default async function DealDetailPage({ params }: { params: { id: string 
   const { data: compRows } = await supabase
     .from("comps")
     .select(
-      "id, comp_type, address, project_name, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, date_commenced, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision"
+      // yard_acres is needed to show a per-acre rate (it's the acreage a yard
+      // deal is actually priced on); suite, cam_psf_annual and date_estimated
+      // are all displayed in the panel and were silently undefined without it.
+      "id, comp_type, address, project_name, suite, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision"
     )
     .eq("status", "confirmed")
     .not("latitude", "is", null)
