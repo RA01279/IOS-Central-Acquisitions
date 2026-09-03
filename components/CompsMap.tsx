@@ -185,7 +185,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
       />
 
       <p className="hint" style={{ marginTop: 10 }}>
-        Hover a pin for the numbers, click it to open the comp. Scroll to zoom, drag to pan.
+        Hover a pin for the numbers, click it to open the comp. Scroll to zoom, drag to pan. Use the layers control (top right) to switch to satellite.
         {unmappable > 0 && (
           <>
             {" "}

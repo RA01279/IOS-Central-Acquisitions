@@ -75,10 +75,70 @@ export default function MapView({
           touchZoom: true,
           zoomControl: true,
         });
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        // Base layers, all keyless -- nothing here ships a credential to the
+        // browser or bills per load.
+        //
+        // Esri World Imagery is the sharpest option in Texas metros and is the
+        // near-universal default for keyless Leaflet satellite. USGS Imagery is
+        // offered alongside it because it's unambiguously public domain (a US
+        // government product) where Esri's basemap terms lean toward ArcGIS
+        // subscribers -- so if legal ever asks, there's a clean fallback that
+        // needs no negotiation. Both are US-only at high zoom, which is fine
+        // for a Texas portfolio.
+        const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           maxZoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        }).addTo(map);
+        });
+        const esriImagery = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+          {
+            maxZoom: 19,
+            attribution:
+              "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+          }
+        );
+        // Transparent roads and place names, so a satellite view is still
+        // navigable -- without them you're looking at rooftops with no idea
+        // which highway you're next to.
+        const esriLabels = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+          { maxZoom: 19, attribution: "" }
+        );
+        const usgsImagery = L.tileLayer(
+          "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+          {
+            maxZoom: 18,
+            attribution:
+              'Imagery courtesy of <a href="https://www.usgs.gov/">USGS</a> — public domain',
+          }
+        );
+
+        const bases: Record<string, any> = {
+          Street: street,
+          Satellite: L.layerGroup([esriImagery, esriLabels]),
+          "Satellite (no labels)": esriImagery,
+          "Satellite (USGS)": usgsImagery,
+        };
+
+        // The choice persists across pages, so picking satellite once holds for
+        // the pipeline map and the comps map both.
+        let initial = "Street";
+        try {
+          const saved = window.localStorage.getItem("hopper.mapLayer");
+          if (saved && bases[saved]) initial = saved;
+        } catch {
+          // Private browsing or storage disabled -- the default is fine.
+        }
+        bases[initial].addTo(map);
+        L.control.layers(bases, undefined, { position: "topright" }).addTo(map);
+        map.on("baselayerchange", (e: any) => {
+          try {
+            window.localStorage.setItem("hopper.mapLayer", e.name);
+          } catch {
+            // Not worth surfacing; the map still works.
+          }
+        });
+
         map.setView([31.0, -97.0], 6); // Texas, until points arrive
         mapRef.current = map;
       } catch (err: any) {
@@ -110,12 +170,15 @@ export default function MapView({
 
       const group = L.featureGroup();
       for (const p of points) {
+        // White outline rather than dark: it reads against both the pale
+        // street basemap and dark satellite imagery, where a near-black stroke
+        // vanishes into rooftops and asphalt.
         const marker = L.circleMarker([p.lat, p.lng], {
           radius: p.emphasis ? 11 : 7,
-          color: p.emphasis ? "#ffffff" : "#1f2937",
-          weight: p.emphasis ? 3 : 1,
+          color: "#ffffff",
+          weight: p.emphasis ? 3 : 2,
           fillColor: `#${p.color}`,
-          fillOpacity: 0.92,
+          fillOpacity: 0.95,
         });
         const body = (p.lines ?? []).map((l) => escapeHtml(l)).join("<br/>");
         const card = (titleHtml: string) =>

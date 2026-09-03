@@ -180,7 +180,7 @@ export default function PipelineMap({
       />
 
       <p className="hint" style={{ marginTop: 10 }}>
-        Hover a pin for the details, click it to open the deal. Scroll to zoom, drag to pan.
+        Hover a pin for the details, click it to open the deal. Scroll to zoom, drag to pan. Use the layers control (top right) to switch to satellite.
         {unmappable > 0 && (
           <>
             {" "}
