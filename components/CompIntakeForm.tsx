@@ -127,24 +127,91 @@ export default function CompIntakeForm({
     sendToParser({ fileBase64: btoa(binary), fileName: file.name });
   }
 
+  /** FileSystemFileEntry.file() is callback-based; make it awaitable. */
+  function entryToFile(entry: any): Promise<File> {
+    return new Promise((resolve, reject) => entry.file(resolve, reject));
+  }
+
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleFile(file);
-      return;
+
+    // Everything must come off dataTransfer SYNCHRONOUSLY. The object is
+    // neutered once the handler returns, so reading it after an await gives
+    // nothing -- which looks exactly like an empty drop.
+    const dt = e.dataTransfer;
+    const files: File[] = dt.files ? Array.from(dt.files) : [];
+    const virtualEntries: any[] = [];
+
+    if (dt.items) {
+      for (const item of Array.from(dt.items)) {
+        if (item.kind !== "file") continue;
+        const asFile = item.getAsFile?.();
+        if (asFile) {
+          // dataTransfer.files usually already has it; don't process twice.
+          if (!files.some((f) => f.name === asFile.name && f.size === asFile.size)) {
+            files.push(asFile);
+          }
+          continue;
+        }
+        // Dragging an attachment out of new Outlook yields a VIRTUAL file --
+        // it isn't on disk, so dataTransfer.files is empty and getAsFile()
+        // returns null. Chromium exposes it here instead.
+        const entry = (item as any).webkitGetAsEntry?.();
+        if (entry?.isFile) virtualEntries.push(entry);
+      }
     }
-    // No file: a dragged message or selection. Take whatever text came with it.
-    const html = e.dataTransfer.getData("text/html");
-    const text = e.dataTransfer.getData("text/plain");
-    if (html || text) {
-      sendToParser({ html: html || null, text: text || null });
-    } else {
+
+    const html = dt.getData("text/html");
+    const text = dt.getData("text/plain");
+
+    void (async () => {
+      const spreadsheet = files.find((f) => /\.(xlsx|xlsm|csv)$/i.test(f.name));
+      if (spreadsheet) {
+        handleFile(spreadsheet);
+        return;
+      }
+
+      // Virtual files, resolved after the synchronous capture above.
+      for (const entry of virtualEntries) {
+        try {
+          const file = await entryToFile(entry);
+          if (/\.(xlsx|xlsm|csv)$/i.test(file.name)) {
+            handleFile(file);
+            return;
+          }
+          if (/\.msg$/i.test(file.name)) {
+            setError(
+              `"${file.name}" is an Outlook message file, which Hopper can't read. Open it and paste the comp table from the body instead.`
+            );
+            return;
+          }
+          setError(
+            `"${file.name}" isn't a spreadsheet. Drop an .xlsx, .xlsm or .csv, or paste the table from the email body.`
+          );
+          return;
+        } catch {
+          // Fall through to the text paths below.
+        }
+      }
+
+      // A non-spreadsheet real file (e.g. a dragged PDF).
+      if (files.length) {
+        setError(
+          `"${files[0].name}" isn't a spreadsheet. Drop an .xlsx, .xlsm or .csv, or paste the table from the email body.`
+        );
+        return;
+      }
+
+      if (html || text) {
+        sendToParser({ html: html || null, text: text || null });
+        return;
+      }
+
       setError(
-        "Nothing usable in that drop. New Outlook doesn't hand over the message itself — paste the email body instead, or drop the attached spreadsheet."
+        "That drop arrived empty — new Outlook sometimes hands over nothing a browser can read. Use “Choose a spreadsheet” below to pick the file, or save the attachment and drop it from a folder. Pasting the table from the email body always works."
       );
-    }
+    })();
   }
 
   function update(i: number, patch: Partial<DraftComp>) {
@@ -252,14 +319,13 @@ export default function CompIntakeForm({
         <strong>Click here, then paste the comp table</strong>
         <span className="muted">
           Select the table in the email body, Ctrl+C, then Ctrl+V here — the copied HTML keeps the
-          real columns. Or drop an attached .xlsx / .csv.
+          real columns.
         </span>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => fileInput.current?.click()}
-          disabled={busy}
-        >
+        <span className="muted">
+          Got a spreadsheet? Use the button — dragging an attachment straight out of new Outlook
+          often hands the browser nothing it can read.
+        </span>
+        <button type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
           Choose a spreadsheet
         </button>
         <input

@@ -191,7 +191,10 @@ type Field =
 // spacing don't matter. "addres" is in there because that is genuinely how the
 // header arrived in a real broker email -- misspelled.
 const HEADER_ALIASES: [RegExp, Field][] = [
-  [/^(address|addres|adress|property|site|location)$/, "address"],
+  // "propertyaddress" and "streetaddress" matter: without them the address is
+  // only found by the "first column" fallback, which works right up until a
+  // broker's sheet puts something else first.
+  [/^(address|addres|adress|property|site|location|propertyaddress|streetaddress|propertyname|siteaddress)$/, "address"],
   [/^(yearbuilt|yrbuilt|built|vintage|year)$/, "yearBuilt"],
   [/^(sf|buildingsf|bldgsf|buildingarea|size|squarefeet|buildingsize|gla)$/, "buildingSf"],
   [/^(ac|acres|acreage|landac|siteacres|landacres)$/, "acres"],
@@ -199,7 +202,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(coverage|coverageratio|bldgcoverage|far)$/, "coverage"],
   [/^(saledate|closedate|closingdate|dateclosed|datesold|sold)$/, "saleDate"],
   [/^(saleprice|price|purchaseprice|consideration|salesprice)$/, "salePrice"],
-  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate)$/, "psf"],
+  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|psfmo|persfmo)$/, "psf"],
   [/^(leasetype|type|structure|leasestructure)$/, "leaseType"],
   [/^(monthlybase|monthlyrent|baserent|monthlybaserent|rent|monthly)$/, "monthlyRent"],
   [/^(leasedate|commenced|commencement|datecommenced|startdate|leasestart|executed)$/, "leaseDate"],
