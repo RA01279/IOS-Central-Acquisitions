@@ -74,6 +74,10 @@ export default function MapView({
           // Pinch-zoom and two-finger pan on a trackpad or touchscreen.
           touchZoom: true,
           zoomControl: true,
+          // Set on the map, not left to be inferred from whichever layers
+          // happen to be attached -- switching basemaps would otherwise change
+          // how far you're allowed to zoom.
+          maxZoom: 21,
         });
         // Base layers, all keyless -- nothing here ships a credential to the
         // browser or bills per load.
@@ -85,29 +89,51 @@ export default function MapView({
         // subscribers -- so if legal ever asks, there's a clean fallback that
         // needs no negotiation. Both are US-only at high zoom, which is fine
         // for a Texas portfolio.
+        // maxZoom vs maxNativeZoom is the whole trick here.
+        //
+        // maxNativeZoom is the deepest zoom the SERVER has tiles for; maxZoom
+        // is how far the map lets you go. Without maxNativeZoom, zooming past
+        // a source's limit makes Leaflet request tiles that don't exist and
+        // paint grey. With it, Leaflet upscales the deepest real tile instead:
+        // the imagery goes soft rather than blank.
+        //
+        // The limits below were measured over Conroe rather than assumed --
+        // OSM returns HTTP 400 above z19, and USGS ImageryOnly 404s from z17,
+        // which is far shallower than its docs imply.
+        const MAX_ZOOM = 21;
+
         const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 19,
+          maxZoom: MAX_ZOOM,
+          maxNativeZoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         });
         const esriImagery = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
           {
-            maxZoom: 19,
+            maxZoom: MAX_ZOOM,
+            maxNativeZoom: 21,
             attribution:
               "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
           }
         );
-        // Transparent roads and place names, so a satellite view is still
-        // navigable -- without them you're looking at rooftops with no idea
-        // which highway you're next to.
-        const esriLabels = L.tileLayer(
+        // Transparent roads and place names over the imagery. Without them
+        // you're looking at rooftops with no idea which highway you're beside.
+        // Two layers because Esri splits them: Transportation carries the
+        // roads, Boundaries_and_Places the names.
+        const esriRoads = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+          { maxZoom: MAX_ZOOM, maxNativeZoom: 21, attribution: "" }
+        );
+        const esriPlaces = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-          { maxZoom: 19, attribution: "" }
+          { maxZoom: MAX_ZOOM, maxNativeZoom: 21, attribution: "" }
         );
         const usgsImagery = L.tileLayer(
           "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
           {
-            maxZoom: 18,
+            maxZoom: MAX_ZOOM,
+            // Measured: 404s from z17, so anything deeper is an upscale.
+            maxNativeZoom: 16,
             attribution:
               'Imagery courtesy of <a href="https://www.usgs.gov/">USGS</a> — public domain',
           }
@@ -115,9 +141,9 @@ export default function MapView({
 
         const bases: Record<string, any> = {
           Street: street,
-          Satellite: L.layerGroup([esriImagery, esriLabels]),
+          Satellite: L.layerGroup([esriImagery, esriRoads, esriPlaces]),
           "Satellite (no labels)": esriImagery,
-          "Satellite (USGS)": usgsImagery,
+          "Satellite (USGS, low detail)": usgsImagery,
         };
 
         // The choice persists across pages, so picking satellite once holds for
