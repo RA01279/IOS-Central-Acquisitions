@@ -977,6 +977,36 @@ form textarea {
   margin-right: 6px;
 }
 
+/* Comp intake: one target for both pasting an email table and dropping a
+   spreadsheet. Focusable so a click puts the caret here and Ctrl+V lands in
+   the paste handler. */
+.comp-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 22px 18px;
+  margin: 12px 0;
+  cursor: text;
+}
+.comp-dropzone:focus,
+.comp-dropzone:focus-visible {
+  outline: none;
+  border-color: var(--accent-2);
+  background: var(--panel);
+}
+.comp-dropzone-active {
+  border-color: var(--accent-2);
+  background: var(--panel);
+}
+.comp-dropzone .muted {
+  max-width: 520px;
+}
+
 /* Wide pages: the six-column pipeline board and the offer log don't fit the
    960px reading width the rest of the app uses. */
 main.wide {

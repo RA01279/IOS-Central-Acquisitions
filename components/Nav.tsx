@@ -17,6 +17,7 @@ const LINKS = [
   { href: "/", label: "Home", key: "home" },
   { href: "/deals", label: "Pipeline", key: "pipeline" },
   { href: "/offers", label: "Offers", key: "offers" },
+  { href: "/comps", label: "Comps", key: "comps" },
   { href: "/targets", label: "Targets", key: "targets" },
   { href: "/contacts", label: "Contacts", key: "contacts" },
   { href: "/tasks", label: "Tasks", key: "tasks" },

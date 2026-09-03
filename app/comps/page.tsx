@@ -1,0 +1,173 @@
+import { getServiceClient } from "@/lib/supabase";
+import { ASSET_CLASS_LABELS } from "@/lib/deals";
+import { isUsableForDistance } from "@/lib/geocode";
+import Nav from "@/components/Nav";
+import CompIntakeForm from "@/components/CompIntakeForm";
+
+// Live, per-request, auth-gated data -- never statically prerender this.
+export const dynamic = "force-dynamic";
+
+const SQFT_PER_ACRE = 43560;
+
+function fmtUsd(v: number | null | undefined) {
+  return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
+}
+
+// A comp's headline unit, in the terms the market quotes it in: sales per SF of
+// building, leases per SF of building per month. Both are derived from the raw
+// figures rather than stored, so a corrected area immediately corrects the rate.
+function unitRate(c: any): string {
+  if (c.comp_type === "sale") {
+    if (c.sale_price && c.building_sf) return `$${(c.sale_price / c.building_sf).toFixed(2)}/SF`;
+    if (c.sale_price && c.lot_sf) return `$${(c.sale_price / c.lot_sf).toFixed(2)}/SF land`;
+    return "—";
+  }
+  if (!c.rent) return "—";
+  switch (c.rent_basis) {
+    case "total_monthly":
+      return c.building_sf ? `$${(c.rent / c.building_sf).toFixed(2)}/SF/mo` : `${fmtUsd(c.rent)}/mo`;
+    case "per_sf_bldg_monthly":
+      return `$${Number(c.rent).toFixed(2)}/SF/mo`;
+    case "per_sf_bldg_annual":
+      return `$${(Number(c.rent) / 12).toFixed(2)}/SF/mo`;
+    case "per_acre_monthly":
+      return `$${Number(c.rent).toLocaleString()}/ac/mo`;
+    case "per_sf_land_monthly":
+      return `$${Number(c.rent).toFixed(3)}/SF land/mo`;
+    default:
+      return fmtUsd(c.rent);
+  }
+}
+
+export default async function CompsPage() {
+  const supabase = getServiceClient();
+
+  const [{ data: comps }, { data: props }] = await Promise.all([
+    supabase
+      .from("comps")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(300),
+    // Markets already in use, so intake can offer them rather than inviting a
+    // fresh spelling of "Houston".
+    supabase.from("properties").select("market").not("market", "is", null),
+  ]);
+
+  const rows = comps ?? [];
+  const markets = Array.from(new Set((props ?? []).map((p: any) => p.market).filter(Boolean))).sort();
+
+  const sales = rows.filter((c: any) => c.comp_type === "sale");
+  const leases = rows.filter((c: any) => c.comp_type === "lease");
+  const unmatched = rows.filter((c: any) => !isUsableForDistance(c.geocode_precision));
+
+  return (
+    <>
+      <Nav active="comps" />
+      <main className="wide">
+        <div className="page-header">
+          <div>
+            <h1>Comps</h1>
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              Lease and sale comps, matched to a subject property by distance, size, and recency.
+            </p>
+          </div>
+        </div>
+
+        <div className="stat-grid stat-grid-3">
+          <div className="stat-tile">
+            <span className="stat-value">{sales.length}</span>
+            <span className="stat-label">Sale comps</span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-value">{leases.length}</span>
+            <span className="stat-label">Lease comps</span>
+          </div>
+          <div className="stat-tile">
+            <span className={unmatched.length ? "stat-value stat-bad" : "stat-value"}>
+              {unmatched.length}
+            </span>
+            <span className="stat-label">Not distance-matchable</span>
+            {unmatched.length > 0 && (
+              <span className="stat-delta stat-delta-bad">address too vague to geocode</span>
+            )}
+          </div>
+        </div>
+
+        <CompIntakeForm markets={markets} />
+
+        <section className="panel">
+          <h2>
+            Repository <span className="count">{rows.length}</span>
+          </h2>
+          {rows.length === 0 ? (
+            <p className="muted">
+              No comps yet. Paste a broker&apos;s comp table above and it&apos;ll land here.
+            </p>
+          ) : (
+            <div className="table-scroll">
+              <table className="summary-table log-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Address</th>
+                    <th>City</th>
+                    <th>Market</th>
+                    <th>Date</th>
+                    <th>Price / Rent</th>
+                    <th>Rate</th>
+                    <th>Bldg SF</th>
+                    <th>Acres</th>
+                    <th>Cov.</th>
+                    <th>Yr</th>
+                    <th>Class</th>
+                    <th>Geo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c: any) => {
+                    const date = c.comp_type === "sale" ? c.closed_on : c.date_commenced;
+                    const acres = c.lot_sf ? (c.lot_sf / SQFT_PER_ACRE).toFixed(2) : null;
+                    return (
+                      <tr key={c.id}>
+                        <td>
+                          <span className="doc-type">{c.comp_type === "sale" ? "SALE" : "LEASE"}</span>
+                        </td>
+                        <td>{c.address}</td>
+                        <td>{c.city ?? "—"}</td>
+                        <td>{c.market ?? "—"}</td>
+                        <td>
+                          {date ?? "—"}
+                          {c.date_precision && c.date_precision !== "day" && (
+                            <span className="muted"> ({c.date_precision})</span>
+                          )}
+                        </td>
+                        <td>{c.comp_type === "sale" ? fmtUsd(c.sale_price) : fmtUsd(c.rent)}</td>
+                        <td>{unitRate(c)}</td>
+                        <td>{c.building_sf ? Math.round(c.building_sf).toLocaleString() : "—"}</td>
+                        <td>{acres ?? "—"}</td>
+                        <td>
+                          {c.coverage_pct === null || c.coverage_pct === undefined
+                            ? "—"
+                            : `${(c.coverage_pct * 100).toFixed(1)}%`}
+                        </td>
+                        <td>{c.year_built ?? "—"}</td>
+                        <td>{c.asset_class ? ASSET_CLASS_LABELS[c.asset_class] : "—"}</td>
+                        <td>
+                          {isUsableForDistance(c.geocode_precision) ? (
+                            <span className="muted">{c.geocode_precision?.replace(/_/g, " ")}</span>
+                          ) : (
+                            <span className="overdue">{c.geocode_precision ?? "none"}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </main>
+    </>
+  );
+}
