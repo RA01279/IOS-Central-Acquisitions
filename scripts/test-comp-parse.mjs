@@ -21,7 +21,7 @@ writeFileSync(
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
   }).outputText
 );
-const { parseCompTable, parseCompDate } = await import(tmpUrl.href);
+const { parseCompTable, parseCompDate, parseCompHtml, parseCompInput } = await import(tmpUrl.href);
 
 let pass = 0, fail = 0;
 function check(label, actual, expected) {
@@ -131,6 +131,82 @@ const BADCOV = [
 ].join("\n");
 const badcov = parseCompTable(BADCOV, {});
 check("coverage mismatch warned", badcov.comps[0].warnings.some((w) => w.includes("coverage")), true);
+
+// --------------------------------------------------------------- HTML paste
+// Shaped like what Outlook actually puts on the clipboard: MsoNormalTable
+// classes, inline styles, &nbsp; padding, a tracking image and a <style> block.
+console.log("\n== pasted email HTML (clipboard text/html) ==");
+const REAL_HTML = `
+<html><head><style>p.MsoNormal{margin:0}</style></head><body>
+<p class=MsoNormal>Hey Jadon/&nbsp;Rhett-</p>
+<p class=MsoNormal>See below comps. These sold at&nbsp;low 7 caps.</p>
+<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0>
+<tr><td><b>Addres</b></td><td><b>Year Built</b></td><td><b>SF</b></td><td><b>AC</b></td>
+    <td><b>Coverage</b></td><td><b>Sale Date</b></td><td><b>Price</b></td><td><b>Price/SF</b></td></tr>
+<tr><td>2933 E Davis St</td><td>2017</td><td>&plusmn;9,900</td><td>&plusmn;1.40</td>
+    <td>16.40%</td><td>Jan 2026</td><td>$1,485,000</td><td>$150.00</td></tr>
+<tr><td>11368 FM 2854 Rd</td><td>2005</td><td>&plusmn;4,700</td><td>&plusmn;1.94</td>
+    <td>6.00%</td><td>&mdash;</td><td>$715,000</td><td>$152.13</td></tr>
+</table>
+<p class=MsoNormal>Here are some buildings that were leased:</p>
+<table class=MsoNormalTable>
+<tr><td>Addres</td><td>Year Built</td><td>SF</td><td>AC</td><td>Coverage</td>
+    <td>Lease Type</td><td>Monthly Base</td><td>Price/SF</td></tr>
+<tr><td>601 Aurora Business Park Dr</td><td>2013</td><td>&plusmn;9,900</td><td>&plusmn;2.11</td>
+    <td>10.79%</td><td>NNN</td><td>$11,385</td><td>$1.15</td></tr>
+</table>
+<img src="https://tracking.example.com/pixel.gif" width=1 height=1>
+<div>From: Jadon Potts &lt;jpotts@dalfen.com&gt;</div>
+<table><tr><td>Addres</td><td>SF</td><td>AC</td><td>Sale Date</td><td>Price</td></tr>
+<tr><td>9999 Quoted History</td><td>1,000</td><td>1.00</td><td>Jan 2020</td><td>$100,000</td></tr></table>
+</body></html>`;
+
+const html = parseCompHtml(REAL_HTML, { city: "Conroe", market: "Houston" });
+check("html comps found", html.comps.length, 3);
+check("html sale count", html.comps.filter((c) => c.compType === "sale").length, 2);
+check("html lease count", html.comps.filter((c) => c.compType === "lease").length, 1);
+check("html quoted history excluded", html.comps.some((c) => c.address.includes("Quoted History")), false);
+check("html address clean", html.comps[0].address, "2933 E Davis St");
+check("html &plusmn; entity handled", html.comps[0].buildingSf, 9900);
+check("html percent", html.comps[0].coveragePct, 0.164);
+check("html month date", html.comps[0].closedOn, "2026-01-01");
+check("html price", html.comps[0].salePrice, 1485000);
+check("html &mdash; date -> null", html.comps[1].closedOn, null);
+check("html lease type", html.comps[2].leaseType, "nnn");
+check("html monthly rent", html.comps[2].rent, 11385);
+
+// The HTML and text paths must agree -- same email, same numbers.
+const viaText = parseCompTable(REAL_EMAIL, { city: "Conroe", market: "Houston" });
+const pickSale = (r) => r.comps.find((c) => c.address === "2933 E Davis St");
+check("html and text agree on price", pickSale(html).salePrice, pickSale(viaText).salePrice);
+check("html and text agree on coverage", pickSale(html).coveragePct, pickSale(viaText).coveragePct);
+check("html and text agree on lot SF", pickSale(html).lotSf, pickSale(viaText).lotSf);
+
+// Entity decoding must be single-pass: a chain that expands &amp; before &lt;
+// turns the literal text "&amp;lt;" into "<", decoding its own output.
+console.log("\n== entity decoding ==");
+const ENTITIES = [
+  "Address | SF | AC | Sale Date | Price",
+  "1 A&amp;B Industrial Park | &plusmn;10,000 | &plusmn;2.00 | Jan 2026 | $1,000,000",
+].join("\n");
+const ent = parseCompHtml(`<table><tr><td>${ENTITIES.split("\n")[0].replace(/ \| /g, "</td><td>")}</td></tr>` +
+  `<tr><td>${ENTITIES.split("\n")[1].replace(/ \| /g, "</td><td>")}</td></tr></table>`, {});
+check("&amp; in an address decodes once", ent.comps[0].address, "1 A&B Industrial Park");
+check("&plusmn; before a number", ent.comps[0].buildingSf, 10000);
+check("numeric entity", parseCompHtml("<table><tr><td>Address</td><td>SF</td><td>AC</td><td>Price</td><td>Sale Date</td></tr>" +
+  "<tr><td>2 Test&#8212;St</td><td>1,000</td><td>1.00</td><td>$500,000</td><td>Jan 2026</td></tr></table>", {})
+  .comps[0].address, "2 Test—St");
+
+console.log("\n== parseCompInput prefers HTML ==");
+const both = parseCompInput(
+  { html: REAL_HTML, text: "garbled plain text fallback with no table" },
+  { city: "Conroe" }
+);
+check("chose the HTML", both.comps.length, 3);
+const textOnly = parseCompInput({ html: null, text: REAL_EMAIL }, { city: "Conroe" });
+check("falls back to text", textOnly.comps.length, 10);
+const htmlNoTable = parseCompInput({ html: "<p>no tables here</p>", text: REAL_EMAIL }, {});
+check("ignores HTML without a table", htmlNoTable.comps.length, 10);
 
 // ------------------------------------------------------------------ garbage
 console.log("\n== nothing parseable ==");

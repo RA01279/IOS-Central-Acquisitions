@@ -213,6 +213,93 @@ function stripQuotedReply(text: string): string {
   return cut === -1 ? text : lines.slice(0, cut).join("\n");
 }
 
+// -- HTML input -----------------------------------------------------------
+
+// Entities that turn up in broker email tables. "plusmn" is the important one
+// -- Outlook writes the ± before every measurement as &plusmn;, and leaving it
+// encoded made every SF and acreage unparseable.
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  mdash: "—", ndash: "–", plusmn: "±", deg: "°", times: "×",
+  sup2: "²", frac12: "½", frac14: "¼", frac34: "¾", hellip: "…",
+  lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
+};
+
+/**
+ * Decode one HTML entity. Done in a single pass over the text rather than a
+ * chain of .replace() calls, because a chain that expands &amp; before &lt;
+ * turns the literal text "&amp;lt;" into "<" -- decoding its own output.
+ */
+function decodeEntity(match: string, body: string): string {
+  if (body.startsWith("#x") || body.startsWith("#X")) {
+    const code = parseInt(body.slice(2), 16);
+    return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+  }
+  if (body.startsWith("#")) {
+    const code = parseInt(body.slice(1), 10);
+    return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+  }
+  return NAMED_ENTITIES[body.toLowerCase()] ?? match;
+}
+
+/**
+ * Flattens pasted or dropped email HTML into the pipe-delimited text the row
+ * parser expects, preserving cell boundaries from the real <td> markup.
+ *
+ * This is the highest-fidelity path available. When an email body is copied out
+ * of Outlook the clipboard carries text/html, so the actual table structure is
+ * there to be read -- no guessing where one column ends and the next begins,
+ * which is what delimiter sniffing has to do on the text/plain version. A
+ * street address containing two spaces, or a table pasted with ragged
+ * alignment, breaks the text path and not this one.
+ */
+export function htmlToDelimitedText(html: string): string {
+  return (
+    html
+      // Drop anything that isn't content before touching structure. Outlook
+      // signatures carry <style> blocks and tracking images.
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      // Cell and row boundaries become delimiters the row parser understands.
+      .replace(/<\/t[dh]\s*>\s*<t[dh][^>]*>/gi, " | ")
+      .replace(/<\/tr\s*>/gi, "\n")
+      .replace(/<\/(table|p|div|h[1-6])\s*>/gi, "\n")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      // Entities after tag removal, so a &lt;table&gt; written as literal text
+      // can't be mistaken for markup and re-parsed as structure.
+      .replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]*);/gi, decodeEntity)
+      .replace(/[ \t]+/g, " ")
+      .split("\n")
+      .map((l) => l.replace(/\s*\|\s*/g, " | ").trim())
+      .filter(Boolean)
+      .join("\n")
+  );
+}
+
+/** Parse comps from an email's HTML body (clipboard text/html, .eml, .msg). */
+export function parseCompHtml(html: string, opts: ParseOptions = {}): ParseResult {
+  return parseCompTable(htmlToDelimitedText(html), opts);
+}
+
+/**
+ * Parse whatever the drop zone or clipboard produced. Prefers HTML, since it
+ * carries real cell boundaries; falls back to delimited text.
+ */
+export function parseCompInput(
+  input: { html?: string | null; text?: string | null },
+  opts: ParseOptions = {}
+): ParseResult {
+  if (input.html && /<t[dr]\b|<table\b/i.test(input.html)) {
+    const fromHtml = parseCompHtml(input.html, opts);
+    if (fromHtml.comps.length) return fromHtml;
+  }
+  if (input.text) return parseCompTable(input.text, opts);
+  if (input.html) return parseCompHtml(input.html, opts);
+  return { comps: [], warnings: ["Nothing to parse."] };
+}
+
 // -- the parser -----------------------------------------------------------
 
 export interface ParseOptions {
