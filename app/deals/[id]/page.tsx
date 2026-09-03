@@ -20,6 +20,8 @@ import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
 import IcDeckPanel from "@/components/IcDeckPanel";
+import DealCompsPanel from "@/components/DealCompsPanel";
+import type { CompRecord, Subject } from "@/lib/comps/match";
 
 function fmtPct(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
@@ -69,6 +71,37 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
   // The figure this deal contributes to the home screen and export, and why.
   const reportedValue = dealValue(deal);
+
+  // Comps for the MLA panel. Confirmed and locatable only -- a draft or an
+  // ungeocoded comp has no business influencing an underwriting assumption.
+  // Fetched for the whole repository rather than pre-filtered by market: the
+  // panel's radius filter is the real constraint, and market labels are too
+  // inconsistent to trust as a gate (Houston and Conroe both appear as
+  // "market" across the data).
+  const { data: compRows } = await supabase
+    .from("comps")
+    .select(
+      "id, comp_type, address, project_name, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, date_commenced, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision"
+    )
+    .eq("status", "confirmed")
+    .not("latitude", "is", null)
+    .limit(1000);
+
+  const subject: Subject = {
+    lat: deal.properties?.latitude != null ? Number(deal.properties.latitude) : null,
+    lng: deal.properties?.longitude != null ? Number(deal.properties.longitude) : null,
+    buildingSf: deal.properties?.building_sf != null ? Number(deal.properties.building_sf) : null,
+    lotSf: deal.properties?.lot_sf != null ? Number(deal.properties.lot_sf) : null,
+    // Coverage isn't stored on a property, but it's derivable and it's the
+    // factor that separates a yard from a warehouse.
+    coveragePct:
+      deal.properties?.building_sf && deal.properties?.lot_sf
+        ? Number(deal.properties.building_sf) / Number(deal.properties.lot_sf)
+        : null,
+    assetClass: deal.asset_class ?? null,
+    market: deal.properties?.market ?? null,
+    submarket: deal.properties?.submarket ?? null,
+  };
 
   // LOI prefill priority: LIVE DEAL DATA WINS for everything Hopper owns
   // (latest offer price, property facts, linked contacts) -- update the deal
@@ -366,6 +399,14 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         )}
         <ExcelUploadForm dealId={deal.id} />
       </section>
+
+      {/* Market evidence sits immediately above the MLA, because the
+          assumptions below are meant to follow from it. */}
+      <DealCompsPanel
+        comps={(compRows ?? []) as CompRecord[]}
+        subject={subject}
+        subjectAddress={deal.properties?.address ?? "This deal"}
+      />
 
       <section className="panel">
         <h2>MLA</h2>
