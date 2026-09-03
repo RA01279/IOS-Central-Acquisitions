@@ -54,6 +54,19 @@ export const STAGE_LABELS: Record<string, string> = {
   executed: "Executed",
 };
 
+// Pipeline stage colours for the map, ordered cool -> warm so the pipeline
+// reads as progress at a glance. Hex without the leading '#', matching the
+// convention already used by the IC-deck categories.
+export const STAGE_COLORS: Record<string, string> = {
+  prospect: "7F8C8D",      // grey -- nothing committed yet
+  uw: "2E6DA4",            // blue -- being underwritten
+  offered: "C9971F",        // gold -- money on the table
+  moving_to_psa: "C0562B",  // rust -- negotiating the PSA
+  due_diligence: "8E44AD",  // purple -- under contract
+  closed: "1E7A46",         // green -- done
+  archived: "B0B7BF",       // pale grey -- off the map by default
+};
+
 export const ASSET_CLASSES = ["ios", "industrial"] as const;
 export const ASSET_CLASS_LABELS: Record<string, string> = {
   ios: "IOS",

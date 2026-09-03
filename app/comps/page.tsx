@@ -4,6 +4,7 @@ import { isUsableForDistance } from "@/lib/geocode";
 import Nav from "@/components/Nav";
 import CompIntakeForm from "@/components/CompIntakeForm";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
+import CompsMap, { type CompMapRow } from "@/components/CompsMap";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -94,18 +95,22 @@ export default async function CompsPage() {
           </div>
         </div>
 
+        <CompsMap comps={rows as CompMapRow[]} />
+
         <CompIntakeForm markets={markets} />
 
-        <section className="panel">
-          <h2>
-            Repository <span className="count">{rows.length}</span>
-          </h2>
+        {/* The full table is collapsed by default -- the map is the way in, and
+            this is here for the detail and the Edit buttons. */}
+        <details className="panel">
+          <summary style={{ cursor: "pointer", fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--muted)", fontWeight: 600 }}>
+            All comps, in full ({rows.length}) — for editing and detail
+          </summary>
           {rows.length === 0 ? (
-            <p className="muted">
+            <p className="muted" style={{ marginTop: 12 }}>
               No comps yet. Paste a broker&apos;s comp table above and it&apos;ll land here.
             </p>
           ) : (
-            <div className="table-scroll">
+            <div className="table-scroll" style={{ marginTop: 12 }}>
               <table className="summary-table log-table">
                 <thead>
                   <tr>
@@ -182,7 +187,7 @@ export default async function CompsPage() {
               </table>
             </div>
           )}
-        </section>
+        </details>
       </main>
     </>
   );

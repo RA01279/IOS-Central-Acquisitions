@@ -977,6 +977,42 @@ form textarea {
   margin-right: 6px;
 }
 
+/* Maps. Leaflet's own stylesheet is imported by the component; this is the
+   surrounding chrome. */
+.map-view {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  z-index: 0; /* keep tiles under the comp-editor overlay */
+}
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.map-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.map-legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid rgba(31, 41, 55, 0.35);
+  display: inline-block;
+}
+/* Leaflet renders popups and controls in absolutely-positioned panes; keep the
+   app's link colour rather than the browser default blue. */
+.leaflet-popup-content a {
+  color: var(--accent-2);
+}
+
 /* Comp editor: an overlay, because the form has forty fields and its trigger
    lives in a table cell. */
 .comp-modal-backdrop {

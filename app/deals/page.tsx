@@ -1,10 +1,17 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
-import { ACQUISITION_STAGES, ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
+import {
+  ACQUISITION_STAGES,
+  ASSET_CLASSES,
+  ASSET_CLASS_LABELS,
+  STAGE_COLORS,
+  STAGE_LABELS,
+} from "@/lib/deals";
 import { ctToday, addDays } from "@/lib/summary";
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import CardDeleteButton from "@/components/CardDeleteButton";
+import PipelineMap, { type PipelineMapDeal } from "@/components/PipelineMap";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -92,13 +99,38 @@ export default async function DealsPage({
   let query = supabase
     .from("deals")
     .select(
-      "id, stage, asset_class, mla_status, created_at, dd_end_on, closing_on, closed_on, properties(address, market), deal_events(event_type, created_at)"
+      "id, stage, asset_class, mla_status, created_at, dd_end_on, closing_on, closed_on, properties(address, city, market, latitude, longitude, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)"
     )
     .eq("deal_type", "acquisition")
     .neq("stage", "archived")
     .order("created_at", { ascending: false });
   if (asset !== "all") query = query.eq("asset_class", asset);
   const { data: deals } = await query;
+
+  // Flattened for the map: coordinates live on the property, and the popup
+  // wants the latest offer rather than the whole offer history. The map shows
+  // every stage EXCEPT archived, which the query above already excludes.
+  const mapDeals: PipelineMapDeal[] = (deals ?? []).map((d: any) => {
+    const latest = [...(d.offers ?? [])].sort((a: any, b: any) =>
+      (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
+    )[0];
+    return {
+      id: d.id,
+      stage: d.stage,
+      asset_class: d.asset_class ?? null,
+      address: d.properties?.address ?? null,
+      city: d.properties?.city ?? null,
+      market: d.properties?.market ?? null,
+      latitude: d.properties?.latitude ?? null,
+      longitude: d.properties?.longitude ?? null,
+      lot_sf: d.properties?.lot_sf ?? null,
+      building_sf: d.properties?.building_sf ?? null,
+      dd_end_on: d.dd_end_on ?? null,
+      closing_on: d.closing_on ?? null,
+      closed_on: d.closed_on ?? null,
+      last_offer_price: latest?.price ?? null,
+    };
+  });
 
   const soonCutoff = addDays(ctToday(), 7);
 
@@ -142,6 +174,14 @@ export default async function DealsPage({
             All
           </Link>
         </div>
+
+        <PipelineMap
+          deals={mapDeals}
+          stages={[...STAGES]}
+          stageLabels={STAGE_LABELS}
+          stageColors={STAGE_COLORS}
+          assetClassLabels={ASSET_CLASS_LABELS}
+        />
 
         <div className="pipeline-board pipeline-board-6">
           {STAGES.map((stage) => {
