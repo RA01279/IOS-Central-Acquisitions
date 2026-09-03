@@ -207,6 +207,19 @@ ok("...flagged as an estimate", rrRes.comps[0].dateEstimated === true);
 ok("...with coarse precision", rrRes.comps[0].datePrecision === "year", String(rrRes.comps[0].datePrecision));
 ok("...and it says so in the warnings", rrRes.comps[0].warnings.some((w) => /estimated/i.test(w)));
 
+// Dropping a roll with the term left blank must point at the fix, not just
+// reject nine rows for a missing date.
+const rrNoTerm = parseCompTable(
+  ["Suite | Tenant | Square Feet | Base Rent / Mo | Lease Expiration",
+   "Ste A | Someone | 1,000 | 1,000 | 2030-05-31"].join("\n"),
+  { address: "1 Somewhere Rd", defaultCompType: "lease" }
+);
+ok("no term, no estimate", rrNoTerm.comps[0].dateCommenced === null, String(rrNoTerm.comps[0].dateCommenced));
+ok("...not falsely flagged", rrNoTerm.comps[0].dateEstimated === false);
+ok("...and the warning names the fix",
+  rrNoTerm.comps[0].warnings.some((w) => /assumed lease term/i.test(w)),
+  JSON.stringify(rrNoTerm.comps[0].warnings));
+
 // A stated term must beat the assumption: that's arithmetic, not a guess.
 const rrTerm = parseCompTable(
   ["Suite | Tenant | Square Feet | Base Rent / Mo | Lease Expiration | Term",

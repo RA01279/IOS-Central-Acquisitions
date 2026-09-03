@@ -887,7 +887,15 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         }
       }
       if (!parsed.dateCommenced) {
-        rowWarnings.push("No lease commencement date — required before saving");
+        // An expiration with nothing to subtract from it is a fixable problem,
+        // not a dead end -- so say which field fixes it. Without this a rent
+        // roll dropped with the term left blank rejects every row and gives no
+        // hint that one number would have saved it.
+        rowWarnings.push(
+          parsed.leaseExpiresOn
+            ? `No commencement date — only an expiration (${parsed.leaseExpiresOn}). Set an assumed lease term above to estimate the start.`
+            : "No lease commencement date — required before saving"
+        );
       }
     }
 
