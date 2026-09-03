@@ -94,6 +94,61 @@ const LEASE_TYPES = [
   ["other", "Other"],
 ];
 
+// These live at MODULE scope, deliberately. Defined inside the component's
+// render body they were re-created on every keystroke, which makes React treat
+// each render's <Field> as a different component type -- so it unmounted the
+// old input and mounted a fresh DOM node, and the field lost focus after every
+// single character. Stable identity here means stable DOM nodes.
+function TextField({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+}) {
+  return (
+    <label>
+      {label}
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[][];
+}) {
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map(([val, text]) => (
+          <option key={val} value={val}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+const YES_NO = [
+  ["", "—"],
+  ["true", "Yes"],
+  ["false", "No"],
+];
+
 /** null/undefined -> "" so React keeps the input controlled. */
 function v(x: unknown): string {
   return x === null || x === undefined ? "" : String(x);
@@ -160,30 +215,20 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
   }));
 
   const isLease = comp.comp_type === "lease";
-  const set = (k: string) => (e: { target: { value: string } }) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Functional update so a fast typist can't lose a character to a stale
+  // closure over `form`.
+  const setField = (k: string, value: string) => setForm((f) => ({ ...f, [k]: value }));
 
-  const Field = ({ label, k, type = "text", width }: { label: string; k: string; type?: string; width?: number }) => (
-    <label>
-      {label}
-      <input type={type} value={form[k] ?? ""} onChange={set(k)} style={width ? { width } : undefined} />
-    </label>
+  // Thin wrappers over the module-scope components. These are plain functions
+  // returning elements, NOT components -- so they add no component identity of
+  // their own and can't reintroduce the remount bug.
+  const field = (label: string, k: string, type = "text") => (
+    <TextField label={label} value={form[k] ?? ""} onChange={(val) => setField(k, val)} type={type} />
   );
-  const Choice = ({ label, k, options }: { label: string; k: string; options: string[][] }) => (
-    <label>
-      {label}
-      <select value={form[k] ?? ""} onChange={set(k)}>
-        {options.map(([val, text]) => (
-          <option key={val} value={val}>
-            {text}
-          </option>
-        ))}
-      </select>
-    </label>
+  const choice = (label: string, k: string, options: string[][]) => (
+    <SelectField label={label} value={form[k] ?? ""} onChange={(val) => setField(k, val)} options={options} />
   );
-  const YesNo = ({ label, k }: { label: string; k: string }) => (
-    <Choice label={label} k={k} options={[["", "—"], ["true", "Yes"], ["false", "No"]]} />
-  );
+  const yesNo = (label: string, k: string) => choice(label, k, YES_NO);
 
   async function save() {
     setBusy(true);
@@ -270,82 +315,75 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
 
       <p className="hint">Location</p>
       <div className="grid-2">
-        <Field label="Address *" k="address" />
-        <Field label="City" k="city" />
-        <Field label="Market" k="market" />
-        <Field label="Submarket" k="submarket" />
-        <Choice label="Asset class" k="assetClass" options={[["", "—"], ["ios", "IOS"], ["industrial", "Industrial"]]} />
-        <Field label="Zoning" k="zoning" />
+        {field("Address *", "address")}
+        {field("City", "city")}
+        {field("Market", "market")}
+        {field("Submarket", "submarket")}
+        {choice("Asset class", "assetClass", [["", "—"], ["ios", "IOS"], ["industrial", "Industrial"]])}
+        {field("Zoning", "zoning")}
       </div>
 
       <p className="hint">Site &amp; improvements</p>
       <div className="grid-2">
-        <Field label="Building SF" k="buildingSf" />
-        <Field label="Site acres" k="acres" />
-        <Field label="Usable yard acres" k="yardAcres" />
-        <Field label="Coverage %" k="coveragePct" />
-        <Field label="Year built" k="yearBuilt" />
-        <Field label="Clear height (ft)" k="clearHeightFt" />
-        <Field label="Office SF" k="officeSf" />
-        <Field label="Trailer stalls" k="trailerStalls" />
-        <Field label="Dock-high doors" k="dockHighDoors" />
-        <Field label="Grade-level doors" k="gradeLevelDoors" />
-        <Field label="Power (amps)" k="powerAmps" />
-        <Choice label="Yard surface" k="surfaceType" options={SURFACES} />
-        <YesNo label="Fenced" k="fenced" />
-        <YesNo label="Outdoor storage permitted" k="outdoorStoragePermitted" />
-        <Choice
-          label="Occupancy"
-          k="occupancyStatus"
-          options={[["", "—"], ["vacant", "Vacant"], ["occupied", "Occupied"]]}
-        />
-        <Choice
-          label="Tenancy"
-          k="tenancy"
-          options={[["", "—"], ["single_tenant", "Single-tenant"], ["multi_tenant", "Multi-tenant"]]}
-        />
+        {field("Building SF", "buildingSf")}
+        {field("Site acres", "acres")}
+        {field("Usable yard acres", "yardAcres")}
+        {field("Coverage %", "coveragePct")}
+        {field("Year built", "yearBuilt")}
+        {field("Clear height (ft)", "clearHeightFt")}
+        {field("Office SF", "officeSf")}
+        {field("Trailer stalls", "trailerStalls")}
+        {field("Dock-high doors", "dockHighDoors")}
+        {field("Grade-level doors", "gradeLevelDoors")}
+        {field("Power (amps)", "powerAmps")}
+        {choice("Yard surface", "surfaceType", SURFACES)}
+        {yesNo("Fenced", "fenced")}
+        {yesNo("Outdoor storage permitted", "outdoorStoragePermitted")}
+        {choice("Occupancy", "occupancyStatus", [["", "—"], ["vacant", "Vacant"], ["occupied", "Occupied"]])}
+        {choice("Tenancy", "tenancy", [
+          ["", "—"],
+          ["single_tenant", "Single-tenant"],
+          ["multi_tenant", "Multi-tenant"],
+        ])}
       </div>
 
       {isLease ? (
         <>
           <p className="hint">Lease terms</p>
           <div className="grid-2">
-            <Field label="Rent *" k="rent" />
-            <Choice label="Rent basis *" k="rentBasis" options={RENT_BASES} />
-            <Choice label="Lease type" k="leaseType" options={LEASE_TYPES} />
-            <Field label="Commenced *" k="dateCommenced" type="date" />
-            <Field label="Expires" k="leaseExpiresOn" type="date" />
-            <Field label="Term (months)" k="leaseTermMonths" />
-            <Field label="Tenant" k="tenantName" />
-            <Field label="Landlord" k="landlordName" />
-            <Field label="Escalations (% / yr)" k="escalationsPct" />
-            <Field label="Free rent (months)" k="freeRentMonths" />
-            <Field label="TI ($/SF)" k="tiPsf" />
-            <Field label="Renewal options" k="renewalOptions" />
-            <Field label="Listing broker" k="listingBroker" />
-            <Field label="Tenant rep broker" k="tenantRepBroker" />
+            {field("Rent *", "rent")}
+            {choice("Rent basis *", "rentBasis", RENT_BASES)}
+            {choice("Lease type", "leaseType", LEASE_TYPES)}
+            {field("Commenced *", "dateCommenced", "date")}
+            {field("Expires", "leaseExpiresOn", "date")}
+            {field("Term (months)", "leaseTermMonths")}
+            {field("Tenant", "tenantName")}
+            {field("Landlord", "landlordName")}
+            {field("Escalations (% / yr)", "escalationsPct")}
+            {field("Free rent (months)", "freeRentMonths")}
+            {field("TI ($/SF)", "tiPsf")}
+            {field("Renewal options", "renewalOptions")}
+            {field("Listing broker", "listingBroker")}
+            {field("Tenant rep broker", "tenantRepBroker")}
           </div>
         </>
       ) : (
         <>
           <p className="hint">Sale terms</p>
           <div className="grid-2">
-            <Field label="Sale price *" k="salePrice" />
-            <Field label="Closed *" k="closedOn" type="date" />
-            <Field label="Cap rate (%)" k="capRate" />
-            <Field label="NOI" k="noi" />
-            <Field label="Buyer" k="buyer" />
-            <Field label="Seller" k="seller" />
-            <Field label="Broker" k="saleBroker" />
-            <Field label="Occupancy at sale (%)" k="occupancyAtSale" />
+            {field("Sale price *", "salePrice")}
+            {field("Closed *", "closedOn", "date")}
+            {field("Cap rate (%)", "capRate")}
+            {field("NOI", "noi")}
+            {field("Buyer", "buyer")}
+            {field("Seller", "seller")}
+            {field("Broker", "saleBroker")}
+            {field("Occupancy at sale (%)", "occupancyAtSale")}
           </div>
         </>
       )}
 
-      <label>
-        Notes
-        <input value={form.notes ?? ""} onChange={set("notes")} />
-      </label>
+      {field("Notes", "notes")}
 
       {error && <p className="error">{error}</p>}
       {comp.updated_at && (
