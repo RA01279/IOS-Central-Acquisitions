@@ -65,15 +65,23 @@ export interface MatchWeights {
   submarket: number;
 }
 
-// Distance first: in IOS, two miles can be a different rent basis entirely.
-// Coverage is weighted above size because it's what separates a yard from a
-// warehouse -- a 6%-coverage site and a 40% one aren't the same product even at
-// identical building SF.
+// RECENCY DOMINATES, by explicit decision. An earlier cut weighted distance
+// highest, which left a comp next door but 32 months old level with one 7.6
+// miles away and 3 months old (0.768 vs 0.764, measured). In a market that has
+// repriced, the stale comp next door is the more misleading of the two.
+//
+// The recency CURVE moved too, not just its weight -- see recencyFalloffMonths
+// in scoreComps. Weight alone wouldn't have done it: under a gentle 36-month
+// falloff a two-year-old comp still scored a third of a fresh one, so raising
+// the weight would partly have amplified stale evidence.
+//
+// Coverage stays above size: a 6%-coverage yard and a 40%-coverage warehouse
+// are not the same product at identical building SF.
 export const DEFAULT_WEIGHTS: MatchWeights = {
-  distance: 0.34,
-  recency: 0.24,
-  coverage: 0.18,
-  size: 0.16,
+  recency: 0.4,
+  distance: 0.25,
+  coverage: 0.15,
+  size: 0.12,
   submarket: 0.08,
 };
 
@@ -229,9 +237,15 @@ export function scoreComps(
   const {
     basis = "building",
     radiusMiles = 15,
-    maxAgeMonths = 36,
+    // Two years, matching the falloff below: a comp whose recency score has
+    // decayed to nothing shouldn't still be dragging an average around.
+    maxAgeMonths = 24,
     distanceFalloffMi = 12,
-    recencyFalloffMonths = 36,
+    // Steep on purpose. At 36 months a two-year-old comp still scored 0.33 on
+    // recency, which -- once recency became the heaviest factor -- would have
+    // amplified stale evidence rather than discounting it. At 24, a one-year-old
+    // comp scores 0.5 and a two-year-old scores 0.
+    recencyFalloffMonths = 24,
     weights = DEFAULT_WEIGHTS,
     topN = 8,
     excludedIds = [],

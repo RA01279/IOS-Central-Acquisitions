@@ -99,15 +99,7 @@ const mk = (id, over = {}) => ({
 // Near/recent must outrank far/old.
 // "far" sits ~7.6 miles out: inside the default 15-mile radius, so this tests
 // the RANKING rather than the radius filter (covered separately below). The age
-// limit is lifted here for the same reason.
-//
-// Worth knowing about the default weights: distance carries the most, so a
-// comp NEXT DOOR but 32 months old scores about the same as one 7.6 miles away
-// and 3 months old (0.768 vs 0.764 when measured). That's defensible in IOS,
-// where a couple of miles can be a different rent basis -- but it means "old
-// and close" beats "fresh and moderately far", which is a tuning decision
-// rather than a law. The stale comp below is deliberately far older than that
-// crossover so the assertion tests the model instead of a coin flip.
+// limit is lifted here so the stale comp is ranked rather than filtered.
 const ranked = scoreComps(
   [
     mk("far", { latitude: 30.42, longitude: -95.4561 }),
@@ -119,6 +111,36 @@ const ranked = scoreComps(
 eq("nearest and most recent ranks first", ranked[0].comp.id, "near");
 eq("all three eligible", ranked.filter((r) => !r.excluded).length, 3);
 eq("a moderately distant recent comp beats a very stale one", ranked[1].comp.id, "far");
+
+// THE CROSSOVER, locked in deliberately.
+//
+// Under the earlier distance-heavy weights these two scored 0.768 and 0.764 --
+// a coin flip between a stale comp next door and a fresh one 7.6 miles out.
+// Recency is now the heaviest factor with a steeper curve, so fresh-but-farther
+// must win clearly. If a future tuning pass flips this, that should be a
+// choice, not a surprise.
+const crossover = scoreComps(
+  [
+    mk("stale_next_door", { closed_on: "2024-01-01" }), // ~32 months, ~0.6 mi
+    mk("fresh_7_miles", { closed_on: "2026-06-01", latitude: 30.42, longitude: -95.4561 }),
+  ],
+  SUBJECT, "sale", { today: TODAY, maxAgeMonths: 120 }
+);
+eq("fresh-but-farther now outranks stale-next-door", crossover[0].comp.id, "fresh_7_miles");
+const gap = crossover[0].score - crossover[1].score;
+eq("...and by a clear margin, not a hair", gap > 0.15, true);
+// Recency must decay to nothing by roughly two years. Tested past the boundary
+// rather than on it: age is measured in average months (30.44 days), so exactly
+// 730 days works out at 23.98 months and still scores a rounding crumb.
+eq("recency is zero beyond the falloff",
+  scoreComps([mk("stale", { closed_on: "2024-01-01" })], SUBJECT, "sale", { today: TODAY, maxAgeMonths: 120 })[0].factors.recency,
+  0);
+near("...and is nearly zero right at two years",
+  scoreComps([mk("twoyears", { closed_on: "2024-09-03" })], SUBJECT, "sale", { today: TODAY, maxAgeMonths: 120 })[0].factors.recency,
+  0, 0.01);
+near("a one-year-old comp scores half on recency",
+  scoreComps([mk("oneyear", { closed_on: "2025-09-03" })], SUBJECT, "sale", { today: TODAY })[0].factors.recency,
+  0.5, 0.02);
 
 // Filters exclude rather than merely down-weight.
 const filtered = scoreComps(

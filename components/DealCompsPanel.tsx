@@ -43,7 +43,10 @@ export default function DealCompsPanel({
   const [compType, setCompType] = useState<CompType>("lease");
   const [basis, setBasis] = useState<ValueBasis>("building");
   const [radiusMiles, setRadiusMiles] = useState(10);
-  const [maxAgeMonths, setMaxAgeMonths] = useState(36);
+  // Two years by default, matching the recency falloff in match.ts -- a comp
+  // whose recency score has decayed to zero shouldn't still be moving an
+  // average. Widen it with the chips when evidence is thin.
+  const [maxAgeMonths, setMaxAgeMonths] = useState(24);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
 
@@ -307,8 +310,10 @@ export default function DealCompsPanel({
       )}
 
       <p className="hint" style={{ marginTop: 10 }}>
-        Score blends distance, recency, coverage, size and submarket match, renormalised over
-        whatever is known — so a comp missing a field is judged on the rest rather than penalised
+        Score is weighted toward <strong>recency</strong> above all — a stale comp next door is
+        more misleading than a fresh one a few miles out — then distance, coverage, size and
+        submarket match. Recency decays to nothing by about two years. Weights renormalise over
+        whatever is known, so a comp missing a field is judged on the rest rather than penalised
         for our gaps. Only the highest-scoring comps within the filters feed the range; untick any
         you disagree with and the numbers move.
       </p>
