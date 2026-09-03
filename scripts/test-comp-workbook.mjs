@@ -335,9 +335,18 @@ ok("term", i0.leaseTermMonths === 124, String(i0.leaseTermMonths));
 // The rate that matters: IOS is priced per acre.
 ok("per-acre rate wins", Math.abs(i0.rent - 6785.137) < 0.01, String(i0.rent));
 ok("...with the per-acre basis", i0.rentBasis === "per_acre_monthly", String(i0.rentBasis));
-// The mislabelled column, caught by arithmetic rather than trusted.
-ok("mislabelled building-SF column detected",
-  i0.warnings.some((w) => /is annual, not monthly/.test(w)), JSON.stringify(i0.warnings));
+// The mislabelled column, caught by arithmetic rather than trusted -- and
+// judged once for the whole sheet, because a column's units are a property of
+// the column. Saying it on every row made the Issues column unreadable and
+// buried the rows that genuinely needed a human (236 flagged rows -> 15).
+ok("mislabelled column reported once, at file level",
+  iosRes.warnings.some((w) => /"\$\/Building SF\/Mo" column in this file is ANNUAL/.test(w)),
+  JSON.stringify(iosRes.warnings));
+ok("...naming the evidence", iosRes.warnings.some((w) => /3 of 3 rows/.test(w)),
+  JSON.stringify(iosRes.warnings));
+ok("...and NOT repeated on every row",
+  !i0.warnings.some((w) => /annual, not monthly/.test(w)), JSON.stringify(i0.warnings));
+ok("...leaving per-acre rows untouched", i0.rentBasis === "per_acre_monthly", String(i0.rentBasis));
 ok("coordinates taken from the file", i0.latitude === 29.7117036688035 && i0.longitude === -95.1728786252406,
   `${i0.latitude},${i0.longitude}`);
 ok("row-level source captured", i0.sourceRef === "NAI: Josh Carl 7/8/2026", String(i0.sourceRef));
@@ -366,6 +375,64 @@ ok("...but the override is reported",
   JSON.stringify(iosOverridden.warnings));
 ok("no such warning when the market is left blank",
   !iosRes.warnings.some((w) => /markets of its own/i.test(w)));
+
+// The rows that most need the sheet-level verdict are the ones that CAN'T be
+// checked individually: no acreage, so no arithmetic. In the real file two rows
+// (2442 and 3030 Greens Rd) carry only the mislabelled column, and were stored
+// at $14.28 and $12.60 per SF per MONTH -- twelve times any real industrial
+// rent, and nothing row-local would ever have caught it.
+const iosOrphan = new ExcelJS.Workbook();
+const shOrphan = iosOrphan.addWorksheet("IOS Lease Comps");
+shOrphan.addRow(IOS_HEADER);
+shOrphan.addRow(iosRow());
+shOrphan.addRow(iosRow({ 0: "2 Checkable Rd" }));
+shOrphan.addRow(iosRow({ 0: "3 Checkable Rd" }));
+// No acreage, no per-acre rate: only the mislabelled column.
+shOrphan.addRow(iosRow({ 0: "2442 Greens Rd", 7: "", 8: "", 10: "", 19: "", 18: "", 20: "", 17: 14.28 }));
+const orphanText = (await workbookToDelimitedText(Buffer.from(await iosOrphan.xlsx.writeBuffer()), "o.xlsx"))
+  .sheets[0].text;
+const orphanRes = parseCompTable(orphanText, { defaultCompType: "lease" });
+const orphan = orphanRes.comps.find((c) => c.address === "2442 Greens Rd");
+ok("the uncheckable row is still corrected", orphan.rentBasis === "per_sf_bldg_annual",
+  `${orphan.rentBasis} ${orphan.rent}`);
+ok("...its rate is unchanged in value", Math.abs(orphan.rent - 14.28) < 0.001, String(orphan.rent));
+ok("...and it says so on the row", orphan.warnings.some((w) => /per SF\/year, not per month/i.test(w)),
+  JSON.stringify(orphan.warnings));
+ok("...and the file warning counts what it moved",
+  orphanRes.warnings.some((w) => /changes 1 row that had no other rate/.test(w)),
+  JSON.stringify(orphanRes.warnings));
+
+// Too little evidence must NOT convict a column. One checkable row could be a
+// data-entry slip; it isn't grounds for reinterpreting a whole file.
+const thinEvidence = parseCompTable(
+  [["Address", "Usable Acres", "Building Area", "Rate ($/Building SF/Mo)", "Rate (AC/Mo)", "Date"].join(" | "),
+   ["1 Lonely Rd", 6.19, 20200, 24.95, 6785.137, "2026-09-01"].join(" | ")].join("\n"),
+  { defaultCompType: "lease" }
+);
+ok("one row is not enough to convict the column",
+  !thinEvidence.warnings.some((w) => /is ANNUAL/.test(w)), JSON.stringify(thinEvidence.warnings));
+
+// Coverage is checked against USABLE acreage, which is what coverage means on
+// a yard deal. The real file has 30 rows where gross and usable differ, and its
+// own Coverage column agrees with usable on every one -- checking against
+// gross reported all 30 as mismatches when the file was right.
+const covRes = parseCompTable(
+  [["Address", "Gross Acres", "Usable Acres", "Building Area", "Coverage", "Rate (AC/Mo)", "Date"].join(" | "),
+   // 72,761 SF on 4.09 usable of 9.3 gross = 40.8% usable, 18.0% gross.
+   ["3782 Reese Rd", 9.3, 4.09, 72761, 0.408, 8528, "2025-05-01"].join(" | ")].join("\n"),
+  { defaultCompType: "lease" }
+);
+ok("coverage stated on usable acres reconciles",
+  !covRes.comps[0].warnings.some((w) => /coverage/i.test(w)), JSON.stringify(covRes.comps[0].warnings));
+// But a coverage that reconciles with NEITHER is a real problem: three rows in
+// the file imply over 100% coverage, which is impossible.
+const covBad = parseCompTable(
+  [["Address", "Gross Acres", "Usable Acres", "Building Area", "Coverage", "Rate (AC/Mo)", "Date"].join(" | "),
+   ["9111 Jackrabbit Rd", 3.39, 0.89, 42140, 0.011, 14937, "2025-06-01"].join(" | ")].join("\n"),
+  { defaultCompType: "lease" }
+);
+ok("an impossible coverage is still flagged",
+  covBad.comps[0].warnings.some((w) => /coverage/i.test(w)), JSON.stringify(covBad.comps[0].warnings));
 
 // A correctly-labelled monthly column must NOT be flagged as annual.
 const honest = parseCompTable(

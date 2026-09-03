@@ -285,13 +285,17 @@ export default function CompIntakeForm({
 
   const included = (drafts ?? []).filter((d) => d._include);
   const blocked = included.filter((d) => blockingIssue(d));
+  /** Ticked AND complete. These are what Save actually sends. */
+  const saveable = included.filter((d) => !blockingIssue(d));
 
   async function handleSave() {
     if (!drafts) return;
     setBusy(true);
     setError(null);
     try {
-      const rows = included.map((d) => ({ ...d, assetClass: assetClass || null }));
+      // Only complete rows. The server would reject the others anyway; sending
+      // them just spends a round trip to be told so.
+      const rows = saveable.map((d) => ({ ...d, assetClass: assetClass || null }));
 
       // Saved in batches rather than one request.
       //
@@ -814,19 +818,44 @@ export default function CompIntakeForm({
             </table>
           </div>
 
+          {/* A few incomplete rows must NOT hold back the rest.
+              This used to disable Save entirely whenever any included row was
+              missing a required field, which meant a 282-row import with ten
+              undated rows couldn't be saved at all without hunting down and
+              unticking those ten by hand. The incomplete rows are listed and
+              skipped; the good ones go in. */}
           <div className="stage-actions" style={{ marginTop: 12 }}>
-            <button onClick={handleSave} disabled={busy || !included.length || blocked.length > 0}>
-              {busy ? "Saving…" : `Save ${included.length} comp${included.length === 1 ? "" : "s"}`}
+            <button onClick={handleSave} disabled={busy || !saveable.length}>
+              {busy
+                ? "Saving…"
+                : `Save ${saveable.length} comp${saveable.length === 1 ? "" : "s"}${
+                    blocked.length ? ` · skip ${blocked.length}` : ""
+                  }`}
             </button>
             <button type="button" className="secondary" onClick={() => setDrafts(null)}>
               Discard
             </button>
-            {blocked.length > 0 && (
-              <span className="error">
-                {blocked.length} row{blocked.length === 1 ? "" : "s"} still missing a required field
-              </span>
-            )}
           </div>
+          {blocked.length > 0 && (
+            <div className="warning" style={{ marginTop: 10 }}>
+              <p style={{ margin: 0 }}>
+                <strong>
+                  {blocked.length} row{blocked.length === 1 ? "" : "s"} can&apos;t be saved yet
+                </strong>{" "}
+                and will be skipped. Fill the missing field in the table above to include one — or
+                just save the other {saveable.length} and come back to these.
+              </p>
+              <ul style={{ marginBottom: 0 }}>
+                {blocked.slice(0, 15).map((d, i) => (
+                  <li key={i}>
+                    {d.address}
+                    {d.market ? ` (${d.market})` : ""} — {blockingIssue(d)}
+                  </li>
+                ))}
+                {blocked.length > 15 && <li className="muted">…and {blocked.length - 15} more</li>}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </section>

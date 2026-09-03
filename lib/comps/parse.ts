@@ -851,6 +851,13 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
   let rowsInTable = 0;
   /** Market values the sheet stated and the caller's context overrode. */
   const overriddenMarkets = new Set<string>();
+  /**
+   * Evidence about whether a "$/building SF/month" column really holds monthly
+   * figures. Gathered per row, judged per SHEET -- see the pass below the loop.
+   */
+  const rateAudit: { comp: ParsedComp; ratio: number }[] = [];
+  /** Comps whose rent was taken FROM that column, and so would move with it. */
+  const fromMonthlyColumn: ParsedComp[] = [];
 
   for (const line of lines) {
     // These section titles are TERMINAL, not merely a break. Everything after
@@ -930,12 +937,23 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
     // Coverage is derivable, so a stated value can be checked rather than
     // trusted. A real mismatch usually means the SF and AC columns were read
     // in the wrong order.
-    if (buildingSf && lotSf) {
-      const computed = buildingSf / lotSf;
+    //
+    // Checked against USABLE acreage where the sheet distinguishes it, because
+    // that's what coverage means on a yard deal -- building over the land the
+    // tenant can actually use. The standard IOS template has 30 rows where
+    // gross and usable differ (3782 Reese Rd is 9.3 gross, 4.09 usable) and its
+    // own Coverage column agrees with usable on every one of them. Checking
+    // against gross reported all 30 as mismatches when the file was right.
+    const yardAcres = num(get("yardAcres"));
+    const coverageDenom =
+      yardAcres !== null ? Math.round(yardAcres * SQFT_PER_ACRE) : lotSf;
+    if (buildingSf && coverageDenom) {
+      const computed = buildingSf / coverageDenom;
       if (coveragePct === null) coveragePct = Number(computed.toFixed(4));
       else if (Math.abs(computed - coveragePct) > 0.03) {
         rowWarnings.push(
-          `Stated coverage ${(coveragePct * 100).toFixed(1)}% doesn't match building/land (${(computed * 100).toFixed(1)}%)`
+          `Stated coverage ${(coveragePct * 100).toFixed(1)}% doesn't match building ÷ ` +
+            `${yardAcres !== null ? "usable" : "site"} land (${(computed * 100).toFixed(1)}%)`
         );
       }
     }
@@ -1012,7 +1030,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       saleBroker: compType === "sale" ? get("broker")?.trim() || null : null,
       clearHeightFt: feet(get("clearHeight")),
       officeSf: num(get("officeSf")),
-      yardAcres: num(get("yardAcres")),
+      yardAcres,
       trailerStalls: num(get("trailerStalls")),
       dockHighDoors: num(get("dockDoors")),
       gradeLevelDoors: num(get("gradeDoors")),
@@ -1100,33 +1118,18 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         }
       }
 
-      // The mislabelled-column check. Where a per-acre rate, the acreage and a
-      // building size are all present, the true $/building SF/mo is arithmetic
-      // -- so a stated building-SF rate can be audited rather than trusted.
-      //
-      // This is not hypothetical. In the standard TX IOS template the column
-      // headed "Rate ($/Building SF/Mo)" holds ANNUAL figures: all 206 rows
-      // that carry enough numbers to check come out at exactly 12x the monthly
-      // rate. Recording those as monthly would put every building-SF rate an
-      // order of magnitude high.
+      // Evidence for the mislabelled-column check. Where a per-acre rate, the
+      // acreage and a building size are all present, the true $/building SF/mo
+      // is arithmetic -- so a stated building-SF rate can be audited rather
+      // than trusted. The VERDICT is reached per sheet, after the loop: a
+      // column's units are a property of the column, not of each row.
       const siteAcres = parsed.yardAcres ?? parsed.acres;
       if (rateMonthly !== null && rateMonthly > 0 && perAcre !== null && siteAcres && buildingSf) {
         const trueMonthly = (perAcre * siteAcres) / buildingSf;
-        if (trueMonthly > 0) {
-          const ratio = rateMonthly / trueMonthly;
-          if (Math.abs(ratio - 12) < 0.5) {
-            rowWarnings.push(
-              `"Rate ($/Building SF/Mo)" of $${rateMonthly.toFixed(2)} is annual, not monthly ` +
-                `— the per-acre rate implies $${trueMonthly.toFixed(2)}/SF/mo. Column label is wrong; ` +
-                `the per-acre rate is being used.`
-            );
-          } else if (Math.abs(ratio - 1) > 0.1) {
-            rowWarnings.push(
-              `Building-SF rate $${rateMonthly.toFixed(2)} doesn't reconcile with $${perAcre}/AC/mo ` +
-                `on ${siteAcres} AC and ${buildingSf.toLocaleString()} SF (implies $${trueMonthly.toFixed(2)})`
-            );
-          }
-        }
+        if (trueMonthly > 0) rateAudit.push({ comp: parsed, ratio: rateMonthly / trueMonthly });
+      }
+      if (parsed.rentBasis === "per_sf_bldg_monthly" && rateMonthly !== null) {
+        fromMonthlyColumn.push(parsed);
       }
 
       // Both bases given: they must agree within rounding, or a column was
@@ -1223,6 +1226,58 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       },
     };
   }
+  // -- is the building-SF rate column actually monthly? ---------------------
+  //
+  // Judged over the whole sheet rather than row by row, for two reasons.
+  //
+  // A column's units are a property of the COLUMN. If 206 rows prove it holds
+  // annual figures, the handful that lack the acreage to be checked are annual
+  // too -- and those are exactly the rows that most need the correction, since
+  // nothing else will catch them. In the standard IOS template two rows (2442
+  // and 3030 Greens Rd) carry only that column: they were being stored as
+  // $14.28 and $12.60 per SF per MONTH, which is roughly twelve times any real
+  // industrial rent and would have dragged every range they landed in.
+  //
+  // And it's one fact about the file, so it should be said once. Saying it on
+  // all 206 rows made the Issues column unreadable and buried the ten rows
+  // that genuinely needed a human.
+  const checkable = rateAudit.length;
+  const annualVotes = rateAudit.filter((a) => Math.abs(a.ratio - 12) < 0.5).length;
+  const columnIsAnnual = checkable >= 3 && annualVotes / checkable >= 0.8;
+
+  if (columnIsAnnual) {
+    for (const c of fromMonthlyColumn) {
+      if (c.rentBasis === "per_sf_bldg_monthly") {
+        c.rentBasis = "per_sf_bldg_annual";
+        c.warnings.push(
+          `Read as $${Number(c.rent).toFixed(2)} per SF/year, not per month — the column is ` +
+            `mislabelled across this file.`
+        );
+      }
+    }
+    warnings.push(
+      `The "$/Building SF/Mo" column in this file is ANNUAL, not monthly: ${annualVotes} of ` +
+        `${checkable} rows that can be checked against the per-acre rate come out at exactly 12x. ` +
+        `Treated as annual throughout${
+          fromMonthlyColumn.length
+            ? `, which changes ${fromMonthlyColumn.length} row${fromMonthlyColumn.length === 1 ? "" : "s"} that had no other rate`
+            : " (every other row is priced off the per-acre column, so nothing else moves)"
+        }. Worth fixing the header at source.`
+    );
+  }
+
+  // Rows that reconcile with neither reading are a genuine per-row problem and
+  // still get flagged individually -- that's a number to look at, not a header
+  // to fix.
+  for (const a of rateAudit) {
+    const off = columnIsAnnual ? Math.abs(a.ratio - 12) >= 0.5 : Math.abs(a.ratio - 1) > 0.1;
+    if (off) {
+      a.comp.warnings.push(
+        `Building-SF rate doesn't reconcile with the per-acre rate (off by ${a.ratio.toFixed(1)}x)`
+      );
+    }
+  }
+
   if (overriddenMarkets.size > 1) {
     const named = [...overriddenMarkets].sort();
     warnings.push(
