@@ -591,9 +591,14 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       compType,
       address,
       projectName: get("projectName")?.trim() || null,
-      city: (get("city") ?? opts.city) || null,
-      market: (get("market") ?? opts.market) || null,
-      submarket: (get("submarket") ?? opts.submarket) || null,
+      // Context typed by the person importing WINS over the sheet's own
+      // columns. It used to be the other way round, which meant a broker's
+      // shorthand ("North", "SW") silently overrode a deliberate entry of
+      // "Conroe". The sheet is the fallback, not the authority -- and where it
+      // does fill in, the review table shows what each row got.
+      city: (opts.city ?? get("city")) || null,
+      market: (opts.market ?? get("market")) || null,
+      submarket: (opts.submarket ?? get("submarket")) || null,
       yearBuilt: num(get("yearBuilt")),
       buildingSf,
       lotSf,

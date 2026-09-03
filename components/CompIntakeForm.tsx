@@ -36,6 +36,8 @@ interface DraftComp {
   datePrecision: string;
   quotedPsf: number | null;
   warnings: string[];
+  /** Which workbook tab this came from, when the source was a spreadsheet. */
+  sheet?: string | null;
   // review state
   _include: boolean;
 }
@@ -268,7 +270,7 @@ export default function CompIntakeForm({
 
       <div className="grid-2">
         <label>
-          Market *
+          Market * — the metro
           <input
             list="comp-markets"
             value={market}
@@ -286,8 +288,12 @@ export default function CompIntakeForm({
           <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Conroe" />
         </label>
         <label>
-          Submarket
-          <input value={submarket} onChange={(e) => setSubmarket(e.target.value)} />
+          Submarket — within the metro
+          <input
+            value={submarket}
+            onChange={(e) => setSubmarket(e.target.value)}
+            placeholder="Conroe"
+          />
         </label>
         <label>
           Asset class
@@ -299,8 +305,11 @@ export default function CompIntakeForm({
         </label>
       </div>
       <p className="hint">
-        Broker tables carry bare street addresses, so market and city are applied to every row —
-        without them the addresses geocode to a county centroid and distance matching stops working.
+        Market is the metro (Houston); submarket is the pocket within it (Conroe). Broker tables
+        carry bare street addresses, so these are applied to every row — without them the addresses
+        geocode to a county centroid and distance matching stops working. What you type here wins
+        over the spreadsheet&apos;s own Market/Submarket columns; where you leave one blank, the
+        sheet fills it in and the table below shows what each row got.
       </p>
 
       <div
@@ -413,6 +422,43 @@ export default function CompIntakeForm({
             Fill in anything missing — dates especially, since broker lease tables usually omit
             them. Untick a row to leave it out.
           </p>
+
+          {/* Per-tab selection. A workbook's tabs are frequently different
+              datasets -- one real file had two tabs of Conroe comps and one of
+              Houston Southwest comps 47 miles away -- and unticking sixteen
+              rows by hand to drop the odd one out is nobody's idea of a good
+              time. */}
+          {(() => {
+            const tabs = Array.from(
+              new Set(drafts.map((d) => d.sheet).filter(Boolean) as string[])
+            );
+            if (tabs.length < 2) return null;
+            return (
+              <div className="filter-chips">
+                {tabs.map((tab) => {
+                  const rows = drafts.filter((d) => d.sheet === tab);
+                  const on = rows.filter((d) => d._include).length;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={on > 0 ? "chip chip-active" : "chip"}
+                      onClick={() =>
+                        setDrafts((prev) =>
+                          prev
+                            ? prev.map((d) => (d.sheet === tab ? { ...d, _include: on === 0 } : d))
+                            : prev
+                        )
+                      }
+                      title={on > 0 ? `Exclude all ${rows.length} from “${tab}”` : `Include all from “${tab}”`}
+                    >
+                      {tab} · {on}/{rows.length}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
           <div className="table-scroll">
             <table className="summary-table log-table">
               <thead>
@@ -420,12 +466,15 @@ export default function CompIntakeForm({
                   <th />
                   <th>Type</th>
                   <th>Address</th>
+                  <th>Submarket</th>
                   <th>Date</th>
                   <th>Price / Rent</th>
+                  <th>Basis</th>
                   <th>Bldg SF</th>
                   <th>Acres</th>
                   <th>Cov.</th>
                   <th>Yr</th>
+                  <th>Tab</th>
                   <th>Issues</th>
                 </tr>
               </thead>
@@ -458,6 +507,7 @@ export default function CompIntakeForm({
                           style={{ minWidth: 190 }}
                         />
                       </td>
+                      <td className="muted">{d.submarket ?? "—"}</td>
                       <td>
                         <input
                           type="date"
@@ -482,6 +532,13 @@ export default function CompIntakeForm({
                           style={{ width: 110 }}
                         />
                       </td>
+                      {/* The basis is shown because it's where a 12x error
+                          hides: an annual rate read as monthly looks plausible. */}
+                      <td className="muted">
+                        {d.compType === "sale"
+                          ? "sale"
+                          : (d.rentBasis ?? "—").replace(/_/g, " ").replace("per sf bldg ", "$/SF ")}
+                      </td>
                       <td>
                         <input
                           value={fmtNum(d.buildingSf)}
@@ -502,6 +559,10 @@ export default function CompIntakeForm({
                       </td>
                       <td>{d.coveragePct === null ? "—" : `${(d.coveragePct * 100).toFixed(1)}%`}</td>
                       <td>{fmtNum(d.yearBuilt) || "—"}</td>
+                      {/* Which tab it came from: a workbook's tabs are often
+                          different datasets, so this is how you spot the one
+                          that doesn't belong before saving it. */}
+                      <td className="muted">{d.sheet ?? "—"}</td>
                       <td className="muted" style={{ whiteSpace: "normal", minWidth: 170 }}>
                         {issue && <strong className="overdue">{issue}</strong>}
                         {issue && d.warnings.length > 0 && " · "}
