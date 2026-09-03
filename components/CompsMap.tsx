@@ -100,7 +100,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
           lng: Number(c.longitude),
           color: c.comp_type === "sale" ? SALE_COLOR : LEASE_COLOR,
           title: c.project_name ? `${c.address} — ${c.project_name}` : c.address,
-          href: undefined,
+          href: `/comps/${c.id}`,
           lines: [
             [
               c.comp_type === "sale" ? "Sale" : "Lease",
@@ -185,7 +185,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
       />
 
       <p className="hint" style={{ marginTop: 10 }}>
-        Click a pin for the numbers; click the map once to enable scroll-zoom.
+        Hover a pin for the numbers, click it to open the comp. Scroll to zoom, drag to pan.
         {unmappable > 0 && (
           <>
             {" "}

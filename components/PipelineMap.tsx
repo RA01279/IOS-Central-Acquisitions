@@ -180,7 +180,7 @@ export default function PipelineMap({
       />
 
       <p className="hint" style={{ marginTop: 10 }}>
-        Click a pin to open the deal; click the map once to enable scroll-zoom.
+        Hover a pin for the details, click it to open the deal. Scroll to zoom, drag to pan.
         {unmappable > 0 && (
           <>
             {" "}

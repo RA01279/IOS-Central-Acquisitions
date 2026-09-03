@@ -16,6 +16,7 @@
 //    fill colour directly, which is the whole point here.
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 // Leaflet's stylesheet is required for tiles to position correctly -- without
 // it every tile stacks at the top-left corner. Imported statically (not in the
 // effect) so it's in the bundle's CSS rather than injected after paint.
@@ -58,6 +59,7 @@ export default function MapView({
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const router = useRouter();
 
   // Create the map once.
   useEffect(() => {
@@ -68,17 +70,15 @@ export default function MapView({
         if (cancelled || !containerRef.current || mapRef.current) return;
 
         const map = L.map(containerRef.current, {
-          // A map inside a scrolling page must not hijack the wheel; a click
-          // enables zooming deliberately (see the handlers below).
-          scrollWheelZoom: false,
+          scrollWheelZoom: true,
+          // Pinch-zoom and two-finger pan on a trackpad or touchscreen.
+          touchZoom: true,
+          zoomControl: true,
         });
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           maxZoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         }).addTo(map);
-        // Click to enable the wheel, so zooming is deliberate.
-        map.on("click", () => map.scrollWheelZoom.enable());
-        map.on("mouseout", () => map.scrollWheelZoom.disable());
         map.setView([31.0, -97.0], 6); // Texas, until points arrive
         mapRef.current = map;
       } catch (err: any) {
@@ -117,16 +117,31 @@ export default function MapView({
           fillColor: `#${p.color}`,
           fillOpacity: 0.92,
         });
-        const title = p.href
-          ? `<a href="${p.href}" style="font-weight:600;color:#2e6e62;">${escapeHtml(p.title)}</a>`
-          : `<strong>${escapeHtml(p.title)}</strong>`;
         const body = (p.lines ?? []).map((l) => escapeHtml(l)).join("<br/>");
-        marker.bindPopup(
-          `<div style="font:13px -apple-system,Segoe UI,Arial,sans-serif;min-width:150px">${title}${
+        const card = (titleHtml: string) =>
+          `<div style="font:13px -apple-system,Segoe UI,Arial,sans-serif;min-width:150px">${titleHtml}${
             body ? `<div style="color:#5b6472;margin-top:3px">${body}</div>` : ""
-          }</div>`
-        );
-        marker.bindTooltip(p.title, { direction: "top" });
+          }</div>`;
+
+        if (p.href) {
+          // Clicking a pin opens its summary. The detail that would have been
+          // in a popup moves to the hover tooltip, so nothing is lost -- and a
+          // popup would only flash before the navigation anyway.
+          marker.bindTooltip(
+            card(`<strong>${escapeHtml(p.title)}</strong>`) +
+              `<div style="color:#2e6e62;margin-top:4px;font-size:12px">Click to open →</div>`,
+            { direction: "top", sticky: true, opacity: 1 }
+          );
+          marker.on("click", () => router.push(p.href!));
+          // Make the affordance obvious on the way in.
+          marker.on("mouseover", () => {
+            const el = (marker as any)._path as SVGElement | undefined;
+            if (el) el.style.cursor = "pointer";
+          });
+        } else {
+          marker.bindPopup(card(`<strong>${escapeHtml(p.title)}</strong>`));
+          marker.bindTooltip(p.title, { direction: "top" });
+        }
         group.addLayer(marker);
       }
       group.addTo(map);
@@ -143,7 +158,7 @@ export default function MapView({
     return () => {
       cancelled = true;
     };
-  }, [points]);
+  }, [points, router]);
 
   if (failed) {
     return <p className="error">Map failed to load: {failed}</p>;
