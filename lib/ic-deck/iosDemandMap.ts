@@ -16,15 +16,25 @@
 // derive their scale from the same projection as the imagery, so they agree
 // with it and with each other at any radius.
 
-export type Category = { label: string; keyword: string; color: string };
+export type Category = { label: string; keywords: string[]; color: string };
 
+// Keep the labels and colours in step with DEFAULT_CATEGORIES in the API route
+// -- the route decides which businesses land in which category, this decides
+// what colour they're drawn in. The keyword rationale lives in the route.
 export const DEFAULT_CATEGORIES: Category[] = [
-  { label: "Auto Storage", keyword: "vehicle RV boat storage", color: "7F8C8D" },
-  { label: "Building Materials", keyword: "building materials supplier", color: "C9971F" },
-  { label: "Chemical/Waste Mgmt", keyword: "waste management chemical distributor", color: "16A085" },
-  { label: "Container Storage", keyword: "shipping container storage", color: "8E44AD" },
-  { label: "Contractor Yard", keyword: "general contractor construction", color: "C0562B" },
-  { label: "Equip. Rental & Sales", keyword: "equipment rental sales", color: "2E6DA4" },
+  // "truck parking lot" is deliberately absent -- it returned food-truck parks
+  // and supermarket car parks. The client's list is what the API actually runs
+  // (it overrides the route's defaults), so these must stay in step.
+  { label: "Auto & RV Storage", keywords: ["RV boat outdoor storage lot", "trailer storage yard"], color: "7F8C8D" },
+  { label: "Building Materials", keywords: ["building materials supplier", "lumber yard", "roofing supply"], color: "C9971F" },
+  { label: "Chemical/Waste Mgmt", keywords: ["waste management chemical distributor"], color: "16A085" },
+  { label: "Container Storage", keywords: ["shipping container storage", "portable storage container sales"], color: "8E44AD" },
+  { label: "Contractor Yard", keywords: ["paving contractor", "fence company", "excavating contractor"], color: "C0562B" },
+  { label: "Equip. Rental & Sales", keywords: ["equipment rental sales", "crane service"], color: "2E6DA4" },
+  { label: "Stone & Masonry", keywords: ["stone yard", "natural stone supplier", "masonry supply"], color: "7D5A3C" },
+  { label: "Trucking & Towing", keywords: ["trucking company", "towing service"], color: "2C3E50" },
+  { label: "Landscape & Soil", keywords: ["landscape supply yard", "soil compost mulch supplier"], color: "5B8C3A" },
+  { label: "Pipe & Steel", keywords: ["pipe supply", "steel supply"], color: "B03A5B" },
 ];
 
 export type Tenant = {
@@ -52,6 +62,8 @@ export type DemandMapResponse = {
   mapLogicalSize?: number;
   /** Raster multiplier the basemap was rendered at. Reported by the API. */
   mapScale?: number;
+  /** Keyword matches rejected as non-yard uses (self-storage, movers, ...). */
+  screenedOut?: number;
   imageBase64: string;
   tenants: Tenant[];
 };
@@ -80,7 +92,9 @@ export async function fetchDemandMap(
   opts: { radiusMiles?: number; categories?: Category[]; maptype?: MapType } = {}
 ): Promise<DemandMapResponse> {
   const { radiusMiles = 5, categories = DEFAULT_CATEGORIES, maptype = "satellite" } = opts;
-  const categoriesParam = categories.map((c) => `${c.label}:${c.keyword}`).join(",");
+  // label:kw one;kw two,label:kw three -- ';' separates keywords within a
+  // category, ',' separates categories.
+  const categoriesParam = categories.map((c) => `${c.label}:${c.keywords.join(";")}`).join(",");
   const url = `/api/deals/${dealId}/demand-map?radiusMiles=${radiusMiles}&maptype=${maptype}&categories=${encodeURIComponent(
     categoriesParam
   )}`;

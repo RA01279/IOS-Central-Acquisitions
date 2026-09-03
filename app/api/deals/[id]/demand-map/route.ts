@@ -2,17 +2,108 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
-// Six IOS demand categories, with a Places "keyword" tuned for each. Callers can
-// override via ?categories=Label1:keyword one,Label2:keyword two if a deal needs
-// a different mix -- but the defaults cover the standard IOS screen.
-const DEFAULT_CATEGORIES: { label: string; keyword: string }[] = [
-  { label: "Auto Storage", keyword: "vehicle RV boat storage" },
-  { label: "Building Materials", keyword: "building materials supplier" },
-  { label: "Chemical/Waste Mgmt", keyword: "waste management chemical distributor" },
-  { label: "Container Storage", keyword: "shipping container storage" },
-  { label: "Contractor Yard", keyword: "general contractor construction" },
-  { label: "Equip. Rental & Sales", keyword: "equipment rental sales" },
+// IOS demand categories. Each holds SEVERAL Places keywords, merged and deduped
+// by place_id, because no single keyword covers a use: stone yards need three
+// ("stone yard", "natural stone supplier", "masonry supply") and Triton Stone
+// shows up under all of them.
+//
+// Every keyword here was probed against live Places data and kept only if it
+// returned businesses that actually occupy a yard. Notable rejects:
+//   "general contractor construction" -> residential remodelers (ATX Construction
+//       & Remodeling, AGC Home Remodeling) -- no yard, was the old Contractor Yard
+//   "utility contractor"              -> electricians working out of vans
+//   "concrete contractor"             -> decorative coatings and stamped patios
+//   "oilfield service"                -> data and analytics firms
+//   "quarry stone"                    -> a church and a diagnostic imaging centre
+//   "sand gravel quarry"              -> zero results
+//   "vehicle RV boat storage"         -> self-storage chains, a different asset
+//       class; replaced with keywords that target outdoor lots
+//
+// Callers can override via ?categories=Label:kw one;kw two,Label2:kw three
+const DEFAULT_CATEGORIES: { label: string; keywords: string[] }[] = [
+  { label: "Auto & RV Storage", keywords: ["RV boat outdoor storage lot", "trailer storage yard"] },
+  { label: "Building Materials", keywords: ["building materials supplier", "lumber yard", "roofing supply"] },
+  { label: "Chemical/Waste Mgmt", keywords: ["waste management chemical distributor"] },
+  { label: "Container Storage", keywords: ["shipping container storage", "portable storage container sales"] },
+  { label: "Contractor Yard", keywords: ["paving contractor", "fence company", "excavating contractor"] },
+  { label: "Equip. Rental & Sales", keywords: ["equipment rental sales", "crane service"] },
+  { label: "Stone & Masonry", keywords: ["stone yard", "natural stone supplier", "masonry supply"] },
+  { label: "Trucking & Towing", keywords: ["trucking company", "towing service"] },
+  { label: "Landscape & Soil", keywords: ["landscape supply yard", "soil compost mulch supplier"] },
+  { label: "Pipe & Steel", keywords: ["pipe supply", "steel supply"] },
 ];
+
+// A business can match a keyword and still be worthless on an IOS demand map,
+// because it works out of a van, a showroom, or a climate-controlled unit. The
+// patterns below were calibrated against real results, and the comments record
+// what each is there to catch -- and, as importantly, what it must NOT catch.
+//
+// Two false positives from the first pass are deliberately absent:
+//   * /coating/ used to sit in the showroom rule and killed "Texan Paving &
+//     Asphalt SealCoating" -- sealcoating is paving work, done from a yard.
+//   * home_goods_store / furniture_store used to be excluded types, which
+//     killed "GTown Lumber & Supply" and "APEX Building Supply". Google tags
+//     lumber yards that way, so the type is unusable as a yard test.
+const EXCLUDE_NAME: [RegExp, string][] = [
+  // Self-storage is its own asset class -- units and drive-up doors, not yard.
+  [/self.?storage|extra space|u-?haul|public storage|storage star|cubesmart|life storage|stash.?n.?go/i, "self-storage"],
+  // Movers rent trucks and sell boxes; the containers aren't stored on site.
+  [/\bmovers?\b|moving (company|labor|service)|u-?pack|door to door|state to state/i, "moving company"],
+  [/remodel|renovation|home design|handyman/i, "residential remodeler"],
+  [/countertop|cabinet|interior|showroom|surfaces|stone studio|fixtures|bath (&|and) kitchen/i, "showroom / fabrication"],
+  [/electric(ian|al)\b|\bhvac\b|air conditioning|\bplumber\b/i, "van-based trade"],
+  [/painting|pressure wash|window clean|janitorial|pest control|lawn (care|mowing)/i, "van-based trade"],
+  [/church|school|hospital|imaging|clinic|dental/i, "not a business use"],
+  [/consult|\bintel\b|analytics|marketing|realty|insurance|law firm/i, "office use"],
+];
+
+// Types that are never a yard. Retail-ish types are absent on purpose -- see
+// the lumber-yard note above.
+const EXCLUDE_TYPES = new Set([
+  "church", "place_of_worship", "school", "hospital", "doctor", "dentist",
+  "lawyer", "insurance_agency", "real_estate_agency", "beauty_salon",
+  "restaurant", "cafe", "lodging", "bank", "finance", "accounting",
+]);
+
+// Rules that only make sense inside one category. "Is a nursery a stone yard?"
+// can't be answered by a global pattern -- it's no for Stone & Masonry and yes
+// for Landscape & Soil. `require` is a positive test the name must pass at all;
+// `exclude` removes uses that belong to a different category or aren't yards.
+const CATEGORY_RULES: Record<string, { require?: RegExp; exclude?: RegExp }> = {
+  // Without the require, this keyword set drags in self-storage that dodges the
+  // brand list ("ATX Storage", "Storage Town USA") plus food-truck parks and
+  // supermarket car parks. An outdoor vehicle yard says so in its name.
+  "Auto & RV Storage": {
+    require: /\b(rv|boat|trailer|truck|fleet|vehicle|auto|motorhome)\b/i,
+    exclude: /food.?truck|supermarket|grocery|apartment|airport/i,
+  },
+  // "stone yard" pulls in landscapers and nurseries, which crowded the real
+  // stone suppliers out of the per-category cap. They have their own category.
+  "Stone & Masonry": { exclude: /landscap|nursery|garden|tree service/i },
+  "Landscape & Soil": { exclude: /lowe'?s|home depot|walmart|ace hardware/i },
+  // Plumbing counters and fixture showrooms, which aren't yards. Scoped here so
+  // it can't touch "All-Tex Pipe & Supply".
+  "Pipe & Steel": { exclude: /\bplumb/i },
+  "Container Storage": { exclude: /barrel/i },
+};
+
+/** Why this place isn't an IOS user in this category, or null if it looks like one. */
+function rejectReason(place: any, categoryLabel: string): string | null {
+  if (place.business_status && place.business_status !== "OPERATIONAL") return "not operational";
+  for (const t of place.types ?? []) if (EXCLUDE_TYPES.has(t)) return `type:${t}`;
+  const name = place.name ?? "";
+  for (const [re, reason] of EXCLUDE_NAME) if (re.test(name)) return reason;
+
+  const rules = CATEGORY_RULES[categoryLabel];
+  if (rules?.exclude && rules.exclude.test(name)) return "belongs to another use";
+  if (rules?.require && !rules.require.test(name)) return "no yard signal in name";
+  return null;
+}
+
+/** Chains and duplicate listings share a name under different place_ids. */
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
 
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_SERVER_KEY;
 
@@ -138,7 +229,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   try {
     const center = await geocode(fullAddress);
-    const found = await searchNearby({ ...center, radiusMiles, categories });
+    const { tenants: found, screened } = await searchNearby({ ...center, radiusMiles, categories });
     // Basemap and enrichment are independent -- overlap them so the extra
     // Place Details round trips don't simply add to the wall clock.
     const [tenants, { imageBase64, zoom }] = await Promise.all([
@@ -158,6 +249,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       // disagree with what the API actually returns.
       mapLogicalSize: MAP_LOGICAL_SIZE,
       mapScale: MAP_SCALE,
+      // How many keyword matches were rejected as non-yard uses (self-storage,
+      // movers, remodelers, showrooms...). Surfaced so the screen is visible
+      // rather than silent -- if this is ever zero on a dense submarket, the
+      // filter has probably stopped working.
+      screenedOut: screened,
       // The basemap itself, as a data: URI. Was being fetched and then left out
       // of this response, so the preview rendered a broken <img> and the .pptx
       // got an empty image box -- pins on white, with the Static Maps call paid
@@ -171,12 +267,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-function parseCategoriesParam(raw: string | null): { label: string; keyword: string }[] | null {
+// "Label:kw one;kw two,Other:kw three" -> categories with keyword lists.
+function parseCategoriesParam(raw: string | null): { label: string; keywords: string[] }[] | null {
   if (!raw) return null;
-  return raw.split(",").map((pair) => {
-    const [label, keyword] = pair.split(":");
-    return { label: label?.trim() ?? pair, keyword: (keyword ?? label)?.trim() };
-  });
+  return raw
+    .split(",")
+    .map((pair) => {
+      const idx = pair.indexOf(":");
+      const label = (idx === -1 ? pair : pair.slice(0, idx)).trim();
+      const kwPart = idx === -1 ? label : pair.slice(idx + 1);
+      const keywords = kwPart
+        .split(";")
+        .map((k) => k.trim())
+        .filter(Boolean);
+      return { label, keywords: keywords.length ? keywords : [label] };
+    })
+    .filter((c) => c.label);
 }
 
 async function geocode(address: string): Promise<{ lat: number; lng: number }> {
@@ -193,6 +299,8 @@ async function geocode(address: string): Promise<{ lat: number; lng: number }> {
   return { lat, lng };
 }
 
+const PER_CATEGORY_CAP = 8;
+
 async function searchNearby({
   lat,
   lng,
@@ -202,53 +310,80 @@ async function searchNearby({
   lat: number;
   lng: number;
   radiusMiles: number;
-  categories: { label: string; keyword: string }[];
-}): Promise<Tenant[]> {
+  categories: { label: string; keywords: string[] }[];
+}): Promise<{ tenants: Tenant[]; screened: number }> {
   const radiusMeters = Math.round(radiusMiles * 1609.34);
+  let screened = 0;
 
   const resultsByCategory = await Promise.all(
     categories.map(async (cat) => {
-      const url = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
-      url.searchParams.set("location", `${lat},${lng}`);
-      url.searchParams.set("radius", String(radiusMeters));
-      url.searchParams.set("keyword", cat.keyword || cat.label);
-      url.searchParams.set("key", GOOGLE_KEY!);
+      // Every keyword in the category, merged. Dedupe happens below on
+      // place_id, which is what makes multiple keywords per category safe.
+      const perKeyword = await Promise.all(
+        cat.keywords.map(async (keyword) => {
+          const url = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
+          url.searchParams.set("location", `${lat},${lng}`);
+          url.searchParams.set("radius", String(radiusMeters));
+          url.searchParams.set("keyword", keyword);
+          url.searchParams.set("key", GOOGLE_KEY!);
 
-      const r = await fetch(url.toString());
-      const data = await r.json();
-      if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-        console.error(`Places error for "${cat.label}":`, data.status, data.error_message);
-        return [] as Tenant[];
-      }
-      return (data.results || []).map((place: any) => ({
-        name: place.name,
-        category: cat.label,
-        lat: place.geometry.location.lat,
-        lng: place.geometry.location.lng,
-        placeId: place.place_id,
-        distanceMi: haversineMiles(lat, lng, place.geometry.location.lat, place.geometry.location.lng),
-        website: null,
-        logoBase64: null,
-      })) as Tenant[];
+          const r = await fetch(url.toString());
+          const data = await r.json();
+          if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+            console.error(`Places error for "${cat.label}" / "${keyword}":`, data.status, data.error_message);
+            return [] as Tenant[];
+          }
+          return (data.results || [])
+            .filter((place: any) => {
+              const reason = rejectReason(place, cat.label);
+              if (reason) {
+                screened++;
+                return false;
+              }
+              return true;
+            })
+            .map((place: any) => ({
+              name: place.name,
+              category: cat.label,
+              lat: place.geometry.location.lat,
+              lng: place.geometry.location.lng,
+              placeId: place.place_id,
+              distanceMi: haversineMiles(lat, lng, place.geometry.location.lat, place.geometry.location.lng),
+              website: null,
+              logoBase64: null,
+            })) as Tenant[];
+        })
+      );
+      return perKeyword.flat();
     })
   );
 
   let tenants = resultsByCategory.flat().filter((t) => t.distanceMi <= radiusMiles);
 
-  // de-dupe by placeId (the same business can surface under more than one keyword),
-  // cap per category so the map/legend stay readable on one IC slide
+  // De-dupe by placeId (the same business surfaces under several keywords, and
+  // across categories -- Austin Wholesale Landscape Supply answers to both
+  // "stone yard" and "landscape supply yard"). Nearest wins, and the first
+  // category to claim it keeps it. Then cap per category so the map and legend
+  // stay readable.
   const seen = new Set<string>();
+  const seenNames = new Set<string>();
   const perCategoryCount: Record<string, number> = {};
   tenants = tenants
     .sort((a, b) => a.distanceMi - b.distanceMi)
     .filter((t) => {
       if (seen.has(t.placeId)) return false;
+      // Also dedupe on the name: chains and duplicate Google listings share a
+      // name across different place_ids, and four identical pins for the same
+      // operator ("Truck Parking Club") is noise, not demand.
+      const nameKey = normalizeName(t.name);
+      if (seenNames.has(nameKey)) return false;
       seen.add(t.placeId);
+      seenNames.add(nameKey);
       perCategoryCount[t.category] = (perCategoryCount[t.category] || 0) + 1;
-      return perCategoryCount[t.category] <= 8;
+      return perCategoryCount[t.category] <= PER_CATEGORY_CAP;
     });
 
-  return tenants;
+  return { tenants, screened };
 }
 
 // The Maps Static API caps `size` at 640x640 LOGICAL pixels. A larger request

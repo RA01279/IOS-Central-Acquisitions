@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   fetchDemandMap,
   computePixelPositions,
@@ -25,6 +25,10 @@ export default function IcDeckPanel({
   const [radiusMiles, setRadiusMiles] = useState(5);
   const [maptype, setMaptype] = useState<MapType>("satellite");
   const [data, setData] = useState<DemandMapResponse | null>(null);
+  // Keyword screening gets most of the junk, but an IC deck shouldn't rely on
+  // heuristics for the last mile -- anything that isn't a real yard user can be
+  // dropped here, and the map, numbering, and deck all follow.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +43,7 @@ export default function IcDeckPanel({
         categories: DEFAULT_CATEGORIES,
       });
       setData(result);
+      setExcluded(new Set());
     } catch (e: any) {
       setError(e.message || "Failed to generate demand map");
     } finally {
@@ -46,16 +51,25 @@ export default function IcDeckPanel({
     }
   }
 
+  // Everything downstream reads `view`, never `data` -- so pin numbers, the
+  // density bands, the totals and the exported deck can't disagree with what's
+  // on screen.
+  const view = useMemo<DemandMapResponse | null>(
+    () =>
+      data ? { ...data, tenants: data.tenants.filter((t) => !excluded.has(t.placeId)) } : null,
+    [data, excluded]
+  );
+
   async function handleExport() {
-    if (!data) return;
+    if (!view) return;
     setExporting(true);
     setError(null);
     try {
       await exportToPptx(
-        data,
+        view,
         {
           subtitle: addressForSubtitle
-            ? `${addressForSubtitle}  |  Potential IOS users within a ${data.radiusMiles}-mile radius`
+            ? `${addressForSubtitle}  |  ${view.tenants.length} potential IOS users within a ${view.radiusMiles}-mile radius`
             : undefined,
           fileName: fileNameStem ? `${fileNameStem}_IOS_Demand_Map` : undefined,
         },
@@ -68,20 +82,28 @@ export default function IcDeckPanel({
     }
   }
 
-  const preview = data ? computePixelPositions(data) : null;
-  // Same rings and density bands the deck draws, so the preview is a true
-  // proof of what will export rather than an approximation of it.
-  const halfExtent = data ? halfExtentMiles(data) : 0;
-  const rings = data ? ringMiles(data.radiusMiles, halfExtent) : [];
-  const bands = data ? densityByBand(data.tenants, rings) : [];
+  function toggle(placeId: string) {
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(placeId)) next.delete(placeId);
+      else next.add(placeId);
+      return next;
+    });
+  }
+
+  const preview = view ? computePixelPositions(view) : null;
+  const halfExtent = view ? halfExtentMiles(view) : 0;
+  const rings = view ? ringMiles(view.radiusMiles, halfExtent) : [];
+  const bands = view ? densityByBand(view.tenants, rings) : [];
 
   return (
     <section className="panel">
       <h2>IC Deck — IOS Demand Map</h2>
       <p className="muted">
-        Nearby tenants by IOS use category (auto storage, building materials, chemical/waste,
-        container storage, contractor yards, equipment rental &amp; sales), pulled live from
-        Google Places, on a true-colour satellite basemap.
+        Yard-occupying businesses near the site, by use category, pulled live from Google Places
+        on a true-colour satellite basemap. Self-storage, movers, residential remodelers, and
+        showrooms are screened out; anything else that isn&apos;t a real IOS user can be removed
+        below before exporting.
       </p>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0", flexWrap: "wrap" }}>
@@ -117,7 +139,7 @@ export default function IcDeckPanel({
         <button onClick={handleGenerate} disabled={loading}>
           {loading ? "Generating…" : data ? "Regenerate" : "Generate Demand Map"}
         </button>
-        {data && (
+        {view && (
           <button onClick={handleExport} disabled={exporting}>
             {exporting ? "Exporting…" : "Export IC Deck (.pptx)"}
           </button>
@@ -126,7 +148,7 @@ export default function IcDeckPanel({
 
       {error && <p className="warning">{error}</p>}
 
-      {data && preview && (
+      {data && view && preview && (
         <>
           <div style={{ position: "relative", width: "100%", maxWidth: 640, marginTop: 8 }}>
             <img
@@ -200,19 +222,41 @@ export default function IcDeckPanel({
           </div>
 
           <p className="hint" style={{ marginTop: 8 }}>
-            {data.tenants.length} tenants within {data.radiusMiles} mi of {data.address}
+            {view.tenants.length} IOS users within {view.radiusMiles} mi of {data.address}
             {bands.length > 0 && (
               <> · {bands.map((b) => `${b.count} within ${b.mi} mi`).join(" · ")}</>
+            )}
+          </p>
+          <p className="hint">
+            {typeof data.screenedOut === "number" && data.screenedOut > 0 && (
+              <>{data.screenedOut} keyword matches screened out as non-yard uses. </>
+            )}
+            {excluded.size > 0 && (
+              <>
+                {excluded.size} removed by hand.{" "}
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ padding: "2px 8px", fontSize: 12 }}
+                  onClick={() => setExcluded(new Set())}
+                >
+                  Restore all
+                </button>
+              </>
             )}
           </p>
 
           <div className="dash-cols" style={{ marginTop: 8 }}>
             {DEFAULT_CATEGORIES.map((cat) => {
-              const items = data.tenants
-                .map((t, i) => ({ ...t, num: i + 1 }))
+              // Numbering comes from the visible list, so the key matches the pins.
+              const numbered = view.tenants.map((t, i) => ({ ...t, num: i + 1 }));
+              const items = numbered
                 .filter((t) => t.category === cat.label)
                 .sort((a, b) => a.distanceMi - b.distanceMi);
-              if (!items.length) return null;
+              const removed = data.tenants.filter(
+                (t) => t.category === cat.label && excluded.has(t.placeId)
+              );
+              if (!items.length && !removed.length) return null;
               return (
                 <div key={cat.label}>
                   <div
@@ -231,10 +275,7 @@ export default function IcDeckPanel({
                   </div>
                   <ul className="doc-list" style={{ gap: 3, fontSize: 13 }}>
                     {items.map((t) => (
-                      <li
-                        key={t.placeId}
-                        style={{ display: "flex", alignItems: "center", gap: 6 }}
-                      >
+                      <li key={t.placeId} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <strong style={{ color: `#${cat.color}`, minWidth: 16, textAlign: "right" }}>
                           {t.num}
                         </strong>
@@ -268,6 +309,32 @@ export default function IcDeckPanel({
                           <span>{t.name}</span>
                         )}
                         <span className="muted">· {t.distanceMi.toFixed(1)} mi</span>
+                        <button
+                          type="button"
+                          className="link-remove"
+                          title="Not an IOS user — remove from the map and deck"
+                          onClick={() => toggle(t.placeId)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                    {removed.map((t) => (
+                      <li
+                        key={t.placeId}
+                        style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.5 }}
+                      >
+                        <span style={{ minWidth: 16 }} />
+                        <span style={{ width: 18, flex: "0 0 18px" }} />
+                        <span style={{ textDecoration: "line-through" }}>{t.name}</span>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{ padding: "1px 6px", fontSize: 11 }}
+                          onClick={() => toggle(t.placeId)}
+                        >
+                          undo
+                        </button>
                       </li>
                     ))}
                   </ul>
