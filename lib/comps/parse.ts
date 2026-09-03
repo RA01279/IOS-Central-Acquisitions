@@ -22,6 +22,12 @@ export interface ParsedComp {
   address: string;
   /** Building or park name, where a street address alone isn't unique. */
   projectName: string | null;
+  /** Suite or unit, for one tenancy inside a multi-tenant building. */
+  suite: string | null;
+  /** CAM recovery, $/SF/year, so NNN and gross rents stay comparable. */
+  camPsfAnnual: number | null;
+  /** True when dateCommenced was derived rather than stated. */
+  dateEstimated: boolean;
   city: string | null;
   market: string | null;
   submarket: string | null;
@@ -187,7 +193,8 @@ type Field =
   | "landlord" | "termMonths" | "clearHeight" | "officeSf" | "yardAcres"
   | "trailerStalls" | "dockDoors" | "gradeDoors" | "surfaceType" | "zoning"
   | "escalations" | "freeRent" | "tiPsf" | "noi" | "buyer" | "seller"
-  | "broker" | "leaseExpiry" | "rateAnnual" | "rateMonthly" | "projectName";
+  | "broker" | "leaseExpiry" | "rateAnnual" | "rateMonthly" | "projectName"
+  | "suite" | "camMonthly" | "camPsfAnnual" | "totalMonthly";
 
 // Header aliases, matched on letters only so punctuation, case, and typos in
 // spacing don't matter. "addres" is in there because that is genuinely how the
@@ -243,6 +250,20 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(broker|listingbroker|agent|brokerage)$/, "broker"],
   [/^(leaseexpiry|expiration|expires|expiry|leaseend|expirationdate|leaseexpiration)$/, "leaseExpiry"],
   [/^(commencementdate|datecommencement|rentstart|rentcommencement)$/, "leaseDate"],
+  // Rent rolls: the tenancy identifier, the monthly base rent, and the CAM
+  // recovery. "baserentmo" is how "Base Rent / Mo" reduces once punctuation is
+  // stripped, and its absence is why a real rent roll imported with no rent.
+  [/^(suite|ste|unit|space|bay|suiteunit)$/, "suite"],
+  [/^(baserentmo|baserentmonth|monthlybaserentmo|rentmo|baserentpermonth)$/, "monthlyRent"],
+  [/^(rentsfyr|rentpsfyr|rentsfyear|baserentsfyr|annualrentsf|rentperssfyr)$/, "rateAnnual"],
+  [/^(rentsfmo|rentpsfmo|rentsfmonth|baserentsfmo)$/, "rateMonthly"],
+  // CAM, split by unit for the same reason rents are: "CAM / Mo" is dollars a
+  // month, "CAM $/SF/Yr" is a rate, and averaging one as the other is
+  // meaningless. A bare "CAM" column is treated as monthly dollars, which is
+  // the rent-roll convention.
+  [/^(cammo|cammonth|campermonth|camrecoverymo|cam|camrent)$/, "camMonthly"],
+  [/^(camsfyr|campsfyr|camsfyear|campersfyr|nnnpsf|nnnsfyr|opexpsf|opexsfyr)$/, "camPsfAnnual"],
+  [/^(totalmonthly|grossmonthly|totalrentmo|totalrentmonthly)$/, "totalMonthly"],
 ];
 
 /**
@@ -302,6 +323,44 @@ function fieldFor(header: string): Field | null {
 // flattened), or column-aligned with runs of spaces. Tabs and pipes are
 // unambiguous; the multi-space fallback is last because street addresses
 // contain single spaces.
+// Rows that look like data but aren't. Every one of these came from a real
+// file: a rent roll's "TOTAL | 9 units · 100% leased | 51700" and a data
+// tape's "Total/Average" both imported as comps before this existed.
+const TOTALS_ROW =
+  /^(total|totals|subtotal|sub-total|grand total|average|avg|weighted avg|weighted average|total\/average)\b/i;
+
+// Section titles that end the current table. A rent roll continues past its
+// tenant list into "ANNUALIZED SUMMARY", "LEASE EXPIRATION SCHEDULE" and
+// "NOTES" -- and the expiration schedule is itself a table whose header the
+// parser will happily adopt, then import rows whose first column is a DATE as
+// though it were an address.
+const SECTION_BREAK =
+  /^(annualized summary|annual summary|lease expiration schedule|expiration schedule|rollover schedule|notes|assumptions|disclaimer|source[s]?:)\b/i;
+
+/**
+ * Shift an ISO date by whole months, clamping the day so subtracting a term
+ * from "2030-05-31" can't roll into the following month.
+ */
+export function shiftMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
+/** Does this cell read as a date rather than an address? */
+function looksLikeDate(s: string): boolean {
+  const t = s.trim();
+  if (!t) return false;
+  return (
+    /^\d{4}-\d{1,2}-\d{1,2}$/.test(t) ||
+    /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(t) ||
+    /^[A-Za-z]{3,9}\.?\s+\d{2,4}$/.test(t) ||
+    /^Q[1-4]\s*\d{4}$/i.test(t)
+  );
+}
+
 function splitRow(line: string): string[] {
   if (line.includes("\t")) return line.split("\t").map((c) => c.trim());
   if (line.includes("|")) return line.split("|").map((c) => c.trim());
@@ -499,8 +558,20 @@ export interface ParseOptions {
   city?: string | null;
   market?: string | null;
   submarket?: string | null;
+  /**
+   * The property every row belongs to. Required for a rent roll, whose rows
+   * are suites in one building and whose address lives in the title block
+   * rather than in a column.
+   */
+  address?: string | null;
   /** Used when the headers don't reveal whether a table is lease or sale. */
   defaultCompType?: CompType;
+  /**
+   * Months to subtract from a lease expiration to estimate its commencement,
+   * when the rent roll gives no start date and no term. Anything derived this
+   * way is flagged `dateEstimated`.
+   */
+  assumedTermMonths?: number | null;
   includeQuotedReply?: boolean;
 }
 
@@ -519,6 +590,15 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
   let rowsInTable = 0;
 
   for (const line of lines) {
+    // These section titles are TERMINAL, not merely a break. Everything after
+    // them in a rent roll or a data tape is summary, and the sections have
+    // their own headers that the parser will otherwise adopt as a new comp
+    // table: the Oakbrook roll's "LEASE EXPIRATION SCHEDULE" is a real table
+    // (Expiration | Suites | Square Feet | % of GLA | Base Rent / Mo) whose
+    // eight rows imported as eight phantom comps when this only reset the
+    // mapping instead of stopping.
+    if (SECTION_BREAK.test(line.replace(/\s*\|\s*/g, " ").trim())) break;
+
     const cells = splitRow(line);
     if (cells.length < 3) {
       // Prose between tables. A line like "Here are some buildings that were
@@ -561,8 +641,19 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       return i === -1 ? undefined : cells[i];
     };
 
-    const address = (get("address") ?? cells[0] ?? "").trim();
-    if (!address || num(address) !== null) continue; // blank or a totals row
+    // A rent roll's rows are suites in ONE building, so the address comes from
+    // the caller (the property the roll belongs to) and the first column is a
+    // suite number. Without this the address becomes "Ste A".
+    const suiteCell = get("suite")?.trim() || null;
+    const address = (get("address") ?? (suiteCell ? opts.address : null) ?? opts.address ?? cells[0] ?? "").trim();
+
+    if (!address) continue;
+    if (num(address) !== null) continue; // a stray numeric first column
+    // Totals and summary rows carry real-looking numbers and would otherwise
+    // import as a comp with an address of "TOTAL".
+    if (TOTALS_ROW.test(cells[0] ?? "") || TOTALS_ROW.test(address)) continue;
+    // A date in the address column means this is a schedule, not a comp list.
+    if (looksLikeDate(address)) continue;
 
     const rowWarnings: string[] = [];
     const compType: CompType = tableType ?? opts.defaultCompType ?? "sale";
@@ -591,6 +682,19 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       compType,
       address,
       projectName: get("projectName")?.trim() || null,
+      suite: suiteCell,
+      // CAM comes as either a monthly dollar amount or a $/SF/year rate, and
+      // the two are told apart by their COLUMN, never by sniffing the value --
+      // the same discipline as rents, for the same reason. Both normalise to
+      // $/SF/year, which is how CAM is compared.
+      camPsfAnnual: (() => {
+        const perSf = num(get("camPsfAnnual"));
+        if (perSf !== null) return perSf;
+        const monthly = num(get("camMonthly"));
+        if (monthly === null) return null;
+        return buildingSf ? Number(((monthly * 12) / buildingSf).toFixed(4)) : null;
+      })(),
+      dateEstimated: false,
       // Context typed by the person importing WINS over the sheet's own
       // columns. It used to be the other way round, which meant a broker's
       // shorthand ("North", "SW") silently overrode a deliberate entry of
@@ -709,9 +813,32 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         }
       }
       if (parsed.rent === null) rowWarnings.push("No rent found");
-      // Lease comps need a commencement date to satisfy the DB constraint, and
-      // broker tables often omit it entirely.
-      if (!parsed.dateCommenced) rowWarnings.push("No lease commencement date — required before saving");
+
+      // Dating a rent-roll lease. Rent rolls carry an expiration and usually
+      // no commencement, so the start is backed into -- but only ever from
+      // something real, and always flagged.
+      if (!parsed.dateCommenced) {
+        const expiry = parsed.leaseExpiresOn;
+        const term = parsed.leaseTermMonths;
+        if (expiry && term) {
+          // Both known: this is arithmetic, not a guess.
+          parsed.dateCommenced = shiftMonths(expiry, -term);
+          parsed.datePrecision = "month";
+        } else if (expiry && opts.assumedTermMonths) {
+          // Expiration only. Recency is the heaviest factor in comp scoring,
+          // so an assumed date must be visibly assumed -- hence the flag, the
+          // coarse precision, and the warning.
+          parsed.dateCommenced = shiftMonths(expiry, -opts.assumedTermMonths);
+          parsed.datePrecision = "year";
+          parsed.dateEstimated = true;
+          rowWarnings.push(
+            `Commencement estimated as ${parsed.dateCommenced} (expiry minus ${opts.assumedTermMonths} months) — no start date or term given`
+          );
+        }
+      }
+      if (!parsed.dateCommenced) {
+        rowWarnings.push("No lease commencement date — required before saving");
+      }
     }
 
     comps.push(parsed);

@@ -17,6 +17,10 @@ export interface CompRow {
   id: string;
   comp_type: "lease" | "sale";
   address: string;
+  project_name: string | null;
+  suite: string | null;
+  cam_psf_annual: number | null;
+  date_estimated: boolean | null;
   city: string | null;
   market: string | null;
   submarket: string | null;
@@ -168,6 +172,8 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>(() => ({
     address: v(comp.address),
+    projectName: v(comp.project_name),
+    suite: v(comp.suite),
     city: v(comp.city),
     market: v(comp.market),
     submarket: v(comp.submarket),
@@ -192,6 +198,7 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
     rent: v(comp.rent),
     rentBasis: v(comp.rent_basis) || "per_sf_bldg_monthly",
     leaseType: v(comp.lease_type),
+    camPsfAnnual: v(comp.cam_psf_annual),
     dateCommenced: v(comp.date_commenced),
     leaseExpiresOn: v(comp.lease_expires_on),
     leaseTermMonths: v(comp.lease_term_months),
@@ -237,14 +244,15 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
       // Only the fields this comp type shows, so the other type's columns are
       // left untouched rather than nulled.
       const shared = [
-        "address", "city", "market", "submarket", "assetClass", "buildingSf", "acres",
+        "address", "projectName", "suite",
+        "city", "market", "submarket", "assetClass", "buildingSf", "acres",
         "yardAcres", "coveragePct", "yearBuilt", "clearHeightFt", "officeSf",
         "dockHighDoors", "gradeLevelDoors", "powerAmps", "surfaceType", "fenced",
         "trailerStalls", "zoning", "outdoorStoragePermitted", "occupancyStatus",
         "tenancy", "notes",
       ];
       const leaseOnly = [
-        "rent", "rentBasis", "leaseType", "dateCommenced", "leaseExpiresOn",
+        "rent", "rentBasis", "leaseType", "camPsfAnnual", "dateCommenced", "leaseExpiresOn",
         "leaseTermMonths", "tenantName", "landlordName", "escalationsPct",
         "freeRentMonths", "tiPsf", "renewalOptions", "listingBroker", "tenantRepBroker",
       ];
@@ -316,6 +324,11 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
       <p className="hint">Location</p>
       <div className="grid-2">
         {field("Address *", "address")}
+        {/* Two things share a street address for different reasons: separate
+            buildings in one park, and separate tenancies in one building. Both
+            are part of what makes a comp unique, so both are editable. */}
+        {field("Project / building", "projectName")}
+        {field("Suite", "suite")}
         {field("City", "city")}
         {field("Market", "market")}
         {field("Submarket", "submarket")}
@@ -354,6 +367,9 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
             {field("Rent *", "rent")}
             {choice("Rent basis *", "rentBasis", RENT_BASES)}
             {choice("Lease type", "leaseType", LEASE_TYPES)}
+            {/* Without CAM, a rent-roll base rent reads cheaper than a
+                broker's gross quote for no reason but what was reported. */}
+            {field("CAM ($/SF/yr)", "camPsfAnnual")}
             {field("Commenced *", "dateCommenced", "date")}
             {field("Expires", "leaseExpiresOn", "date")}
             {field("Term (months)", "leaseTermMonths")}

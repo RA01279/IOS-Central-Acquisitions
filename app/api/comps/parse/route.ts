@@ -9,9 +9,17 @@ import { workbookToDelimitedText } from "@/lib/comps/fromWorkbook";
 export const dynamic = "force-dynamic";
 
 // POST body:
-//   { html?, text?, fileBase64?, fileName?, city?, market?, submarket? }
+//   { html?, text?, fileBase64?, fileName?,
+//     city?, market?, submarket?, address?, assumedTermMonths? }
 // html/text come from the clipboard (a paste carries both; HTML is preferred
 // because it has real cell boundaries). fileBase64 is a dropped .xlsx/.csv.
+//
+// address and assumedTermMonths exist for rent rolls. A roll's rows are suites
+// in ONE building, so the address lives in the title block rather than in a
+// column, and the rows carry a lease expiration with no commencement and no
+// term -- so the start date has to be backed into from a typical term. Both are
+// caller-supplied because both are facts about the building rather than
+// anything the table states.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -23,10 +31,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
   }
 
+  const term = Number(body.assumedTermMonths);
   const context = {
     city: body.city || null,
     market: body.market || null,
     submarket: body.submarket || null,
+    address: body.address || null,
+    // Bounded so a typo can't produce a commencement date in the 1800s or one
+    // after the expiration it was derived from.
+    assumedTermMonths:
+      Number.isFinite(term) && term > 0 && term <= 480 ? Math.round(term) : null,
   };
 
   try {
@@ -52,7 +66,10 @@ export async function POST(req: NextRequest) {
         // The tab's own name is the last word on comp type when the header
         // columns are ambiguous -- "Sale Comps" and "Lease Comps" are not
         // subtle. Header signals still win where they're decisive.
-        const nameHint = /lease/i.test(sheet.name)
+        // A rent roll is a table of leases, and says so on the tab -- but it
+        // never contains the word "lease" except inside "Lease Expiration",
+        // which is a date column rather than a type signal.
+        const nameHint = /lease|rent\s*roll|tenancy|stacking/i.test(sheet.name)
           ? ("lease" as const)
           : /sale|sold/i.test(sheet.name)
             ? ("sale" as const)

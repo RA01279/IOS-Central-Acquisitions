@@ -137,7 +137,8 @@ export default async function CompDetailPage({ params }: { params: { id: string 
           <div>
             <h1>{comp.address}</h1>
             <p className="muted">
-              {comp.project_name ? `${comp.project_name} · ` : ""}
+              {[comp.project_name, comp.suite].filter(Boolean).join(" · ")}
+              {comp.project_name || comp.suite ? " · " : ""}
               {[comp.submarket, comp.city, comp.market].filter(Boolean).join(" · ") || "—"}
               {comp.asset_class ? ` · ${ASSET_CLASS_LABELS[comp.asset_class]}` : ""}
             </p>
@@ -182,11 +183,23 @@ export default async function CompDetailPage({ params }: { params: { id: string 
                   label="Commenced"
                   value={
                     date
-                      ? `${date}${comp.date_precision && comp.date_precision !== "day" ? ` (${comp.date_precision})` : ""}`
+                      ? `${date}${
+                          comp.date_estimated
+                            ? " (estimated)"
+                            : comp.date_precision && comp.date_precision !== "day"
+                              ? ` (${comp.date_precision})`
+                              : ""
+                        }`
                       : "—"
                   }
                 />
                 <Metric label="Expires" value={comp.lease_expires_on ?? "—"} />
+                {/* Base rent without CAM understates a rent-roll comp against
+                    a broker's gross quote. */}
+                <Metric
+                  label="CAM"
+                  value={comp.cam_psf_annual ? `$${Number(comp.cam_psf_annual).toFixed(2)}/SF/yr` : "—"}
+                />
                 <Metric
                   label="Term"
                   value={comp.lease_term_months ? `${comp.lease_term_months} months` : "—"}

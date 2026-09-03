@@ -55,6 +55,7 @@ function enumOf(v: unknown, allowed: string[]): string | null {
 const FIELDS: Record<string, { column: string; coerce: (v: unknown) => unknown }> = {
   address: { column: "address", coerce: str },
   projectName: { column: "project_name", coerce: str },
+  suite: { column: "suite", coerce: str },
   city: { column: "city", coerce: str },
   market: { column: "market", coerce: str },
   submarket: { column: "submarket", coerce: str },
@@ -102,6 +103,7 @@ const FIELDS: Record<string, { column: string; coerce: (v: unknown) => unknown }
     coerce: (v) =>
       enumOf(v, ["nnn", "gross", "modified_gross", "industrial_gross", "absolute_net", "other"]),
   },
+  camPsfAnnual: { column: "cam_psf_annual", coerce: plain },
   dateCommenced: { column: "date_commenced", coerce: str },
   leaseExpiresOn: { column: "lease_expires_on", coerce: str },
   leaseTermMonths: { column: "lease_term_months", coerce: int },
@@ -149,6 +151,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const update: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(FIELDS)) {
     if (key in body) update[spec.column] = spec.coerce(body[key]);
+  }
+
+  // A commencement date typed by a human is a stated date, not an inference
+  // any more -- so editing it clears the estimate flag and the coarse
+  // precision that came with it. Leaving the flag set would keep discounting a
+  // date that is now as good as any other.
+  if (
+    existing.date_estimated &&
+    "dateCommenced" in body &&
+    update.date_commenced &&
+    update.date_commenced !== existing.date_commenced
+  ) {
+    update.date_estimated = false;
+    if (!("datePrecision" in body)) update.date_precision = "day";
   }
 
   // Acres is the unit people type; lot_sf is what's stored.

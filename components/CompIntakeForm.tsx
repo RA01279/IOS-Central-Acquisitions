@@ -34,6 +34,13 @@ interface DraftComp {
   closedOn: string | null;
   capRate: number | null;
   datePrecision: string;
+  /** True when dateCommenced was backed into from an expiration, not stated. */
+  dateEstimated?: boolean;
+  leaseExpiresOn?: string | null;
+  tenantName?: string | null;
+  /** One tenancy inside a multi-tenant building, off a rent roll. */
+  suite?: string | null;
+  camPsfAnnual?: number | null;
   quotedPsf: number | null;
   warnings: string[];
   /** Which workbook tab this came from, when the source was a spreadsheet. */
@@ -59,6 +66,11 @@ export default function CompIntakeForm({
   const [city, setCity] = useState(defaultCity ?? "");
   const [submarket, setSubmarket] = useState("");
   const [assetClass, setAssetClass] = useState("");
+  // Rent-roll only. A roll's rows are suites in one building, so the address is
+  // in the title block instead of a column, and the rows give an expiration
+  // with no commencement -- the start date has to be backed into from a term.
+  const [rollAddress, setRollAddress] = useState("");
+  const [assumedTerm, setAssumedTerm] = useState("");
   const [sourceRef, setSourceRef] = useState("");
   const [drafts, setDrafts] = useState<DraftComp[] | null>(null);
   const [source, setSource] = useState<string>("manual");
@@ -70,7 +82,13 @@ export default function CompIntakeForm({
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const context = () => ({ city: city || null, market: market || null, submarket: submarket || null });
+  const context = () => ({
+    city: city || null,
+    market: market || null,
+    submarket: submarket || null,
+    address: rollAddress || null,
+    assumedTermMonths: assumedTerm ? Number(assumedTerm) : null,
+  });
 
   async function sendToParser(payload: Record<string, unknown>) {
     setBusy(true);
@@ -312,6 +330,45 @@ export default function CompIntakeForm({
         sheet fills it in and the table below shows what each row got.
       </p>
 
+      {/* A rent roll is contracted rent at a comparable property, which is
+          better evidence than an asking rate -- but it arrives shaped unlike
+          any broker table, so it needs two facts the table itself never
+          states. Left blank, nothing here changes how anything else parses. */}
+      <details className="comp-rentroll">
+        <summary>Dropping a rent roll? Two extra fields</summary>
+        <div className="grid-2" style={{ marginTop: 10 }}>
+          <label>
+            Property address — the building the suites are in
+            <input
+              value={rollAddress}
+              onChange={(e) => setRollAddress(e.target.value)}
+              placeholder="2025 Louisville Rd"
+            />
+          </label>
+          <label>
+            Assumed lease term (months)
+            <input
+              type="number"
+              min={1}
+              max={480}
+              value={assumedTerm}
+              onChange={(e) => setAssumedTerm(e.target.value)}
+              placeholder="60"
+            />
+          </label>
+        </div>
+        <p className="hint">
+          A roll lists suites in <em>one</em> building, so its address sits in the title block
+          rather than in a column — without it every row is rejected for having no address. And a
+          roll gives a lease <strong>expiration</strong>, rarely a commencement and almost never a
+          term, so the start date is estimated as expiration minus the term you give here. Anything
+          dated that way is flagged as an estimate on the comp and stays flagged — recency is the
+          heaviest factor in matching, so a date nobody actually knows must never read like one off
+          an executed lease. Where a row <em>does</em> state a term, that wins and no estimate is
+          made.
+        </p>
+      </details>
+
       <div
         className={dragging ? "comp-dropzone comp-dropzone-active" : "comp-dropzone"}
         onPaste={handlePaste}
@@ -506,6 +563,13 @@ export default function CompIntakeForm({
                           onChange={(e) => update(i, { address: e.target.value })}
                           style={{ minWidth: 190 }}
                         />
+                        {/* Nine rent-roll rows share one address; the suite is
+                            the only thing telling them apart. */}
+                        {(d.suite || d.tenantName) && (
+                          <div className="muted" style={{ fontSize: "0.85em" }}>
+                            {[d.suite, d.tenantName].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
                       </td>
                       <td className="muted">{d.submarket ?? "—"}</td>
                       <td>
@@ -517,10 +581,21 @@ export default function CompIntakeForm({
                               i,
                               d.compType === "sale"
                                 ? { closedOn: e.target.value || null }
-                                : { dateCommenced: e.target.value || null }
+                                : // Typing a real date makes it no longer an
+                                  // estimate, so the flag has to clear.
+                                  { dateCommenced: e.target.value || null, dateEstimated: false }
                             )
                           }
                         />
+                        {d.dateEstimated && (
+                          <div
+                            className="muted"
+                            style={{ fontSize: "0.85em" }}
+                            title={`Estimated from the ${d.leaseExpiresOn ?? "expiration"} expiry minus the assumed term. Overwrite it if you know the real start date.`}
+                          >
+                            estimated
+                          </div>
+                        )}
                       </td>
                       <td>
                         <input

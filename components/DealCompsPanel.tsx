@@ -277,11 +277,35 @@ export default function DealCompsPanel({
                 </td>
                 <td>
                   <Link href={`/comps/${s.comp.id}`}>{s.comp.address}</Link>
+                  {s.comp.suite && <span className="muted"> {s.comp.suite}</span>}
                   {s.comp.submarket && <span className="muted"> · {s.comp.submarket}</span>}
                 </td>
-                <td>{formatUnit(s.unitValue, compType, basis)}</td>
+                <td>
+                  {formatUnit(s.unitValue, compType, basis)}
+                  {/* Base rent off a rent roll looks cheap next to a broker's
+                      gross quote for no reason other than what was reported. */}
+                  {compType === "lease" && s.comp.cam_psf_annual != null && (
+                    <span className="muted" title="CAM, on top of base rent">
+                      {" "}
+                      +{(Number(s.comp.cam_psf_annual) / 12).toFixed(2)} CAM
+                    </span>
+                  )}
+                </td>
                 <td>{s.distanceMi != null ? `${s.distanceMi.toFixed(1)} mi` : "—"}</td>
-                <td>{s.ageMonths != null ? `${Math.round(s.ageMonths)} mo` : "—"}</td>
+                <td>
+                  {s.ageMonths != null ? `${Math.round(s.ageMonths)} mo` : "—"}
+                  {/* Recency is the heaviest factor in this score, so where the
+                      date driving it is a guess, say so on the row. */}
+                  {s.comp.date_estimated && (
+                    <span
+                      className="muted"
+                      title="Commencement estimated from the lease expiration minus a typical term — the age, and so this comp's score, is approximate."
+                    >
+                      {" "}
+                      est.
+                    </span>
+                  )}
+                </td>
                 <td>{s.comp.building_sf ? Math.round(Number(s.comp.building_sf)).toLocaleString() : "—"}</td>
                 <td>
                   {s.comp.coverage_pct != null

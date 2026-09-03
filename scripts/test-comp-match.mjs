@@ -236,6 +236,42 @@ const reachy = suggestRange(
 );
 eq("long reach disclosed", reachy.caveats.some((c) => /miles out/i.test(c)), true);
 
+// A rent roll's dates are inferred from lease expirations, and recency is the
+// heaviest weight in the score -- so a range resting on inferred dates has to
+// admit it rather than presenting the same confidence as executed-lease dates.
+const lease = (id, over = {}) => ({
+  ...mk(id), comp_type: "lease", rent: 1.1, rent_basis: "per_sf_bldg_monthly",
+  date_commenced: "2026-06-01", sale_price: null, closed_on: null, ...over,
+});
+
+// Nine suites off one rent roll: same address, all dated by inference.
+const estAll = suggestRange(
+  scoreComps(
+    [
+      lease("e1", { address: "2025 Louisville Rd", suite: "Ste A", rent: 0.68, date_estimated: true }),
+      lease("e2", { address: "2025 Louisville Rd", suite: "Ste B", rent: 0.75, date_estimated: true }),
+    ],
+    SUBJECT, "lease", { today: TODAY }
+  ),
+  "lease", "building"
+);
+eq("all-estimated dates disclosed", estAll.caveats.some((c) => /Every comp here is dated by estimate/i.test(c)), true);
+
+const estSome = suggestRange(
+  scoreComps(
+    [lease("s1", { date_estimated: true }), lease("s2", { address: "B St" }), lease("s3", { address: "C St" })],
+    SUBJECT, "lease", { today: TODAY }
+  ),
+  "lease", "building"
+);
+eq("partial estimate counted precisely", estSome.caveats.some((c) => /^1 of 3 are dated by estimate/.test(c)), true);
+
+const estNone = suggestRange(
+  scoreComps([lease("n1"), lease("n2", { address: "B St" })], SUBJECT, "lease", { today: TODAY }),
+  "lease", "building"
+);
+eq("stated dates raise no estimate caveat", estNone.caveats.some((c) => /dated by estimate/i.test(c)), false);
+
 console.log("\n== formatting ==");
 eq("lease building unit", formatUnit(1.15, "lease", "building"), "$1.15/SF/mo");
 eq("lease land unit", formatUnit(0.103, "lease", "land"), "$0.103/SF land/mo");

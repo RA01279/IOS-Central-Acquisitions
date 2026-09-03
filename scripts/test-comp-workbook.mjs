@@ -154,6 +154,77 @@ ok("project names differ", pSale.comps[0]?.projectName !== pSale.comps[1]?.proje
   `${pSale.comps[0]?.projectName} vs ${pSale.comps[1]?.projectName}`);
 ok("project name ends in Bldg. C", /Bldg\. C$/.test(pSale.comps[0]?.projectName ?? ""), String(pSale.comps[0]?.projectName));
 
+// ---- rent roll, shaped like a real one ----
+// Mirrors Oakbrook Center: a title block holding the address, a tenant table
+// keyed by suite, a TOTAL row, an annualized summary, and a LEASE EXPIRATION
+// SCHEDULE that is itself a table. Every one of those trailing blocks imported
+// as phantom comps before this was handled.
+console.log("  -- rent roll --");
+const wbRR = new ExcelJS.Workbook();
+const rr = wbRR.addWorksheet("Rent Roll");
+rr.addRow(["OAKBROOK CENTER", "", "", "", "", "", "", "", "", "", "", new Date("2026-06-23")]);
+rr.addRow(["Rent Roll", "2025 Louisville Road, Savannah, Georgia"]);
+rr.addRow(["Greenspace Management  ·  9 Judson Court, Savannah, GA 31410"]);
+rr.addRow(["As of June 23, 2026"]);
+rr.addRow([]);
+rr.addRow(["Suite", "Tenant", "Square Feet", "Base Rent / Mo", "Rent $/SF/Yr", "CAM / Mo", "CAM $/SF/Yr", "Total Monthly", "Lease Expiration", "Months Remaining"]);
+rr.addRow(["Ste A", "Fingersafe USA", 6250, 4219, 8.10048, 531, 1.01952, 4750, new Date("2030-05-31"), 47]);
+rr.addRow(["Ste B", "KTK Host South", 6250, 4687.5, 9, 400, 0.768, 5087.5, new Date("2028-09-30"), 27]);
+rr.addRow(["Ste I", "Marta McWhorter", 3900, 2437.5, 7.5, 325, 1, 2762.5, new Date("2026-07-31"), 1]);
+rr.addRow(["TOTAL", "9 units  ·  100% leased", 51700, 39486, 9.165, 4192.25, 0.973, 43678.25]);
+rr.addRow([]);
+rr.addRow(["ANNUALIZED SUMMARY"]);
+rr.addRow(["Gross Leasable Area (SF)", "", 51700]);
+rr.addRow(["Annual Base Rent", "", 473832]);
+rr.addRow([]);
+rr.addRow(["LEASE EXPIRATION SCHEDULE"]);
+rr.addRow(["Expiration", "Suites", "Square Feet", "% of GLA", "Base Rent / Mo"]);
+rr.addRow([new Date("2026-07-31"), "F, I", 9600, 0.1857, 6475]);
+rr.addRow([new Date("2030-05-31"), "A", 6250, 0.1209, 4219]);
+
+const rrText = (await workbookToDelimitedText(Buffer.from(await wbRR.xlsx.writeBuffer()), "rr.xlsx")).sheets[0].text;
+const rrRes = parseCompTable(rrText, {
+  address: "2025 Louisville Rd", city: "Savannah", market: "Savannah, GA",
+  assumedTermMonths: 60, defaultCompType: "lease",
+});
+ok("only the tenant rows import", rrRes.comps.length === 3, `got ${rrRes.comps.length}`);
+ok("TOTAL row excluded", !rrRes.comps.some((c) => /total/i.test(String(c.suite ?? "") + String(c.address))));
+ok("annualized summary excluded", !rrRes.comps.some((c) => /Gross Leasable|Annual Base/i.test(String(c.address))));
+ok("expiration schedule excluded", rrRes.comps.every((c) => c.suite && /^Ste/.test(c.suite)),
+  JSON.stringify(rrRes.comps.map((c) => c.suite)));
+ok("suite captured", rrRes.comps[0].suite === "Ste A", String(rrRes.comps[0].suite));
+ok("property address applied, not the suite", rrRes.comps[0].address === "2025 Louisville Rd", rrRes.comps[0].address);
+ok("tenant captured", rrRes.comps[0].tenantName === "Fingersafe USA", String(rrRes.comps[0].tenantName));
+ok('"Base Rent / Mo" no longer dropped', rrRes.comps[0].rent !== null, String(rrRes.comps[0].rent));
+ok('"Rent $/SF/Yr" wins as the explicit basis',
+  rrRes.comps[0].rentBasis === "per_sf_bldg_annual" && Math.abs(rrRes.comps[0].rent - 8.10048) < 0.001,
+  `${rrRes.comps[0].rentBasis} ${rrRes.comps[0].rent}`);
+ok('"CAM $/SF/Yr" captured', Math.abs(rrRes.comps[0].camPsfAnnual - 1.01952) < 0.001, String(rrRes.comps[0].camPsfAnnual));
+ok("expiration captured", rrRes.comps[0].leaseExpiresOn === "2030-05-31", String(rrRes.comps[0].leaseExpiresOn));
+// Expiry minus the assumed 60-month term, flagged and coarsened.
+ok("commencement estimated from expiry", rrRes.comps[0].dateCommenced === "2025-05-31", String(rrRes.comps[0].dateCommenced));
+ok("...flagged as an estimate", rrRes.comps[0].dateEstimated === true);
+ok("...with coarse precision", rrRes.comps[0].datePrecision === "year", String(rrRes.comps[0].datePrecision));
+ok("...and it says so in the warnings", rrRes.comps[0].warnings.some((w) => /estimated/i.test(w)));
+
+// A stated term must beat the assumption: that's arithmetic, not a guess.
+const rrTerm = parseCompTable(
+  ["Suite | Tenant | Square Feet | Base Rent / Mo | Lease Expiration | Term",
+   "Ste Z | Someone | 1,000 | 1,000 | 2030-01-31 | 36"].join("\n"),
+  { address: "1 Somewhere Rd", assumedTermMonths: 60, defaultCompType: "lease" }
+);
+ok("stated term used instead of the assumption", rrTerm.comps[0].dateCommenced === "2027-01-31", String(rrTerm.comps[0].dateCommenced));
+ok("...and is NOT flagged as estimated", rrTerm.comps[0].dateEstimated === false);
+ok("...with month precision", rrTerm.comps[0].datePrecision === "month", String(rrTerm.comps[0].datePrecision));
+
+// Month arithmetic must not roll into the next month off a 31st.
+const rrClamp = parseCompTable(
+  ["Suite | Tenant | Square Feet | Base Rent / Mo | Lease Expiration | Term",
+   "Ste Y | Someone | 1,000 | 1,000 | 2030-05-31 | 3"].join("\n"),
+  { address: "1 Somewhere Rd", defaultCompType: "lease" }
+);
+ok("day clamped when the target month is shorter", rrClamp.comps[0].dateCommenced === "2030-02-28", String(rrClamp.comps[0].dateCommenced));
+
 // ---- a formula cell, which is what a Price PSF column usually is ----
 const wb3 = new ExcelJS.Workbook();
 const s4 = wb3.addWorksheet("F");

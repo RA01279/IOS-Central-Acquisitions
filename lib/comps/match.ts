@@ -38,6 +38,14 @@ export interface CompRecord {
   rent_basis?: string | null;
   lease_type?: string | null;
   date_commenced?: string | null;
+  /**
+   * True when date_commenced was backed into from a lease expiration rather
+   * than stated. Recency carries the heaviest weight in scoring, so a comp
+   * whose date is a guess has to be visibly a guess wherever it's ranked.
+   */
+  date_estimated?: boolean | null;
+  suite?: string | null;
+  cam_psf_annual?: number | null;
   sale_price?: number | null;
   closed_on?: string | null;
   cap_rate?: number | null;
@@ -393,6 +401,17 @@ export function suggestRange(
   const oldest = Math.max(...contributing.map((s) => s.ageMonths ?? 0));
   if (oldest > 24) {
     caveats.push(`Oldest comp is ${Math.round(oldest)} months old.`);
+  }
+  // Recency is the heaviest weight in the score, so comps dated by inference
+  // rather than by an executed document deserve saying out loud: the ranking
+  // rests partly on dates nobody actually knows.
+  const estimated = contributing.filter((s) => s.comp.date_estimated).length;
+  if (estimated) {
+    caveats.push(
+      estimated === contributing.length
+        ? `Every comp here is dated by estimate (rent-roll expiry minus a typical term), and recency drives the ranking.`
+        : `${estimated} of ${contributing.length} are dated by estimate rather than from a stated commencement.`
+    );
   }
   // Several comps at one address means one property is carrying more of the
   // average than its share. That happens legitimately -- a business park

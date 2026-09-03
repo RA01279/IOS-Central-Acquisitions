@@ -130,6 +130,9 @@ export async function POST(req: NextRequest) {
       // Two buildings in one business park share a street address; the project
       // name is what keeps them from colliding in the dedupe index.
       project_name: str(c.projectName),
+      // And a suite is what keeps nine tenancies inside one building from
+      // colliding, which is exactly what a rent roll delivers.
+      suite: str(c.suite),
       city: str(c.city),
       market: str(c.market),
       submarket: str(c.submarket),
@@ -166,6 +169,10 @@ export async function POST(req: NextRequest) {
       date_precision: ["day", "month", "quarter", "year"].includes(c.datePrecision)
         ? c.datePrecision
         : "day",
+      // A commencement backed into from an expiration date is a guess, and
+      // recency is the heaviest factor in scoring -- so the guess has to stay
+      // labelled all the way to the database.
+      date_estimated: c.dateEstimated === true,
       latitude: g?.lat ?? null,
       longitude: g?.lng ?? null,
       geocode_precision: g?.precision ?? null,
@@ -175,6 +182,9 @@ export async function POST(req: NextRequest) {
     if (c.compType === "lease") {
       row.rent = money(c.rent);
       row.rent_basis = str(c.rentBasis);
+      // Base rent alone makes a rent-roll comp look cheap next to a broker's
+      // gross quote. Keeping CAM makes the two comparable.
+      row.cam_psf_annual = plain(c.camPsfAnnual);
       row.lease_type = str(c.leaseType);
       row.lease_term_months = plain(c.leaseTermMonths);
       row.tenant_name = str(c.tenantName);
