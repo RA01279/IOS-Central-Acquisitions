@@ -20,6 +20,8 @@ export type DatePrecision = "day" | "month" | "quarter" | "year";
 export interface ParsedComp {
   compType: CompType;
   address: string;
+  /** Building or park name, where a street address alone isn't unique. */
+  projectName: string | null;
   city: string | null;
   market: string | null;
   submarket: string | null;
@@ -185,7 +187,7 @@ type Field =
   | "landlord" | "termMonths" | "clearHeight" | "officeSf" | "yardAcres"
   | "trailerStalls" | "dockDoors" | "gradeDoors" | "surfaceType" | "zoning"
   | "escalations" | "freeRent" | "tiPsf" | "noi" | "buyer" | "seller"
-  | "broker" | "leaseExpiry";
+  | "broker" | "leaseExpiry" | "rateAnnual" | "rateMonthly" | "projectName";
 
 // Header aliases, matched on letters only so punctuation, case, and typos in
 // spacing don't matter. "addres" is in there because that is genuinely how the
@@ -196,17 +198,27 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // broker's sheet puts something else first.
   [/^(address|addres|adress|property|site|location|propertyaddress|streetaddress|propertyname|siteaddress)$/, "address"],
   [/^(yearbuilt|yrbuilt|built|vintage|year)$/, "yearBuilt"],
-  [/^(sf|buildingsf|bldgsf|buildingarea|size|squarefeet|buildingsize|gla)$/, "buildingSf"],
+  [/^(sf|buildingsf|bldgsf|buildingarea|size|squarefeet|squarefootage|buildingsize|gla|rba|totalsf)$/, "buildingSf"],
   [/^(ac|acres|acreage|landac|siteacres|landacres)$/, "acres"],
   [/^(landsf|lotsf|sitesf|landarea)$/, "lotSf"],
   [/^(coverage|coverageratio|bldgcoverage|far)$/, "coverage"],
   [/^(saledate|closedate|closingdate|dateclosed|datesold|sold)$/, "saleDate"],
-  [/^(saleprice|price|purchaseprice|consideration|salesprice)$/, "salePrice"],
-  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|psfmo|persfmo)$/, "psf"],
+  [/^(saleprice|price|purchaseprice|consideration|salesprice|salepricedollars|saleprice\$)$/, "salePrice"],
+  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|salepricesf|psfmo|persfmo)$/, "psf"],
+  // Rate columns that declare their own basis. Handled as distinct fields
+  // rather than aliases of "psf", because the basis is the whole point: an
+  // annual $13.20 and a monthly $1.10 are the same rent, and treating either
+  // as the other is off by 12x.
+  [/^(startingrateannual|annualrate|rateannual|baserentannual|annualbaserent|rentannual)$/, "rateAnnual"],
+  [/^(startingratemonthly|monthlyrate|ratemonthly|baserentmonthly|monthlybaserent)$/, "rateMonthly"],
   [/^(leasetype|type|structure|leasestructure)$/, "leaseType"],
   [/^(monthlybase|monthlyrent|baserent|monthlybaserent|rent|monthly)$/, "monthlyRent"],
   [/^(leasedate|commenced|commencement|datecommenced|startdate|leasestart|executed)$/, "leaseDate"],
   [/^(caprate|cap|yield)$/, "capRate"],
+  // Distinguishes buildings that share a street address ("Pine Crossing
+  // Business Park - Bldg. C" vs "- Bldg. D"), which is what stops one of them
+  // being dropped as a duplicate.
+  [/^(projectname|project|buildingname|park|development|propertyname2)$/, "projectName"],
   [/^(city|municipality)$/, "city"],
   [/^(market|metro)$/, "market"],
   [/^(submarket|subarea)$/, "submarket"],
@@ -226,10 +238,11 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(freerent|freerentmonths|abatement)$/, "freeRent"],
   [/^(ti|tipsf|tiallowance|tenantimprovement)$/, "tiPsf"],
   [/^(noi|netoperatingincome)$/, "noi"],
-  [/^(buyer|purchaser|grantee)$/, "buyer"],
-  [/^(seller|grantor|vendor)$/, "seller"],
+  [/^(buyer|purchaser|grantee|buyercompanyname|buyername)$/, "buyer"],
+  [/^(seller|grantor|vendor|sellercompanyname|sellername)$/, "seller"],
   [/^(broker|listingbroker|agent|brokerage)$/, "broker"],
-  [/^(leaseexpiry|expiration|expires|expiry|leaseend)$/, "leaseExpiry"],
+  [/^(leaseexpiry|expiration|expires|expiry|leaseend|expirationdate|leaseexpiration)$/, "leaseExpiry"],
+  [/^(commencementdate|datecommencement|rentstart|rentcommencement)$/, "leaseDate"],
 ];
 
 /**
@@ -267,6 +280,15 @@ function surfaceFrom(raw: string | undefined): string | null {
   if (/unimproved|raw/.test(s)) return "unimproved";
   return null;
 }
+
+// Columns that can only belong to one kind of comp. Deliberately excludes
+// saleDate/closeDate: brokers put a "Close Date" on lease tabs to mean the date
+// the deal was signed, so it says nothing about which kind of table this is.
+const SALE_SIGNALS: Field[] = ["salePrice", "capRate", "noi", "buyer", "seller"];
+const LEASE_SIGNALS: Field[] = [
+  "rateAnnual", "rateMonthly", "monthlyRent", "leaseType", "termMonths",
+  "leaseExpiry", "tenant", "landlord", "leaseDate", "freeRent", "tiPsf",
+];
 
 function fieldFor(header: string): Field | null {
   const key = header.toLowerCase().replace(/[^a-z]/g, "");
@@ -518,9 +540,17 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       }
       mapping = asFields;
       rowsInTable = 0;
-      // Headers reveal the type more reliably than surrounding prose.
-      if (asFields.includes("saleDate") || asFields.includes("salePrice")) tableType = "sale";
-      else if (asFields.includes("leaseType") || asFields.includes("monthlyRent")) tableType = "lease";
+      // Headers reveal the type more reliably than surrounding prose -- but by
+      // WEIGHING the signals, not taking the first hit. A real lease tab led
+      // with "Close Date" (the date the deal was signed), which as a lone
+      // signal mistyped six lease comps as sales with no price. So a date
+      // column counts for nothing on its own; only columns that can't belong
+      // to the other kind of comp get a vote.
+      const saleScore = asFields.filter((f) => f && SALE_SIGNALS.includes(f)).length;
+      const leaseScore = asFields.filter((f) => f && LEASE_SIGNALS.includes(f)).length;
+      if (saleScore > leaseScore) tableType = "sale";
+      else if (leaseScore > saleScore) tableType = "lease";
+      // A tie leaves whatever the prose or the caller's sheet hint established.
       continue;
     }
 
@@ -560,6 +590,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
     const parsed: ParsedComp = {
       compType,
       address,
+      projectName: get("projectName")?.trim() || null,
       city: (get("city") ?? opts.city) || null,
       market: (get("market") ?? opts.market) || null,
       submarket: (get("submarket") ?? opts.submarket) || null,
@@ -628,13 +659,36 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       if (!parsed.salePrice) rowWarnings.push("No sale price found");
       if (!parsed.closedOn) rowWarnings.push("No sale date found");
     } else {
+      // Preference order matters, and it runs most-explicit first. A column
+      // that names its own basis ("Starting Rate (Annual)") is unambiguous; a
+      // bare "Monthly Base" is a whole-site figure; a bare "Price/SF" on a
+      // lease table is per SF per month by convention. Guessing wrong here is
+      // a 12x error, so an explicitly-labelled column always wins.
       const monthly = num(get("monthlyRent"));
-      if (monthly !== null) {
+      const rateAnnual = num(get("rateAnnual"));
+      const rateMonthly = num(get("rateMonthly"));
+      if (rateMonthly !== null) {
+        parsed.rent = rateMonthly;
+        parsed.rentBasis = "per_sf_bldg_monthly";
+      } else if (rateAnnual !== null) {
+        parsed.rent = rateAnnual;
+        parsed.rentBasis = "per_sf_bldg_annual";
+      } else if (monthly !== null) {
         parsed.rent = monthly;
         parsed.rentBasis = "total_monthly";
       } else if (quotedPsf !== null) {
         parsed.rent = quotedPsf;
         parsed.rentBasis = "per_sf_bldg_monthly";
+      }
+      // Both bases given: they must agree within rounding, or a column was
+      // misread.
+      if (rateAnnual !== null && rateMonthly !== null && rateMonthly > 0) {
+        const impliedAnnual = rateMonthly * 12;
+        if (Math.abs(impliedAnnual - rateAnnual) / rateAnnual > 0.05) {
+          rowWarnings.push(
+            `Annual rate $${rateAnnual} doesn't match monthly $${rateMonthly} x 12 ($${impliedAnnual.toFixed(2)})`
+          );
+        }
       }
       const d = parseCompDate(get("leaseDate"));
       if (d) {

@@ -54,6 +54,7 @@ function enumOf(v: unknown, allowed: string[]): string | null {
 // here is ignored, so the route can't be used to write arbitrary columns.
 const FIELDS: Record<string, { column: string; coerce: (v: unknown) => unknown }> = {
   address: { column: "address", coerce: str },
+  projectName: { column: "project_name", coerce: str },
   city: { column: "city", coerce: str },
   market: { column: "market", coerce: str },
   submarket: { column: "submarket", coerce: str },

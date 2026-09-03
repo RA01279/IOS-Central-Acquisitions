@@ -98,6 +98,62 @@ ok("...with the price still right", Number(p5.comps[0]?.salePrice) === 1250000, 
 ok('"Price PSF" recognised', Number(p5.comps[0]?.quotedPsf) === 166.67, String(p5.comps[0]?.quotedPsf));
 ok("...and cross-checks clean", p5.comps[0]?.warnings.length === 0, JSON.stringify(p5.comps[0]?.warnings));
 
+// ---- regressions from the real "Conroe Comps (09.02.26).xlsx" ----
+// Every one of these produced wrong output on the actual file.
+console.log("  -- real-workbook regressions --");
+
+// 1. Header cells containing line breaks. "Type\n(N, R, EXP)" split one
+//    spreadsheet row into several text lines, so a fragment was matched as the
+//    header and addresses came out as "N" and "EXP" from the Type column.
+const wbNl = new ExcelJS.Workbook();
+const sNl = wbNl.addWorksheet("Wrapped");
+sNl.addRow(["Address", "Type\n(N, R, EXP)", "Square Footage", "Starting Rate (Annual)", "Commencement Date", "Sprinkler\n(ESFR, Wet, or No)"]);
+sNl.addRow(["1 Wrapped Header Rd", "N", 9750, 13.56, new Date("2026-01-01"), "ESFR"]);
+const rNl = await workbookToDelimitedText(Buffer.from(await wbNl.xlsx.writeBuffer()), "nl.xlsx");
+ok("newline in a header cell doesn't split the row", rNl.sheets[0].text.split("\n").length === 2,
+  `${rNl.sheets[0].text.split("\n").length} lines`);
+const pNl = parseCompTable(rNl.sheets[0].text, {});
+ok("address is the address, not the Type column", pNl.comps[0]?.address === "1 Wrapped Header Rd", pNl.comps[0]?.address);
+ok('"Square Footage" aliased', Number(pNl.comps[0]?.buildingSf) === 9750, String(pNl.comps[0]?.buildingSf));
+ok('"Starting Rate (Annual)" -> annual basis',
+  pNl.comps[0]?.rentBasis === "per_sf_bldg_annual" && Number(pNl.comps[0]?.rent) === 13.56,
+  `${pNl.comps[0]?.rentBasis} ${pNl.comps[0]?.rent}`);
+
+// 2. Sheets are returned separately. Tabs are often different datasets -- the
+//    real file has two tabs of Conroe comps and one of Houston Southwest comps
+//    from four years earlier, which must not be imported under one market.
+const wbMulti = new ExcelJS.Workbook();
+const mA = wbMulti.addWorksheet("Lease Comps");
+mA.addRow(["Close Date", "Commencement Date", "Address", "Tenant", "SF", "Starting Rate (Monthly)"]);
+mA.addRow(["2025-04-17", "2026-01-01", "2 Conroe Way", "GroupSix", 9750, 1.13]);
+const mB = wbMulti.addWorksheet("Sale Comps");
+mB.addRow(["Close Date", "Project Name", "Address", "Buyer Company Name", "Seller Company Name", "SF", "Sale Price ($)", "Sale Price ($/SF)"]);
+mB.addRow(["2026-03-20", "Pine Crossing Business Park - Bldg. C", "3513 N Loop 336 W", "Khattak", "Black Mallard", 6000, 860000, 143.33]);
+mB.addRow(["2026-03-20", "Pine Crossing Business Park - Bldg. D", "3513 N Loop 336 W", "Khattak", "Black Mallard", 6000, 860000, 143.33]);
+const rMulti = await workbookToDelimitedText(Buffer.from(await wbMulti.xlsx.writeBuffer()), "multi.xlsx");
+ok("sheets come back separately", rMulti.sheets.length === 2, String(rMulti.sheets.length));
+
+// 3. A lease tab leading with "Close Date" must still be typed as a lease.
+//    Taking that first signal mistyped six lease comps as sales with no price.
+const pLease = parseCompTable(rMulti.sheets[0].text, {});
+ok('"Close Date" on a lease tab still parses as LEASE',
+  pLease.comps[0]?.compType === "lease", pLease.comps[0]?.compType);
+ok("...using Commencement Date, not Close Date",
+  pLease.comps[0]?.dateCommenced === "2026-01-01", String(pLease.comps[0]?.dateCommenced));
+ok('"Starting Rate (Monthly)" -> monthly basis',
+  pLease.comps[0]?.rentBasis === "per_sf_bldg_monthly", String(pLease.comps[0]?.rentBasis));
+
+const pSale = parseCompTable(rMulti.sheets[1].text, {});
+ok("sale tab parses as SALE", pSale.comps.every((c) => c.compType === "sale"));
+ok('"Buyer Company Name" aliased', pSale.comps[0]?.buyer === "Khattak", String(pSale.comps[0]?.buyer));
+ok('"Sale Price ($)" aliased', Number(pSale.comps[0]?.salePrice) === 860000, String(pSale.comps[0]?.salePrice));
+// 4. Two buildings sharing a street address and close date are distinguished
+//    only by project name -- without it the second is dropped as a duplicate.
+ok("both same-address buildings kept", pSale.comps.length === 2, String(pSale.comps.length));
+ok("project names differ", pSale.comps[0]?.projectName !== pSale.comps[1]?.projectName,
+  `${pSale.comps[0]?.projectName} vs ${pSale.comps[1]?.projectName}`);
+ok("project name ends in Bldg. C", /Bldg\. C$/.test(pSale.comps[0]?.projectName ?? ""), String(pSale.comps[0]?.projectName));
+
 // ---- a formula cell, which is what a Price PSF column usually is ----
 const wb3 = new ExcelJS.Workbook();
 const s4 = wb3.addWorksheet("F");

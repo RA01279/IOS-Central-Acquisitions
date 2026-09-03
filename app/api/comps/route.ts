@@ -127,6 +127,9 @@ export async function POST(req: NextRequest) {
     const row: Record<string, unknown> = {
       comp_type: c.compType,
       address: c.address,
+      // Two buildings in one business park share a street address; the project
+      // name is what keeps them from colliding in the dedupe index.
+      project_name: str(c.projectName),
       city: str(c.city),
       market: str(c.market),
       submarket: str(c.submarket),

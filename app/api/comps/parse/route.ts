@@ -39,13 +39,42 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      const { text, sheetNames, warnings } = await workbookToDelimitedText(buffer, fileName);
-      const result = parseCompInput({ text }, context);
+      const { sheets, sheetNames, warnings } = await workbookToDelimitedText(buffer, fileName);
+
+      // Parsed per sheet, not as one concatenated blob. Tabs are frequently
+      // different datasets -- the real Conroe workbook has two tabs of Conroe
+      // comps and one of Houston Southwest comps from four years earlier -- so
+      // each comp is tagged with the tab it came from and the reviewer can
+      // exclude a whole sheet that doesn't belong.
+      const comps: any[] = [];
+      const perSheet: { name: string; count: number; warnings: string[] }[] = [];
+      for (const sheet of sheets) {
+        // The tab's own name is the last word on comp type when the header
+        // columns are ambiguous -- "Sale Comps" and "Lease Comps" are not
+        // subtle. Header signals still win where they're decisive.
+        const nameHint = /lease/i.test(sheet.name)
+          ? ("lease" as const)
+          : /sale|sold/i.test(sheet.name)
+            ? ("sale" as const)
+            : undefined;
+        const parsed = parseCompInput(
+          { text: sheet.text },
+          { ...context, defaultCompType: nameHint }
+        );
+        for (const c of parsed.comps) comps.push({ ...c, sheet: sheet.name });
+        perSheet.push({ name: sheet.name, count: parsed.comps.length, warnings: parsed.warnings });
+      }
+
+      const sheetWarnings = perSheet
+        .filter((s) => s.count === 0)
+        .map((s) => `Sheet "${s.name}": ${s.warnings[0] ?? "no comps found"}`);
+
       return NextResponse.json({
-        ...result,
-        warnings: [...warnings, ...result.warnings],
+        comps,
+        warnings: [...warnings, ...sheetWarnings],
         source: "excel",
         sheetNames,
+        perSheet,
       });
     }
 
