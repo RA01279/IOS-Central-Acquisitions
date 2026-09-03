@@ -34,6 +34,10 @@ export type Tenant = {
   lng: number;
   placeId: string;
   distanceMi: number;
+  /** Company site from Place Details. ~100% coverage on real IOS businesses. */
+  website?: string | null;
+  /** Favicon-derived logo mark as a data: URI. ~75% coverage -- may be null. */
+  logoBase64?: string | null;
 };
 
 export type MapType = "satellite" | "hybrid";
@@ -230,7 +234,16 @@ const LEGEND_CAT_GAP = 0.08;
 
 type LegendLine =
   | { kind: "header"; label: string; color: string; count: number; height: number }
-  | { kind: "item"; num: number; name: string; distanceMi: number; color: string; height: number };
+  | {
+      kind: "item";
+      num: number;
+      name: string;
+      distanceMi: number;
+      color: string;
+      website?: string | null;
+      logoBase64?: string | null;
+      height: number;
+    };
 
 function buildLegendLines(data: DemandMapResponse, categories: Category[]): LegendLine[] {
   const numbered = data.tenants.map((t, i) => ({ ...t, num: i + 1 }));
@@ -254,6 +267,8 @@ function buildLegendLines(data: DemandMapResponse, categories: Category[]): Lege
         name: t.name,
         distanceMi: t.distanceMi,
         color: cat.color,
+        website: t.website ?? null,
+        logoBase64: t.logoBase64 ?? null,
         height: LEGEND_ITEM_H + (idx === items.length - 1 ? LEGEND_CAT_GAP : 0),
       });
     });
@@ -461,13 +476,37 @@ export async function exportToPptx(
           color: WHITE, valign: "middle", margin: 0,
         });
       } else {
+        // Logo gutter is reserved on every row whether or not this tenant has
+        // a logo, so names stay left-aligned down the column. Roughly a quarter
+        // of tenants have no usable icon.
+        const LOGO_BOX = 0.15;
+        const textX = x + 0.04 + LOGO_BOX + 0.05;
+        if (line.logoBase64) {
+          target.addImage({
+            data: line.logoBase64,
+            x: x + 0.04,
+            y: y + (LEGEND_ITEM_H - LOGO_BOX) / 2,
+            w: LOGO_BOX,
+            h: LOGO_BOX,
+            ...(line.website
+              ? { hyperlink: { url: line.website, tooltip: line.name } }
+              : {}),
+          });
+        }
         target.addText(
           [
-            { text: `${line.num}`.padStart(2, " ") + "  ", options: { bold: true, color: line.color } },
-            { text: line.name, options: { color: INK } },
+            { text: `${line.num}`.padStart(2, " ") + " ", options: { bold: true, color: line.color } },
+            {
+              text: line.name,
+              // Hyperlinked but deliberately not blue-underlined -- 40-odd
+              // underlined links would shred the page. It still opens on click.
+              options: line.website
+                ? { color: INK, hyperlink: { url: line.website, tooltip: line.website } }
+                : { color: INK },
+            },
             { text: `  ${line.distanceMi.toFixed(1)} mi`, options: { color: SUBTLE } },
           ],
-          { x: x + 0.04, y, w: w - 0.08, h: LEGEND_ITEM_H,
+          { x: textX, y, w: w - (textX - x) - 0.04, h: LEGEND_ITEM_H,
             fontFace: "Arial", fontSize: 8, margin: 0 }
         );
       }

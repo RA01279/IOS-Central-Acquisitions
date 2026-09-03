@@ -229,11 +229,45 @@ export default function IcDeckPanel({
                   >
                     {cat.label.toUpperCase()} ({items.length})
                   </div>
-                  <ul className="doc-list" style={{ gap: 2, fontSize: 13 }}>
+                  <ul className="doc-list" style={{ gap: 3, fontSize: 13 }}>
                     {items.map((t) => (
-                      <li key={t.placeId}>
-                        <strong style={{ color: `#${cat.color}` }}>{t.num}</strong> {t.name}
-                        <span className="muted"> · {t.distanceMi.toFixed(1)} mi</span>
+                      <li
+                        key={t.placeId}
+                        style={{ display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        <strong style={{ color: `#${cat.color}`, minWidth: 16, textAlign: "right" }}>
+                          {t.num}
+                        </strong>
+                        {/* Logo gutter is always reserved so names line up even
+                            though ~a quarter of tenants have no usable icon. */}
+                        <span
+                          style={{
+                            width: 18,
+                            height: 18,
+                            flex: "0 0 18px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {t.logoBase64 && (
+                            <img
+                              src={t.logoBase64}
+                              alt=""
+                              width={18}
+                              height={18}
+                              style={{ borderRadius: 3, objectFit: "contain" }}
+                            />
+                          )}
+                        </span>
+                        {t.website ? (
+                          <a href={t.website} target="_blank" rel="noopener noreferrer">
+                            {t.name}
+                          </a>
+                        ) : (
+                          <span>{t.name}</span>
+                        )}
+                        <span className="muted">· {t.distanceMi.toFixed(1)} mi</span>
                       </li>
                     ))}
                   </ul>

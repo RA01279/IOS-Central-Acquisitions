@@ -23,7 +23,74 @@ type Tenant = {
   lng: number;
   placeId: string;
   distanceMi: number;
+  website: string | null;
+  logoBase64: string | null;
 };
+
+// Run an async mapper over a list with a bounded number in flight. Enriching
+// tenants means two extra round trips each (Place Details, then a favicon), and
+// firing 50 pairs at once gets throttled while doing them one at a time takes
+// the best part of a minute.
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) return;
+        out[i] = await fn(items[i], i);
+      }
+    })
+  );
+  return out;
+}
+
+// Nearby Search doesn't return a website, so each tenant needs a Place Details
+// call for it (the Contact Data SKU -- the priciest part of a generate, roughly
+// $3/1000, so this only runs for tenants that survived the per-category cap).
+// Measured hit rate on real IOS-type businesses was 21/21, so links are worth
+// the call; logos are ~75% and have to degrade gracefully.
+async function enrichTenants(tenants: Tenant[]): Promise<Tenant[]> {
+  return mapWithConcurrency(tenants, 8, async (t) => {
+    let website: string | null = null;
+    try {
+      const u = new URL("https://maps.googleapis.com/maps/api/place/details/json");
+      u.searchParams.set("place_id", t.placeId);
+      u.searchParams.set("fields", "website");
+      u.searchParams.set("key", GOOGLE_KEY!);
+      const d = await (await fetch(u.toString())).json();
+      website = d.result?.website ?? null;
+    } catch {
+      // A missing website is not worth failing the map over.
+    }
+
+    let logoBase64: string | null = null;
+    if (website) {
+      try {
+        const host = new URL(website).hostname;
+        const r = await fetch(`https://www.google.com/s2/favicons?domain=${host}&sz=128`);
+        if (r.ok) {
+          const buf = Buffer.from(await r.arrayBuffer());
+          // The service answers with a generic globe when a site has no icon.
+          // It's consistently tiny, and a slide full of identical globes is
+          // worse than a slide with no logos, so treat small as "none".
+          if (buf.length >= 900) {
+            logoBase64 = `data:image/png;base64,${buf.toString("base64")}`;
+          }
+        }
+      } catch {
+        // Same -- logos are decoration, the map still stands without them.
+      }
+    }
+
+    return { ...t, website, logoBase64 };
+  });
+}
 
 // GET /api/deals/[id]/demand-map?radiusMiles=5
 //
@@ -71,8 +138,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   try {
     const center = await geocode(fullAddress);
-    const tenants = await searchNearby({ ...center, radiusMiles, categories });
-    const { imageBase64, zoom } = await fetchSatelliteImage({ ...center, radiusMiles, maptype });
+    const found = await searchNearby({ ...center, radiusMiles, categories });
+    // Basemap and enrichment are independent -- overlap them so the extra
+    // Place Details round trips don't simply add to the wall clock.
+    const [tenants, { imageBase64, zoom }] = await Promise.all([
+      enrichTenants(found),
+      fetchSatelliteImage({ ...center, radiusMiles, maptype }),
+    ]);
 
     return NextResponse.json({
       address: fullAddress,
@@ -155,6 +227,8 @@ async function searchNearby({
         lng: place.geometry.location.lng,
         placeId: place.place_id,
         distanceMi: haversineMiles(lat, lng, place.geometry.location.lat, place.geometry.location.lng),
+        website: null,
+        logoBase64: null,
       })) as Tenant[];
     })
   );
