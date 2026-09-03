@@ -33,10 +33,32 @@ export interface ParsedComp {
   rentBasis: string | null;
   leaseType: string | null;
   dateCommenced: string | null;
+  tenantName: string | null;
+  landlordName: string | null;
+  leaseTermMonths: number | null;
+  leaseExpiresOn: string | null;
+  escalationsPct: number | null;
+  freeRentMonths: number | null;
+  tiPsf: number | null;
+  listingBroker: string | null;
   // sale
   salePrice: number | null;
   closedOn: string | null;
   capRate: number | null;
+  noi: number | null;
+  buyer: string | null;
+  seller: string | null;
+  saleBroker: string | null;
+  // site
+  clearHeightFt: number | null;
+  officeSf: number | null;
+  yardAcres: number | null;
+  trailerStalls: number | null;
+  dockHighDoors: number | null;
+  gradeLevelDoors: number | null;
+  surfaceType: string | null;
+  zoning: string | null;
+  notes: string | null;
   datePrecision: DatePrecision;
   /** The $/SF the broker quoted, kept to cross-check our own maths. */
   quotedPsf: number | null;
@@ -159,7 +181,11 @@ function leaseTypeFrom(raw: string | undefined): string | null {
 type Field =
   | "address" | "yearBuilt" | "buildingSf" | "acres" | "lotSf" | "coverage"
   | "saleDate" | "salePrice" | "psf" | "leaseType" | "monthlyRent"
-  | "leaseDate" | "capRate" | "city" | "market" | "submarket" | "tenant" | "notes";
+  | "leaseDate" | "capRate" | "city" | "market" | "submarket" | "tenant" | "notes"
+  | "landlord" | "termMonths" | "clearHeight" | "officeSf" | "yardAcres"
+  | "trailerStalls" | "dockDoors" | "gradeDoors" | "surfaceType" | "zoning"
+  | "escalations" | "freeRent" | "tiPsf" | "noi" | "buyer" | "seller"
+  | "broker" | "leaseExpiry";
 
 // Header aliases, matched on letters only so punctuation, case, and typos in
 // spacing don't matter. "addres" is in there because that is genuinely how the
@@ -181,9 +207,63 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(city|municipality)$/, "city"],
   [/^(market|metro)$/, "market"],
   [/^(submarket|subarea)$/, "submarket"],
-  [/^(tenant|tenantname|lessee)$/, "tenant"],
+  [/^(tenant|tenantname|lessee|occupant)$/, "tenant"],
   [/^(notes|comments|remarks)$/, "notes"],
+  [/^(landlord|landlordname|lessor|owner)$/, "landlord"],
+  [/^(term|termmonths|leaseterm|termmos|months)$/, "termMonths"],
+  [/^(clearheight|clear|clearht|height|ceilingheight)$/, "clearHeight"],
+  [/^(officesf|office|officearea)$/, "officeSf"],
+  [/^(yardacres|yardac|usableacres|usableac|yard)$/, "yardAcres"],
+  [/^(trailerstalls|trailerparking|trailers|stalls)$/, "trailerStalls"],
+  [/^(dockdoors|dockhigh|docks|dh|dockhighdoors)$/, "dockDoors"],
+  [/^(gradedoors|gradelevel|driveins|gl|gradeleveldoors)$/, "gradeDoors"],
+  [/^(surface|surfacetype|yardsurface|paving)$/, "surfaceType"],
+  [/^(zoning|zone)$/, "zoning"],
+  [/^(escalations|escalation|bumps|annualincrease)$/, "escalations"],
+  [/^(freerent|freerentmonths|abatement)$/, "freeRent"],
+  [/^(ti|tipsf|tiallowance|tenantimprovement)$/, "tiPsf"],
+  [/^(noi|netoperatingincome)$/, "noi"],
+  [/^(buyer|purchaser|grantee)$/, "buyer"],
+  [/^(seller|grantor|vendor)$/, "seller"],
+  [/^(broker|listingbroker|agent|brokerage)$/, "broker"],
+  [/^(leaseexpiry|expiration|expires|expiry|leaseend)$/, "leaseExpiry"],
 ];
+
+/**
+ * Clear height, which is never written as a bare number: 28', 28 FT, 28'0",
+ * 24-28'. A range is resolved to its LOWER bound -- clear height is a
+ * constraint, and what fits under the lowest point is what actually fits.
+ *
+ * Kept separate from num() rather than teaching it to strip quote marks,
+ * because num() also decides whether a cell is a number at all and an
+ * apostrophe is meaningful elsewhere.
+ */
+function feet(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const s = String(raw).trim();
+  if (!s || /^[—–-]+$/.test(s)) return null;
+  const range = s.match(/^(\d+(?:\.\d+)?)\s*(?:['"]|ft\.?|feet)?\s*[-–to]+\s*(\d+(?:\.\d+)?)/i);
+  if (range) return Math.min(Number(range[1]), Number(range[2]));
+  const single = s.match(/^(\d+(?:\.\d+)?)/);
+  if (!single) return null;
+  const n = Number(single[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Surface as brokers write it -> the stored enum.
+function surfaceFrom(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).toLowerCase();
+  if (!s.trim() || /^[—–-]+$/.test(s)) return null;
+  if (/concrete|conc\b/.test(s)) return "concrete";
+  if (/asphalt|paved/.test(s)) return "asphalt";
+  if (/crushed|caliche|millings/.test(s)) return "crushed_stone";
+  if (/gravel/.test(s)) return "gravel";
+  if (/dirt|native|grass/.test(s)) return "dirt";
+  if (/mixed|partial/.test(s)) return "mixed";
+  if (/unimproved|raw/.test(s)) return "unimproved";
+  return null;
+}
 
 function fieldFor(header: string): Field | null {
   const key = header.toLowerCase().replace(/[^a-z]/g, "");
@@ -489,13 +569,40 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       rentBasis: null,
       leaseType: leaseTypeFrom(get("leaseType")),
       dateCommenced: null,
+      tenantName: get("tenant")?.trim() || null,
+      landlordName: get("landlord")?.trim() || null,
+      leaseTermMonths: num(get("termMonths")),
+      leaseExpiresOn: parseCompDate(get("leaseExpiry"))?.date ?? null,
+      escalationsPct: num(get("escalations")),
+      freeRentMonths: num(get("freeRent")),
+      tiPsf: num(get("tiPsf")),
+      listingBroker: get("broker")?.trim() || null,
       salePrice: null,
       closedOn: null,
       capRate: pct(get("capRate")),
+      noi: num(get("noi")),
+      buyer: get("buyer")?.trim() || null,
+      seller: get("seller")?.trim() || null,
+      saleBroker: compType === "sale" ? get("broker")?.trim() || null : null,
+      clearHeightFt: feet(get("clearHeight")),
+      officeSf: num(get("officeSf")),
+      yardAcres: num(get("yardAcres")),
+      trailerStalls: num(get("trailerStalls")),
+      dockHighDoors: num(get("dockDoors")),
+      gradeLevelDoors: num(get("gradeDoors")),
+      surfaceType: surfaceFrom(get("surfaceType")),
+      zoning: get("zoning")?.trim() || null,
+      notes: get("notes")?.trim() || null,
       datePrecision: "day",
       quotedPsf,
       warnings: rowWarnings,
     };
+
+    // A term in months given without a commencement date still pins the
+    // expiry once a date is filled in at review, so keep both.
+    if (parsed.leaseTermMonths && parsed.leaseTermMonths > 600) {
+      rowWarnings.push(`Lease term of ${parsed.leaseTermMonths} months looks like years, not months`);
+    }
 
     if (compType === "sale") {
       parsed.salePrice = num(get("salePrice"));

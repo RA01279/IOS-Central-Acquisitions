@@ -3,6 +3,7 @@ import { ASSET_CLASS_LABELS } from "@/lib/deals";
 import { isUsableForDistance } from "@/lib/geocode";
 import Nav from "@/components/Nav";
 import CompIntakeForm from "@/components/CompIntakeForm";
+import CompEditor, { type CompRow } from "@/components/CompEditor";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -117,10 +118,15 @@ export default async function CompsPage() {
                     <th>Rate</th>
                     <th>Bldg SF</th>
                     <th>Acres</th>
+                    <th>Yard ac</th>
                     <th>Cov.</th>
+                    <th>Clear</th>
+                    <th>Surface</th>
+                    <th>Tenant / Buyer</th>
                     <th>Yr</th>
                     <th>Class</th>
                     <th>Geo</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -145,11 +151,18 @@ export default async function CompsPage() {
                         <td>{unitRate(c)}</td>
                         <td>{c.building_sf ? Math.round(c.building_sf).toLocaleString() : "—"}</td>
                         <td>{acres ?? "—"}</td>
+                        <td>{c.yard_acres ?? "—"}</td>
                         <td>
                           {c.coverage_pct === null || c.coverage_pct === undefined
                             ? "—"
                             : `${(c.coverage_pct * 100).toFixed(1)}%`}
                         </td>
+                        <td>{c.clear_height_ft ? `${c.clear_height_ft}'` : "—"}</td>
+                        <td>
+                          {c.surface_type ? c.surface_type.replace(/_/g, " ") : "—"}
+                          {c.fenced === true && <span className="doc-type" style={{ marginLeft: 4 }}>FENCED</span>}
+                        </td>
+                        <td>{(c.comp_type === "sale" ? c.buyer : c.tenant_name) ?? "—"}</td>
                         <td>{c.year_built ?? "—"}</td>
                         <td>{c.asset_class ? ASSET_CLASS_LABELS[c.asset_class] : "—"}</td>
                         <td>
@@ -158,6 +171,9 @@ export default async function CompsPage() {
                           ) : (
                             <span className="overdue">{c.geocode_precision ?? "none"}</span>
                           )}
+                        </td>
+                        <td>
+                          <CompEditor comp={c as CompRow} />
                         </td>
                       </tr>
                     );

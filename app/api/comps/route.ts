@@ -138,6 +138,24 @@ export async function POST(req: NextRequest) {
       occupancy_status: ["vacant", "occupied"].includes(c.occupancyStatus) ? c.occupancyStatus : null,
       tenancy: ["single_tenant", "multi_tenant"].includes(c.tenancy) ? c.tenancy : null,
       notes: str(c.notes),
+      // Site detail, which the parser fills in when the broker's table has it
+      // and the review step or the editor fills in when it doesn't.
+      clear_height_ft: plain(c.clearHeightFt),
+      office_sf: plain(c.officeSf),
+      yard_acres: plain(c.yardAcres),
+      trailer_stalls: plain(c.trailerStalls),
+      dock_high_doors: plain(c.dockHighDoors),
+      grade_level_doors: plain(c.gradeLevelDoors),
+      power_amps: plain(c.powerAmps),
+      surface_type: [
+        "concrete", "asphalt", "crushed_stone", "gravel", "dirt", "mixed", "unimproved",
+      ].includes(c.surfaceType)
+        ? c.surfaceType
+        : null,
+      fenced: typeof c.fenced === "boolean" ? c.fenced : null,
+      zoning: str(c.zoning),
+      outdoor_storage_permitted:
+        typeof c.outdoorStoragePermitted === "boolean" ? c.outdoorStoragePermitted : null,
       source: ["manual", "excel", "email", "import"].includes(body.source) ? body.source : "manual",
       source_ref: str(body.sourceRef),
       created_by: user.email,
@@ -157,13 +175,24 @@ export async function POST(req: NextRequest) {
       row.lease_type = str(c.leaseType);
       row.lease_term_months = plain(c.leaseTermMonths);
       row.tenant_name = str(c.tenantName);
+      row.landlord_name = str(c.landlordName);
       row.date_commenced = str(c.dateCommenced);
+      row.lease_expires_on = str(c.leaseExpiresOn);
+      row.escalations_pct = plain(c.escalationsPct);
+      row.free_rent_months = plain(c.freeRentMonths);
+      row.ti_psf = plain(c.tiPsf);
+      row.renewal_options = str(c.renewalOptions);
+      row.listing_broker = str(c.listingBroker);
+      row.tenant_rep_broker = str(c.tenantRepBroker);
     } else {
       row.sale_price = money(c.salePrice);
       row.closed_on = str(c.closedOn);
       row.cap_rate = plain(c.capRate);
+      row.noi = money(c.noi);
       row.buyer = str(c.buyer);
       row.seller = str(c.seller);
+      row.sale_broker = str(c.saleBroker);
+      row.occupancy_at_sale = plain(c.occupancyAtSale);
     }
 
     const { error } = await supabase.from("comps").insert(row);

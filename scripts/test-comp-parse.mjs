@@ -312,6 +312,74 @@ check("returns what it saw", (noHeader.seen?.lines ?? []).length > 0, true);
 const singleColumn = parseCompTable("2933 E Davis St\n$1,485,000\nJan 2026", {});
 check("single-column paste explained", singleColumn.warnings.some((w) => w.includes("single column")), true);
 
+// ------------------------------------------------- the detail-field columns
+console.log("\n== tenant / landlord / term / clear height / yard ==");
+const DETAIL = [
+  "Address | Tenant | Landlord | SF | AC | Usable Acres | Clear Height | Surface | Trailer Stalls | Zoning | Lease Type | Term | Monthly Base | Commenced | Escalations | Free Rent | TI",
+  "77 Yard Rd | Tico Logistics | Dalfen | 9,900 | 5.00 | 4.20 | 28' | Crushed Stone | 40 | LI-2 | NNN | 60 | $18,500 | 3/1/2026 | 3.5% | 2 | $1.50",
+].join("\n");
+const det = parseCompTable(DETAIL, { city: "Conroe", market: "Houston" });
+check("detail row parsed", det.comps.length, 1);
+const d0 = det.comps[0];
+check("tenant", d0.tenantName, "Tico Logistics");
+check("landlord", d0.landlordName, "Dalfen");
+check("term months", d0.leaseTermMonths, 60);
+check("clear height strips the foot mark", d0.clearHeightFt, 28);
+check("usable yard acres", d0.yardAcres, 4.2);
+check("surface mapped to enum", d0.surfaceType, "crushed_stone");
+check("trailer stalls", d0.trailerStalls, 40);
+check("zoning", d0.zoning, "LI-2");
+check("escalations", d0.escalationsPct, 3.5);
+check("free rent months", d0.freeRentMonths, 2);
+check("TI psf", d0.tiPsf, 1.5);
+check("lease type", d0.leaseType, "nnn");
+check("commencement date present", d0.dateCommenced, "2026-03-01");
+check("no blocking warnings", d0.warnings, []);
+
+// Clear height is never a bare number in the wild.
+const ch = (s) =>
+  parseCompTable(`Address | SF | AC | Clear Height | Sale Date | Price\nX | 1,000 | 1.00 | ${s} | Jan 2026 | $500,000`, {})
+    .comps[0].clearHeightFt;
+check("28'", ch("28'"), 28);
+check("28 FT", ch("28 FT"), 28);
+check("28 feet", ch("28 feet"), 28);
+check(`28'0"`, ch(`28'0"`), 28);
+// A range resolves to the LOWER bound: clear height is a constraint, and what
+// fits under the lowest point is what actually fits.
+check("24-28' takes the lower bound", ch("24-28'"), 24);
+check("em-dash -> null", ch("—"), null);
+
+console.log("\n== surface synonyms brokers actually write ==");
+const surf = (s) =>
+  parseCompTable(`Address | SF | AC | Surface | Sale Date | Price\nX | 1,000 | 1.00 | ${s} | Jan 2026 | $500,000`, {})
+    .comps[0].surfaceType;
+check("Concrete", surf("Concrete"), "concrete");
+check("Asphalt Paved", surf("Asphalt Paved"), "asphalt");
+check("Caliche", surf("Caliche"), "crushed_stone");
+check("Millings", surf("Millings"), "crushed_stone");
+check("Gravel", surf("Gravel"), "gravel");
+check("Native/dirt", surf("Native"), "dirt");
+check("unknown surface -> null", surf("something else"), null);
+
+console.log("\n== sale detail columns ==");
+const SALE_DETAIL = [
+  "Address | SF | AC | Sale Date | Price | Cap Rate | NOI | Buyer | Seller | Broker",
+  "88 Sold St | 12,000 | 3.00 | Feb 2026 | $3,000,000 | 6.5% | $195,000 | Dalfen | Smith Family | Matthews",
+].join("\n");
+const sd = parseCompTable(SALE_DETAIL, {}).comps[0];
+check("cap rate to fraction", sd.capRate, 0.065);
+check("noi", sd.noi, 195000);
+check("buyer", sd.buyer, "Dalfen");
+check("seller", sd.seller, "Smith Family");
+check("sale broker", sd.saleBroker, "Matthews");
+
+console.log("\n== term in years is flagged, not silently wrong ==");
+const yrs = parseCompTable(
+  "Address | SF | AC | Lease Type | Term | Monthly Base | Commenced\nY | 1,000 | 1.00 | NNN | 900 | $1,000 | 1/1/2026",
+  {}
+).comps[0];
+check("implausible term warned", yrs.warnings.some((w) => w.includes("looks like years")), true);
+
 // ------------------------------------------------------------------ garbage
 console.log("\n== nothing parseable ==");
 const empty = parseCompTable("Hey Rhett, give me a call about Conroe when you get a sec.", {});
