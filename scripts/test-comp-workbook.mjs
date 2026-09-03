@@ -23,7 +23,7 @@ const compile = (rel, out) => {
 };
 const parseUrl = compile("../lib/comps/parse.ts", "../lib/comps/.x1.mjs");
 const wbUrl = compile("../lib/comps/fromWorkbook.ts", "../lib/comps/.x2.mjs");
-const { parseCompTable, asPropertyReport } = await import(parseUrl.href);
+const { parseCompTable, asPropertyReport, assessSheet } = await import(parseUrl.href);
 const { workbookToDelimitedText, parseCsv } = await import(wbUrl.href);
 
 let pass = 0, fail = 0;
@@ -237,6 +237,145 @@ const rrClamp = parseCompTable(
   { address: "1 Somewhere Rd", defaultCompType: "lease" }
 );
 ok("day clamped when the target month is shorter", rrClamp.comps[0].dateCommenced === "2030-02-28", String(rrClamp.comps[0].dateCommenced));
+
+// ---- the standard TX IOS lease comp template ----
+// Dalfen's canonical IOS lease comp format. Nine tabs, one of which holds the
+// comps; a stranded reference list out past the last real column; free text
+// containing the delimiter; and a rate column whose label is wrong.
+console.log("  -- standard IOS lease comp template --");
+const IOS_HEADER = [
+  "Address", "City", "State", "CoStar Market", "CoStar Submarket Cluster", "Canvassing Submarket",
+  "Region", "Gross Acres", "Usable Acres", "Parking Spaces", "Building Area", "Landlord",
+  "Institutional Landlord (Yes/No)", "Tenant", "Tenant Usage", "Date", "Term (Months)",
+  "Rate ($/Building SF/Mo)", "Rate ($/Land SF/Mo)", "Rate (AC/Mo)", "Coverage",
+  "Rate (per stall/spot/door)", "Free Rent", "Escalations", "TI", "Lease Type", "Column1",
+  "New/Renewal", "Comments", "Source", "Latitude", "Longitude", "", "City", "CoStar Market (MSA)",
+];
+// Real numbers off the file's first row: 6.19 AC, 20,200 SF, $6,785/AC/mo.
+// $6,785 x 6.19 / 20,200 = $2.079/SF/mo -- and the sheet's "per month" column
+// says 24.95, which is 12x that.
+const iosRow = (over = {}) => {
+  const r = [
+    "2910 Pasadena Fwy", "Pasadena", "TX", "Houston", "East-Southeast Far", "", "South Central",
+    6.19, 6.19, "", 20200, "The Allman Company", "", "Atlanta Pacific Equipment", "",
+    "2026-09-01", 124, 24.95049504950495, 0.1557653195191747, 6785.13731825525,
+    0.07491570129255545, "", 5, 0.0325, "", "NNN", "", "New", "Paved", "NAI: Josh Carl 7/8/2026",
+    29.7117036688035, -95.1728786252406, "", "San Antonio", "San Antonio",
+  ];
+  for (const [i, v] of Object.entries(over)) r[Number(i)] = v;
+  return r;
+};
+
+const wbIos = new ExcelJS.Workbook();
+const shComps = wbIos.addWorksheet("IOS Lease Comps");
+shComps.addRow(IOS_HEADER);
+shComps.addRow(iosRow());
+// A comment containing the delimiter, which used to shatter the row.
+shComps.addRow(iosRow({ 0: "141 Balcones Rd N", 3: "San Antonio", 13: "United Rentals",
+  28: "New asphalt, showroom good | Significant demand for IOS in NW Submarket 3-acres >" }));
+shComps.addRow(iosRow({ 0: "1 Double Net Rd", 25: "NN", 27: "Renewal", 12: "Yes",
+  14: "Equipment rental", 9: 40, 21: 125 }));
+// On-Market: byte-identical header, asking rates.
+const shOnMkt = wbIos.addWorksheet("On-Market Deals");
+shOnMkt.addRow(IOS_HEADER);
+shOnMkt.addRow(iosRow({ 0: "1901 Jasmine Dr", 28: "ON MARKET - asking rate, not a signed lease" }));
+// Machinery, visible.
+const shScreen = wbIos.addWorksheet("Comp Screener");
+shScreen.addRow(["Comp Screener | Subject vs. Lease Comps"]);
+shScreen.addRow(["Address", "City", "Building Area", "Rate (AC/Mo)", "Date", "Distance (mi)", "Total Score"]);
+shScreen.addRow(["1571 Hawthorne Dr", "Conroe", 9000, 5000, "2025-01-01", 47.5, 22.7]);
+const shGeo = wbIos.addWorksheet("Geocode Batch");
+shGeo.addRow(["Table Row", "Address", "City", "State", "Latitude (paste)", "Longitude (paste)", "Lease Date"]);
+shGeo.addRow([231, "615 S Wisteria St", "Mansfield", "TX", "", "", "2025-01-01"]);
+// Hidden lookup: 3 rows here, 16,709 in the real file.
+const shGroup = wbIos.addWorksheet("Submarket Grouping", { state: "hidden" });
+shGroup.addRow(["Address", "City", "Submarket", "Market", "State", "State Abbreviation", "Region"]);
+shGroup.addRow(["228 Irby Ln", "Irving", "Brookhollow / Trinity", "DFW", "Alabama", "AL", "Southeast"]);
+shGroup.addRow(["2645 Irving Blvd", "Dallas", "Brookhollow / Trinity", "DFW", "Arizona", "AZ", "West"]);
+
+const iosWb = await workbookToDelimitedText(Buffer.from(await wbIos.xlsx.writeBuffer()), "ios.xlsx");
+ok("hidden tabs dropped before parsing", iosWb.sheets.length === 4 && iosWb.sheetNames.length === 5,
+  `${iosWb.sheets.length} flattened of ${iosWb.sheetNames.length}`);
+ok("...and the skip is reported", iosWb.warnings.some((w) => /hidden tab/i.test(w)));
+ok("no [object Object] survives", !iosWb.text.includes("[object Object]"));
+
+// -- tab selection --
+const pick = Object.fromEntries(iosWb.sheets.map((s) => [s.name, assessSheet(s.name, s.text)]));
+ok("the comp tab is read", pick["IOS Lease Comps"].include);
+ok("on-market tab excluded", !pick["On-Market Deals"].include);
+ok("...for the right reason", /asking or on-market/i.test(pick["On-Market Deals"].skipped ?? ""),
+  String(pick["On-Market Deals"].skipped));
+// The screener maps real comp fields AND carries a rate, so structure alone
+// can't reject it -- 20 duplicates of comps already on the real tab.
+ok("screener excluded despite looking comp-shaped", !pick["Comp Screener"].include,
+  `${pick["Comp Screener"].fields} fields`);
+ok("geocode helper excluded", !pick["Geocode Batch"].include);
+
+const iosSheet = iosWb.sheets.find((s) => s.name === "IOS Lease Comps");
+// Column alignment: the pipe-bearing comment must not shift anything right.
+const iosLines = iosSheet.text.split("\n");
+ok("no row is wider than the header",
+  iosLines.every((l) => l.split(" | ").length <= IOS_HEADER.length),
+  `widest ${Math.max(...iosLines.map((l) => l.split(" | ").length))} vs ${IOS_HEADER.length}`);
+
+const iosRes = parseCompTable(iosSheet.text, { defaultCompType: "lease" });
+ok("all three comps read", iosRes.comps.length === 3, `got ${iosRes.comps.length}`);
+const i0 = iosRes.comps[0];
+ok("address", i0.address === "2910 Pasadena Fwy", i0.address);
+ok('"CoStar Market" aliased', i0.market === "Houston", String(i0.market));
+ok("...not the stranded col-35 market", i0.market !== "San Antonio");
+ok("...and city is col 2, not the stranded col 34", i0.city === "Pasadena", String(i0.city));
+ok('"CoStar Submarket Cluster" aliased', i0.submarket === "East-Southeast Far", String(i0.submarket));
+ok("region captured", i0.region === "South Central", String(i0.region));
+ok("gross acres -> site", i0.acres === 6.19, String(i0.acres));
+ok("usable acres -> yard", i0.yardAcres === 6.19, String(i0.yardAcres));
+ok('"Building Area" is building SF', i0.buildingSf === 20200, String(i0.buildingSf));
+ok("bare Date column read as commencement", i0.dateCommenced === "2026-09-01", String(i0.dateCommenced));
+ok("term", i0.leaseTermMonths === 124, String(i0.leaseTermMonths));
+// The rate that matters: IOS is priced per acre.
+ok("per-acre rate wins", Math.abs(i0.rent - 6785.137) < 0.01, String(i0.rent));
+ok("...with the per-acre basis", i0.rentBasis === "per_acre_monthly", String(i0.rentBasis));
+// The mislabelled column, caught by arithmetic rather than trusted.
+ok("mislabelled building-SF column detected",
+  i0.warnings.some((w) => /is annual, not monthly/.test(w)), JSON.stringify(i0.warnings));
+ok("coordinates taken from the file", i0.latitude === 29.7117036688035 && i0.longitude === -95.1728786252406,
+  `${i0.latitude},${i0.longitude}`);
+ok("row-level source captured", i0.sourceRef === "NAI: Josh Carl 7/8/2026", String(i0.sourceRef));
+ok("new/renewal captured", i0.dealKind === "new", String(i0.dealKind));
+
+const i1 = iosRes.comps[1];
+ok("pipe in a comment doesn't shift the row", i1.address === "141 Balcones Rd N", i1.address);
+ok("...market still right", i1.market === "San Antonio", String(i1.market));
+ok("...coordinates still right", i1.latitude === 29.7117036688035, String(i1.latitude));
+ok("...and the pipe became a slash in the note", /showroom good \/ Significant/.test(String(i1.notes)),
+  String(i1.notes));
+
+const i2 = iosRes.comps[2];
+ok("NN kept as its own structure", i2.leaseType === "nn", String(i2.leaseType));
+ok("renewal captured", i2.dealKind === "renewal", String(i2.dealKind));
+ok("institutional landlord Yes -> true", i2.institutionalLandlord === true, String(i2.institutionalLandlord));
+ok("tenant usage captured", i2.tenantUsage === "Equipment rental", String(i2.tenantUsage));
+ok("parking spaces captured", i2.parkingSpaces === 40, String(i2.parkingSpaces));
+ok("per-stall rate captured", i2.ratePerStall === 125, String(i2.ratePerStall));
+
+// A multi-market file must not be silently filed under one market.
+const iosOverridden = parseCompTable(iosSheet.text, { defaultCompType: "lease", market: "Conroe" });
+ok("every row took the typed market", iosOverridden.comps.every((c) => c.market === "Conroe"));
+ok("...but the override is reported",
+  iosOverridden.warnings.some((w) => /markets of its own/i.test(w) && /Houston/.test(w) && /San Antonio/.test(w)),
+  JSON.stringify(iosOverridden.warnings));
+ok("no such warning when the market is left blank",
+  !iosRes.warnings.some((w) => /markets of its own/i.test(w)));
+
+// A correctly-labelled monthly column must NOT be flagged as annual.
+const honest = parseCompTable(
+  [["Address", "Usable Acres", "Building Area", "Rate ($/Building SF/Mo)", "Rate (AC/Mo)", "Date"].join(" | "),
+   ["1 Honest Rd", 6.19, 20200, 2.079, 6785.137, "2026-09-01"].join(" | ")].join("\n"),
+  { defaultCompType: "lease" }
+);
+ok("an honest monthly column raises no mislabel warning",
+  !honest.comps[0].warnings.some((w) => /annual, not monthly/.test(w)),
+  JSON.stringify(honest.comps[0].warnings));
 
 // ---- CoStar property report ----
 // The real Oakbrook export: 38 columns of attributes, two buildings sharing a

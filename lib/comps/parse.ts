@@ -28,6 +28,23 @@ export interface ParsedComp {
   camPsfAnnual: number | null;
   /** True when dateCommenced was derived rather than stated. */
   dateEstimated: boolean;
+  /**
+   * Coordinates the source file already carried. The standard TX IOS template
+   * has them on all 282 rows, geocoded once by the team -- so re-resolving the
+   * address through Google would spend money to get a worse answer.
+   */
+  latitude: number | null;
+  longitude: number | null;
+  /** Attributes from the standard IOS template that bear on comp quality. */
+  region: string | null;
+  tenantUsage: string | null;
+  institutionalLandlord: boolean | null;
+  /** "new" | "renewal" | "expansion" -- a renewal isn't an arm's-length rate. */
+  dealKind: string | null;
+  parkingSpaces: number | null;
+  ratePerStall: number | null;
+  /** The row's own provenance, e.g. "CBRE MLA - TX IOS Portfolio 07.02.26". */
+  sourceRef: string | null;
   city: string | null;
   market: string | null;
   submarket: string | null;
@@ -178,6 +195,10 @@ function leaseTypeFrom(raw: string | undefined): string | null {
   if (!s || s === "na") return null;
   if (s.includes("nnn") || s.includes("triplenet")) return "nnn";
   if (s.includes("absolute")) return "absolute_net";
+  // Double net, before the "gross" tests and after nnn so "NNN" can't reach
+  // it. The standard TX IOS comp set has one, and rounding it to "other" loses
+  // a real structure that changes what the rent means.
+  if (s === "nn" || s.includes("doublenet")) return "nn";
   if (s.includes("industrialgross") || s === "ig") return "industrial_gross";
   if (s.includes("modified") || s === "mg") return "modified_gross";
   if (s.includes("gross")) return "gross";
@@ -194,7 +215,11 @@ type Field =
   | "trailerStalls" | "dockDoors" | "gradeDoors" | "surfaceType" | "zoning"
   | "escalations" | "freeRent" | "tiPsf" | "noi" | "buyer" | "seller"
   | "broker" | "leaseExpiry" | "rateAnnual" | "rateMonthly" | "projectName"
-  | "suite" | "camMonthly" | "camPsfAnnual" | "totalMonthly";
+  | "suite" | "camMonthly" | "camPsfAnnual" | "totalMonthly"
+  // The standard TX IOS lease comp template.
+  | "ratePerAcre" | "rateLandSfMonthly" | "ratePerStall" | "dealDate"
+  | "region" | "parkingSpaces" | "institutionalLandlord" | "tenantUsage"
+  | "dealKind" | "sourceRef" | "latitude" | "longitude" | "state";
 
 // Header aliases, matched on letters only so punctuation, case, and typos in
 // spacing don't matter. "addres" is in there because that is genuinely how the
@@ -221,7 +246,11 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // annual $13.20 and a monthly $1.10 are the same rent, and treating either
   // as the other is off by 12x.
   [/^(startingrateannual|annualrate|rateannual|baserentannual|annualbaserent|rentannual)$/, "rateAnnual"],
-  [/^(startingratemonthly|monthlyrate|ratemonthly|baserentmonthly|monthlybaserent)$/, "rateMonthly"],
+  // "ratebuildingsfmo" is how the standard TX IOS template's "Rate ($/Building
+  // SF/Mo)" reduces. It is taken at its word here and then ARITHMETICALLY
+  // CHECKED against the per-acre rate, because in that template the column is
+  // mislabelled: its values are annual. See checkBuildingRateLabel below.
+  [/^(startingratemonthly|monthlyrate|ratemonthly|baserentmonthly|monthlybaserent|ratebuildingsfmo|ratebldgsfmo|ratepersfbldgmo)$/, "rateMonthly"],
   [/^(leasetype|type|structure|leasestructure)$/, "leaseType"],
   [/^(monthlybase|monthlyrent|baserent|monthlybaserent|rent|monthly)$/, "monthlyRent"],
   [/^(leasedate|commenced|commencement|datecommenced|startdate|leasestart|executed)$/, "leaseDate"],
@@ -282,6 +311,36 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(lastsaleprice|previoussaleprice|priorsaleprice)$/, "salePrice"],
   [/^(landareaac|landareaacres)$/, "acres"],
   [/^(landareasf|landareasqft)$/, "lotSf"],
+
+  // ---- the standard TX IOS lease comp template ----------------------------
+  // Dalfen's own format, and the one to treat as canonical. Ordered so the
+  // columns that appear FIRST in that template win the lookup, because it
+  // carries a stranded second "City" and "CoStar Market (MSA)" out at columns
+  // 34-35 left over from a dropdown list -- 32 populated rows whose values
+  // belong to no row at all (a Dallas comp sat next to "Schertz").
+  [/^(costarmarket|costarmsa|costarmarketmsa|msa)$/, "market"],
+  [/^(costarsubmarketcluster|costarsubmarket|submarketcluster|canvassingsubmarket|canvassingsub)$/, "submarket"],
+  [/^(grossacres|totalacres|siteac|grossac)$/, "acres"],
+  [/^(region|division)$/, "region"],
+  [/^(parkingspaces|parkingstalls|spaces|stalls|parking)$/, "parkingSpaces"],
+  [/^(institutionallandlordyesno|institutionallandlord|institutional)$/, "institutionalLandlord"],
+  [/^(tenantusage|tenantuse|usage|useclass|usertype)$/, "tenantUsage"],
+  [/^(newrenewal|newvsrenewal|dealtype|newrenewalexpansion|renewal)$/, "dealKind"],
+  [/^(source|sourcedetail|comp source|sourcenotes)$/, "sourceRef"],
+  [/^(latitude|lat)$/, "latitude"],
+  [/^(longitude|long|lng|lon)$/, "longitude"],
+  [/^(state|st|stateabbreviation)$/, "state"],
+  // Rate columns that name their own denominator. IOS is priced per ACRE per
+  // month, so "Rate (AC/Mo)" is the authoritative one and the others are
+  // conveniences derived from it.
+  [/^(rateacmo|rateperacmo|rateacremo|rateperacremonth|acmo|peracremonthly|rateperacre|acremo)$/, "ratePerAcre"],
+  [/^(ratelandsfmo|ratelandsfmonth|landsfmo|perlandsfmonthly|ratepersflandmo)$/, "rateLandSfMonthly"],
+  [/^(rateperstallspotdoor|rateperstall|ratepersp|perstallmo|ratepersspot|ratesperdoor)$/, "ratePerStall"],
+  // A bare "Date" column. Deliberately NOT a lease signal and NOT a sale
+  // signal: on a lease tab it's the commencement, on a sale tab it's the close,
+  // and voting either way would mistype whole tables -- the same trap that
+  // "Close Date" on a lease tab already set once.
+  [/^(date|dealdate|effectivedate|transactiondate|signeddate)$/, "dealDate"],
 ];
 
 /**
@@ -303,6 +362,43 @@ function feet(raw: string | undefined): number | null {
   if (!single) return null;
   const n = Number(single[1]);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * A latitude or longitude the source file already carried. Rejects 0 and
+ * out-of-range values rather than storing a point in the Gulf of Guinea, which
+ * is where an empty coordinate pair lands.
+ */
+function coord(raw: string | undefined, limit: number): number | null {
+  const n = num(raw);
+  if (n === null || n === 0) return null;
+  return Math.abs(n) <= limit ? n : null;
+}
+
+/** A Yes/No column, which is how the IOS template asks most of its questions. */
+function yesNo(raw: string | undefined): boolean | null {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (!s || s === "-" || s === "—") return null;
+  if (/^(y|yes|true|1|x)$/.test(s)) return true;
+  if (/^(n|no|false|0)$/.test(s)) return false;
+  return null;
+}
+
+/**
+ * New vs renewal, which changes how much a comp is worth as evidence: a renewal
+ * is negotiated against the cost of moving rather than against the market, so
+ * it tends to sit off-market in either direction.
+ */
+function dealKindFrom(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (!s || s === "-" || s === "—") return null;
+  if (/expansion/.test(s)) return "expansion";
+  if (/renew/.test(s)) return "renewal";
+  if (/sublease|sublet/.test(s)) return "sublease";
+  if (/new/.test(s)) return "new";
+  return null;
 }
 
 // Surface as brokers write it -> the stored enum.
@@ -547,6 +643,121 @@ export function htmlToDelimitedText(html: string): string {
   return out.join("\n");
 }
 
+// -- which tab holds the comps ---------------------------------------------
+
+/**
+ * Tabs whose NAME says they aren't signed comps, however comp-shaped they are.
+ *
+ * This is the only place a name gets to override structure, and it's needed:
+ * in the standard TX IOS template the "On-Market Deals" tab has byte-identical
+ * headers to the comp tab -- all 35 columns -- because it's the same template
+ * holding availabilities instead of executed leases. Its own Comments column
+ * says "ON MARKET - asking rate, not a signed lease" on every row. Nothing
+ * structural separates them.
+ *
+ * Same principle as leaving CoStar's "For Sale Price" unmapped: an asking rate
+ * is what a landlord wants, not what a tenant agreed to, and letting the two
+ * average together quietly inflates every range they land near.
+ */
+const NOT_SIGNED_COMPS =
+  /\b(on[-\s]?market|available|availabilit|asking|listing|active|pipeline|prospect)/i;
+
+/**
+ * Tabs that are a workbook's machinery, named unambiguously enough to reject
+ * on the name alone. Hidden tabs are already dropped in fromWorkbook; these are
+ * the ones left visible.
+ *
+ * Structure can't catch these. The standard IOS template's "Comp Screener" is a
+ * 2,000-row scoring tool that MIRRORS the comp table -- it maps 14 comp fields
+ * and carries a rate, so on structure it reads as a perfectly good comp table,
+ * and its 20 populated rows imported as 20 duplicates of comps already on the
+ * real tab. A tab called "Geocode Batch" or "Chart Generating" is a tool by
+ * declaration; taking it at its word is more reliable than inspecting it.
+ */
+const SHEET_MACHINERY =
+  /\b(dashboard|chart|graph|pivot|lookup|reference|mapping|grouping|screener|screen|geocode|geocoding|batch|calc|calculation|scratch|working|instruction|readme|legend|helper|config|settings|validation|drop.?down|price vs time|comparison)\b/i;
+
+/**
+ * Weaker name signals. A tab called "Summary" or "Notes" is usually machinery
+ * but occasionally holds the data, so these only count against a sheet that is
+ * also structurally thin.
+ */
+const SHEET_MACHINERY_SOFT = /\b(summary|notes|template|raw|source data|data)\b/i;
+
+export interface SheetAssessment {
+  name: string;
+  /** True when this sheet should be read for comps. */
+  include: boolean;
+  /** Distinct comp fields its header row mapped. */
+  fields: number;
+  /** Why it was left out, for reporting. Null when included. */
+  skipped: string | null;
+}
+
+/**
+ * Decide whether a tab is a comp table worth parsing.
+ *
+ * Rhett's ask was "it would also need to find the right tab" -- but the answer
+ * isn't to pick ONE tab, because a genuine comp workbook often has two: the
+ * Conroe file has a sale tab and a lease tab and both are real. So this filters
+ * rather than picks, and reports every exclusion with a reason instead of
+ * silently narrowing.
+ *
+ * Structure decides it wherever structure can. A sheet is a comp table when its
+ * header maps enough comp fields AND includes something that was actually
+ * transacted -- a rate or a price. That alone rejects the template's Geocode
+ * Batch (addresses and dates, no rate), its Submarket Grouping lookup, and its
+ * Dashboard. Names only get a vote for the on-market case above, and for
+ * machinery tabs that would otherwise waste a reviewer's attention.
+ */
+export function assessSheet(name: string, text: string): SheetAssessment {
+  const out = (include: boolean, fields: number, skipped: string | null): SheetAssessment => ({
+    name,
+    include,
+    fields,
+    skipped,
+  });
+
+  // Find the best header row in the first stretch of the sheet. Templates put
+  // titles, filter widgets and merged banners above the real header.
+  let best: Field[] = [];
+  const lines = text.split("\n").slice(0, 30);
+  for (const line of lines) {
+    const cells = splitRow(line);
+    if (cells.length < 3) continue;
+    const fields = cells.map((c) => fieldFor(c)).filter(Boolean) as Field[];
+    if (new Set(fields).size > new Set(best).size) best = fields;
+  }
+  const distinct = new Set(best);
+  const fieldCount = distinct.size;
+
+  const hasValue = ["salePrice", "psf", "monthlyRent", "rateAnnual", "rateMonthly", "ratePerAcre", "totalMonthly"].some(
+    (f) => distinct.has(f as Field)
+  );
+
+  if (NOT_SIGNED_COMPS.test(name)) {
+    return out(
+      false,
+      fieldCount,
+      "asking or on-market rates, not signed comps — a quoted rate isn't evidence of what anyone agreed to"
+    );
+  }
+  // Named machinery loses on the name, however comp-shaped it looks.
+  if (SHEET_MACHINERY.test(name)) {
+    return out(false, fieldCount, "a calculation, lookup or charting tab rather than a comp list");
+  }
+  if (!hasValue) {
+    return out(false, fieldCount, "no rent or price column, so there's no comp in it");
+  }
+  if (SHEET_MACHINERY_SOFT.test(name) && fieldCount < 8) {
+    return out(false, fieldCount, "reads as a summary or notes tab rather than a comp list");
+  }
+  if (fieldCount < 4) {
+    return out(false, fieldCount, `only ${fieldCount} recognisable comp column${fieldCount === 1 ? "" : "s"}`);
+  }
+  return out(true, fieldCount, null);
+}
+
 /**
  * A property report is not a comp table. A CoStar property export carries the
  * address, market, submarket, RBA, year built, land area and zoning for a set
@@ -638,6 +849,8 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
   let mapping: (Field | null)[] | null = null;
   let tableType: CompType | null = null;
   let rowsInTable = 0;
+  /** Market values the sheet stated and the caller's context overrode. */
+  const overriddenMarkets = new Set<string>();
 
   for (const line of lines) {
     // These section titles are TERMINAL, not merely a break. Everything after
@@ -727,6 +940,17 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       }
     }
 
+    // A MULTI-MARKET file makes the caller's override actively wrong, and the
+    // caller can't always tell before dropping the file. The standard IOS comp
+    // table spans Dallas, Houston, Fort Worth, San Antonio, Austin and Laredo
+    // in a single tab, so one market typed into the form would file all 282
+    // rows under one of the six. What gets overridden is collected here and
+    // reported once, rather than silently discarded.
+    const ownMarket = get("market")?.trim();
+    if (opts.market && ownMarket && ownMarket.toLowerCase() !== opts.market.trim().toLowerCase()) {
+      overriddenMarkets.add(ownMarket);
+    }
+
     const quotedPsf = num(get("psf"));
     const parsed: ParsedComp = {
       compType,
@@ -745,6 +969,15 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         return buildingSf ? Number(((monthly * 12) / buildingSf).toFixed(4)) : null;
       })(),
       dateEstimated: false,
+      latitude: coord(get("latitude"), 90),
+      longitude: coord(get("longitude"), 180),
+      region: get("region")?.trim() || null,
+      tenantUsage: get("tenantUsage")?.trim() || null,
+      institutionalLandlord: yesNo(get("institutionalLandlord")),
+      dealKind: dealKindFrom(get("dealKind")),
+      parkingSpaces: num(get("parkingSpaces")),
+      ratePerStall: num(get("ratePerStall")),
+      sourceRef: get("sourceRef")?.trim() || null,
       // Context typed by the person importing WINS over the sheet's own
       // columns. It used to be the other way round, which meant a broker's
       // shorthand ("North", "SW") silently overrode a deliberate entry of
@@ -799,7 +1032,10 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
 
     if (compType === "sale") {
       parsed.salePrice = num(get("salePrice"));
-      const d = parseCompDate(get("saleDate"));
+      // A bare "Date" column means the close date on a sale table and the
+      // commencement on a lease table. It's read here, once the type is
+      // settled, rather than voting on what the type is.
+      const d = parseCompDate(get("saleDate")) ?? parseCompDate(get("dealDate"));
       if (d) {
         parsed.closedOn = d.date;
         parsed.datePrecision = d.precision;
@@ -826,7 +1062,21 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       const monthly = num(get("monthlyRent"));
       const rateAnnual = num(get("rateAnnual"));
       const rateMonthly = num(get("rateMonthly"));
-      if (rateMonthly !== null) {
+      // IOS is priced per ACRE per month -- that's the number the market
+      // quotes, negotiates and argues about, and the standard TX IOS template
+      // carries it in its own column ("Rate (AC/Mo)"). So it outranks
+      // everything: a building-SF rate on a yard deal is a derived
+      // convenience, and on a 6-acre site with a 20,000 SF shed it says far
+      // more about the shed than about the deal.
+      const perAcre = num(get("ratePerAcre"));
+      const perLandSf = num(get("rateLandSfMonthly"));
+      if (perAcre !== null) {
+        parsed.rent = perAcre;
+        parsed.rentBasis = "per_acre_monthly";
+      } else if (perLandSf !== null) {
+        parsed.rent = perLandSf;
+        parsed.rentBasis = "per_sf_land_monthly";
+      } else if (rateMonthly !== null) {
         parsed.rent = rateMonthly;
         parsed.rentBasis = "per_sf_bldg_monthly";
       } else if (rateAnnual !== null) {
@@ -839,6 +1089,46 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         parsed.rent = quotedPsf;
         parsed.rentBasis = "per_sf_bldg_monthly";
       }
+      // The per-acre and per-land-SF columns are the same number in different
+      // units, so they must agree. 43,560 SF to the acre.
+      if (perAcre !== null && perLandSf !== null && perLandSf > 0) {
+        const implied = perAcre / SQFT_PER_ACRE;
+        if (Math.abs(implied - perLandSf) / perLandSf > 0.02) {
+          rowWarnings.push(
+            `$${perAcre}/AC/mo implies $${implied.toFixed(4)}/land SF/mo, but the sheet says $${perLandSf}`
+          );
+        }
+      }
+
+      // The mislabelled-column check. Where a per-acre rate, the acreage and a
+      // building size are all present, the true $/building SF/mo is arithmetic
+      // -- so a stated building-SF rate can be audited rather than trusted.
+      //
+      // This is not hypothetical. In the standard TX IOS template the column
+      // headed "Rate ($/Building SF/Mo)" holds ANNUAL figures: all 206 rows
+      // that carry enough numbers to check come out at exactly 12x the monthly
+      // rate. Recording those as monthly would put every building-SF rate an
+      // order of magnitude high.
+      const siteAcres = parsed.yardAcres ?? parsed.acres;
+      if (rateMonthly !== null && rateMonthly > 0 && perAcre !== null && siteAcres && buildingSf) {
+        const trueMonthly = (perAcre * siteAcres) / buildingSf;
+        if (trueMonthly > 0) {
+          const ratio = rateMonthly / trueMonthly;
+          if (Math.abs(ratio - 12) < 0.5) {
+            rowWarnings.push(
+              `"Rate ($/Building SF/Mo)" of $${rateMonthly.toFixed(2)} is annual, not monthly ` +
+                `— the per-acre rate implies $${trueMonthly.toFixed(2)}/SF/mo. Column label is wrong; ` +
+                `the per-acre rate is being used.`
+            );
+          } else if (Math.abs(ratio - 1) > 0.1) {
+            rowWarnings.push(
+              `Building-SF rate $${rateMonthly.toFixed(2)} doesn't reconcile with $${perAcre}/AC/mo ` +
+                `on ${siteAcres} AC and ${buildingSf.toLocaleString()} SF (implies $${trueMonthly.toFixed(2)})`
+            );
+          }
+        }
+      }
+
       // Both bases given: they must agree within rounding, or a column was
       // misread.
       if (rateAnnual !== null && rateMonthly !== null && rateMonthly > 0) {
@@ -849,7 +1139,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
           );
         }
       }
-      const d = parseCompDate(get("leaseDate"));
+      const d = parseCompDate(get("leaseDate")) ?? parseCompDate(get("dealDate"));
       if (d) {
         parsed.dateCommenced = d.date;
         parsed.datePrecision = d.precision;
@@ -932,6 +1222,18 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
           .slice(0, 3),
       },
     };
+  }
+  if (overriddenMarkets.size > 1) {
+    const named = [...overriddenMarkets].sort();
+    warnings.push(
+      `This file covers ${named.length} markets of its own (${named.join(", ")}) and every row was ` +
+        `filed under "${opts.market}" instead. Clear the Market field and re-drop it so each row keeps its own.`
+    );
+  } else if (overriddenMarkets.size === 1) {
+    warnings.push(
+      `The sheet says "${[...overriddenMarkets][0]}" where you typed "${opts.market}" — yours was used. ` +
+        `Clear the Market field if you'd rather keep the sheet's.`
+    );
   }
   return { comps, warnings };
 }

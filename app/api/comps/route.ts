@@ -62,8 +62,14 @@ export async function POST(req: NextRequest) {
   if (!incoming?.length) {
     return NextResponse.json({ error: "No comps supplied" }, { status: 400 });
   }
-  if (incoming.length > 200) {
-    return NextResponse.json({ error: "Too many comps in one save (max 200)" }, { status: 400 });
+  // The standard TX IOS comp table is 282 rows in one tab, so a 200 cap
+  // rejected the canonical file outright. 600 is headroom over that without
+  // inviting someone to drop a 20,000-row lookup sheet.
+  if (incoming.length > 600) {
+    return NextResponse.json(
+      { error: `Too many comps in one save (${incoming.length}; max 600). Split the file.` },
+      { status: 400 }
+    );
   }
 
   // Validate before spending money on geocoding. These mirror the DB's
@@ -108,16 +114,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ saved: 0, duplicates: 0, rejected }, { status: 400 });
   }
 
-  const geo = await geocodeMany(valid, (c) => [c.address, c.city, c.market]);
+  // Coordinates the source file already carried are used as-is. The standard
+  // TX IOS template has them on all 282 rows -- geocoded once by the team, at
+  // the yard rather than at the street centroid -- so sending those addresses
+  // to Google would spend money to get a worse answer. Only rows without them
+  // are resolved.
+  const preset = valid.map((c) => {
+    const lat = Number(c.latitude);
+    const lng = Number(c.longitude);
+    const ok =
+      Number.isFinite(lat) && Number.isFinite(lng) &&
+      lat !== 0 && lng !== 0 && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    return ok ? { lat, lng } : null;
+  });
+  const needGeo = valid.filter((_, i) => !preset[i]);
+  const resolved = await geocodeMany(needGeo, (c) => [c.address, c.city, c.market]);
+  let nextResolved = 0;
+  const geo = valid.map((_, i) =>
+    preset[i]
+      ? { lat: preset[i]!.lat, lng: preset[i]!.lng, precision: "supplied" as const }
+      : resolved[nextResolved++]
+  );
 
   const supabase = getServiceClient();
   let saved = 0;
   let duplicates = 0;
   const failed: { address: string; reason: string }[] = [];
 
-  // Inserted one at a time so a single duplicate doesn't reject the batch.
-  // Re-pasting the same email is expected behaviour, not an error -- the unique
-  // index on (address, type, date) is what makes it idempotent.
+  const rows: { address: string; row: Record<string, unknown> }[] = [];
   for (let i = 0; i < valid.length; i++) {
     const c = valid[i];
     const g = geo[i];
@@ -162,8 +186,26 @@ export async function POST(req: NextRequest) {
       zoning: str(c.zoning),
       outdoor_storage_permitted:
         typeof c.outdoorStoragePermitted === "boolean" ? c.outdoorStoragePermitted : null,
+      // From the standard IOS comp template. Each of these changes how much a
+      // comp is worth as evidence rather than just describing the site.
+      region: str(c.region),
+      tenant_usage: str(c.tenantUsage),
+      institutional_landlord:
+        typeof c.institutionalLandlord === "boolean" ? c.institutionalLandlord : null,
+      deal_kind: ["new", "renewal", "expansion", "sublease"].includes(c.dealKind)
+        ? c.dealKind
+        : null,
+      parking_spaces: (() => {
+        const n = plain(c.parkingSpaces);
+        return n === null ? null : Math.max(0, Math.round(n));
+      })(),
+      rate_per_stall: money(c.ratePerStall),
       source: ["manual", "excel", "email", "import"].includes(body.source) ? body.source : "manual",
-      source_ref: str(body.sourceRef),
+      // The row's own provenance beats the file's. The IOS template carries a
+      // per-row Source ("CBRE MLA - TX IOS Portfolio Lease Comps 07.02.26",
+      // "NAI: Josh Carl 7/8/2026"), which is far more use for chasing a number
+      // back to its origin than the filename it arrived in.
+      source_ref: str(c.sourceRef) ?? str(body.sourceRef),
       created_by: user.email,
       status: "confirmed",
       date_precision: ["day", "month", "quarter", "year"].includes(c.datePrecision)
@@ -208,18 +250,39 @@ export async function POST(req: NextRequest) {
       row.occupancy_at_sale = plain(c.occupancyAtSale);
     }
 
-    const { error } = await supabase.from("comps").insert(row);
+    rows.push({ address: c.address, row });
+  }
+
+  // Written in chunks, falling back to one-at-a-time only for a chunk that
+  // hits something.
+  //
+  // Re-dropping the same file is expected behaviour rather than an error -- the
+  // unique index is what makes the import idempotent -- and a single insert per
+  // row is what keeps one duplicate from rejecting the batch. But the standard
+  // IOS comp table is 282 rows, and 282 sequential round trips is slow enough
+  // to threaten the function timeout. So: try the chunk whole, and if anything
+  // in it conflicts, replay that chunk row by row to find out exactly which
+  // rows they were. Clean imports pay for one round trip per 50 rows; repeat
+  // imports pay the old cost only on the chunks that actually collide.
+  const CHUNK = 50;
+  for (let start = 0; start < rows.length; start += CHUNK) {
+    const chunk = rows.slice(start, start + CHUNK);
+    const { error } = await supabase.from("comps").insert(chunk.map((r) => r.row));
     if (!error) {
-      saved++;
-    } else if (error.code === "23505") {
-      duplicates++; // already in the repository
-    } else {
-      failed.push({ address: c.address, reason: error.message });
+      saved += chunk.length;
+      continue;
+    }
+    for (const { address, row } of chunk) {
+      const { error: rowErr } = await supabase.from("comps").insert(row);
+      if (!rowErr) saved++;
+      else if (rowErr.code === "23505") duplicates++; // already in the repository
+      else failed.push({ address, reason: rowErr.message });
     }
   }
 
   const centroids = geo.filter((g) => g?.precision === "approximate").length;
   const ungeocoded = geo.filter((g) => !g).length;
+  const supplied = geo.filter((g) => g?.precision === "supplied").length;
 
   return NextResponse.json({
     saved,
@@ -228,6 +291,6 @@ export async function POST(req: NextRequest) {
     failed,
     // Surfaced so a batch of comps that can't be distance-matched is visible
     // rather than quietly useless.
-    geocoding: { centroidOnly: centroids, failed: ungeocoded },
+    geocoding: { centroidOnly: centroids, failed: ungeocoded, fromFile: supplied },
   });
 }

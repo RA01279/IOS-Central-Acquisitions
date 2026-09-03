@@ -41,6 +41,16 @@ interface DraftComp {
   /** One tenancy inside a multi-tenant building, off a rent roll. */
   suite?: string | null;
   camPsfAnnual?: number | null;
+  /** Coordinates the source file already carried; saved without re-geocoding. */
+  latitude?: number | null;
+  longitude?: number | null;
+  region?: string | null;
+  tenantUsage?: string | null;
+  institutionalLandlord?: boolean | null;
+  dealKind?: string | null;
+  parkingSpaces?: number | null;
+  ratePerStall?: number | null;
+  sourceRef?: string | null;
   quotedPsf: number | null;
   warnings: string[];
   /** Which workbook tab this came from, when the source was a spreadsheet. */
@@ -350,6 +360,13 @@ export default function CompIntakeForm({
         over the spreadsheet&apos;s own Market/Submarket columns; where you leave one blank, the
         sheet fills it in and the table below shows what each row got.
       </p>
+      <p className="hint">
+        <strong>Leave Market and City blank for a multi-market file.</strong> A file that carries
+        its own market per row — like the standard TX IOS comp table, which spans Dallas, Houston,
+        Fort Worth, San Antonio, Austin and Laredo on one tab — will otherwise have every row filed
+        under whatever you type. If that happens the warnings say so and name the markets you
+        overrode, so it&apos;s recoverable rather than silent.
+      </p>
 
       {/* A rent roll is contracted rent at a comparable property, which is
           better evidence than an asking rate -- but it arrives shaped unlike
@@ -611,7 +628,7 @@ export default function CompIntakeForm({
                   <th />
                   <th>Type</th>
                   <th>Address</th>
-                  <th>Submarket</th>
+                  <th>Market · Submarket</th>
                   <th>Date</th>
                   <th>Price / Rent</th>
                   <th>Basis</th>
@@ -659,7 +676,12 @@ export default function CompIntakeForm({
                           </div>
                         )}
                       </td>
-                      <td className="muted">{d.submarket ?? "—"}</td>
+                      {/* Market shown, not just submarket: a multi-market file
+                          is exactly where a wrong market is worth catching
+                          before 282 rows are filed under one metro. */}
+                      <td className="muted">
+                        {[d.market, d.submarket].filter(Boolean).join(" · ") || "—"}
+                      </td>
                       <td>
                         <input
                           type="date"

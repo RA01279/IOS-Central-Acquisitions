@@ -3,7 +3,7 @@
 // NOTHING -- the review step in the UI is what saves, via POST /api/comps.
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { asPropertyReport, parseCompInput } from "@/lib/comps/parse";
+import { asPropertyReport, assessSheet, parseCompInput } from "@/lib/comps/parse";
 import { workbookToDelimitedText } from "@/lib/comps/fromWorkbook";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +70,15 @@ export async function POST(req: NextRequest) {
         warnings: string[];
         propertyReport?: boolean;
       }[] = [];
-      for (const sheet of sheets) {
+      // Which tabs are comps at all. A real comp workbook has more than one
+      // (the Conroe file has a sale tab and a lease tab, both genuine), so this
+      // filters rather than picks -- and every exclusion is reported with its
+      // reason instead of quietly narrowing the import.
+      const assessed = sheets.map((s) => assessSheet(s.name, s.text));
+      const usable = sheets.filter((_, i) => assessed[i].include);
+      const excluded = assessed.filter((a) => !a.include);
+
+      for (const sheet of usable) {
         // The tab's own name is the last word on comp type when the header
         // columns are ambiguous -- "Sale Comps" and "Lease Comps" are not
         // subtle. Header signals still win where they're decisive.
@@ -110,13 +118,31 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Naming the tabs that were left out, and why. A workbook with nine tabs
+      // where only one holds comps should say so out loud -- silently reading
+      // one of nine looks identical to silently reading the wrong one.
+      const excludedWarnings = excluded.map((a) => `Skipped tab "${a.name}": ${a.skipped}.`);
+      if (usable.length && excluded.length) {
+        excludedWarnings.unshift(
+          `Read ${usable.length} of ${sheets.length} visible tab${sheets.length === 1 ? "" : "s"}: ` +
+            usable.map((s) => `"${s.name}"`).join(", ") + "."
+        );
+      }
+      if (!usable.length && sheets.length) {
+        excludedWarnings.unshift(
+          `None of the ${sheets.length} visible tabs read as a comp table. A comp table needs a ` +
+            `header row with an address and a rent or price column.`
+        );
+      }
+
       return NextResponse.json({
         comps,
         properties,
-        warnings: [...warnings, ...sheetWarnings],
+        warnings: [...warnings, ...excludedWarnings, ...sheetWarnings],
         source: "excel",
         sheetNames,
         perSheet,
+        tabs: assessed,
       });
     }
 
