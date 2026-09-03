@@ -41,6 +41,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const url = new URL(req.url);
   const radiusMiles = Number(url.searchParams.get("radiusMiles") ?? "5") || 5;
   const categories = parseCategoriesParam(url.searchParams.get("categories")) ?? DEFAULT_CATEGORIES;
+  // "hybrid" is satellite plus road and place labels -- often the better IC
+  // basemap, since viewers orient off the highway names. Anything else falls
+  // back to plain satellite.
+  const maptype = url.searchParams.get("maptype") === "hybrid" ? "hybrid" : "satellite";
 
   const supabase = getServiceClient();
 
@@ -68,13 +72,25 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   try {
     const center = await geocode(fullAddress);
     const tenants = await searchNearby({ ...center, radiusMiles, categories });
-    const { imageBase64, zoom } = await fetchSatelliteImage({ ...center, radiusMiles });
+    const { imageBase64, zoom } = await fetchSatelliteImage({ ...center, radiusMiles, maptype });
 
     return NextResponse.json({
       address: fullAddress,
       center,
       radiusMiles,
       zoom,
+      maptype,
+      // Reported rather than assumed by the client. Both the preview overlay
+      // and the .pptx have to project lat/lng onto this exact image, and
+      // hardcoding its dimensions in two places is what let them silently
+      // disagree with what the API actually returns.
+      mapLogicalSize: MAP_LOGICAL_SIZE,
+      mapScale: MAP_SCALE,
+      // The basemap itself, as a data: URI. Was being fetched and then left out
+      // of this response, so the preview rendered a broken <img> and the .pptx
+      // got an empty image box -- pins on white, with the Static Maps call paid
+      // for and discarded on every generate.
+      imageBase64,
       tenants,
     });
   } catch (err: any) {
@@ -161,29 +177,47 @@ async function searchNearby({
   return tenants;
 }
 
+// The Maps Static API caps `size` at 640x640 LOGICAL pixels. A larger request
+// isn't an error -- it's silently clamped -- which is how this ended up asking
+// for 1280x1024 and getting 640x640 back, while the zoom maths and the client's
+// projection both believed they had 1280 px of width to work with. Everything
+// downstream was consequently framed for twice the coverage it actually had.
+// scale=2 is the one legitimate way to get more pixels: it doubles the raster
+// (1280x1280 out) without changing the geographic coverage.
+const MAP_LOGICAL_SIZE = 640;
+const MAP_SCALE = 2;
+
 async function fetchSatelliteImage({
   lat,
   lng,
   radiusMiles,
+  maptype,
 }: {
   lat: number;
   lng: number;
   radiusMiles: number;
+  maptype: string;
 }): Promise<{ imageBase64: string; zoom: number }> {
   const zoom = zoomForRadiusMiles(radiusMiles, lat);
   const url = new URL("https://maps.googleapis.com/maps/api/staticmap");
   url.searchParams.set("center", `${lat},${lng}`);
   url.searchParams.set("zoom", String(zoom));
-  url.searchParams.set("size", "1280x1024"); // logical px -- see zoomForRadiusMiles note
-  url.searchParams.set("scale", "2"); // output resolution only, doesn't change coverage
-  url.searchParams.set("maptype", "satellite");
+  url.searchParams.set("size", `${MAP_LOGICAL_SIZE}x${MAP_LOGICAL_SIZE}`);
+  url.searchParams.set("scale", String(MAP_SCALE));
+  url.searchParams.set("maptype", maptype);
+  // format is the difference between real satellite imagery and something that
+  // looks like a grayscale scan of it. The API defaults to png8 -- a 256-colour
+  // indexed palette -- which posterises aerial photography into flat blue-grey
+  // mush. jpg gives 24-bit truecolour (and a third of the bytes), which is the
+  // right trade for a photographic basemap; lossy artefacts are invisible here.
+  url.searchParams.set("format", "jpg");
   url.searchParams.set("key", GOOGLE_KEY!);
 
   const r = await fetch(url.toString());
   if (!r.ok) throw new Error(`Static Maps request failed: ${r.status} ${await r.text()}`);
 
   const buf = Buffer.from(await r.arrayBuffer());
-  return { imageBase64: `data:image/png;base64,${buf.toString("base64")}`, zoom };
+  return { imageBase64: `data:image/jpeg;base64,${buf.toString("base64")}`, zoom };
 }
 
 function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -196,14 +230,19 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Zoom pick so the requested radius comfortably fills the "size" (logical px --
-// scale=2 only increases output raster resolution/DPI, not the geographic coverage).
+// Closest zoom that still fits the whole requested radius on the image.
+//
+// Measured against MAP_LOGICAL_SIZE, not the old hardcoded 1280: the image is
+// square and 640 logical px per side, so using 1280 asked for a zoom covering
+// twice the ground the image actually shows, and tenants past roughly half the
+// radius landed outside the frame. The margin is only 2% because zoom steps are
+// powers of two -- a bigger cushion just tips it to the next level out and
+// throws away half the detail for nothing.
 function zoomForRadiusMiles(radiusMiles: number, lat: number): number {
-  const diameterMeters = radiusMiles * 2 * 1609.34 * 1.15; // +15% margin
-  const logicalWidthPx = 1280; // must match the "size" width above
+  const diameterMeters = radiusMiles * 2 * 1609.34 * 1.02;
   for (let z = 20; z >= 1; z--) {
     const metersPerPixel = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
-    if (metersPerPixel * logicalWidthPx >= diameterMeters) return z;
+    if (metersPerPixel * MAP_LOGICAL_SIZE >= diameterMeters) return z;
   }
-  return 13;
+  return 12;
 }
