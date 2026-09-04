@@ -23,6 +23,8 @@ export interface CompRow {
   date_estimated: boolean | null;
   city: string | null;
   state: string | null;
+  latitude: number | null;
+  longitude: number | null;
   market: string | null;
   submarket: string | null;
   asset_class: string | null;
@@ -148,6 +150,20 @@ function SelectField({
   );
 }
 
+/**
+ * Precisions good enough to measure distance from. Must agree with
+ * isUsableForDistance() in lib/comps/match.ts -- an "approximate" comp is a
+ * city or ZIP centroid, and measuring from it is measuring to the middle of a
+ * postcode.
+ */
+const LOCATED = new Set([
+  "rooftop",
+  "range_interpolated",
+  "geometric_center",
+  "supplied",
+  "manual",
+]);
+
 const YES_NO = [
   ["", "—"],
   ["true", "Yes"],
@@ -177,6 +193,8 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
     suite: v(comp.suite),
     city: v(comp.city),
     state: v(comp.state),
+    latitude: v(comp.latitude),
+    longitude: v(comp.longitude),
     market: v(comp.market),
     submarket: v(comp.submarket),
     assetClass: v(comp.asset_class),
@@ -246,7 +264,7 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
       // Only the fields this comp type shows, so the other type's columns are
       // left untouched rather than nulled.
       const shared = [
-        "address", "projectName", "suite",
+        "address", "projectName", "suite", "latitude", "longitude",
         "city", "state", "market", "submarket", "assetClass", "buildingSf", "acres",
         "yardAcres", "coveragePct", "yearBuilt", "clearHeightFt", "officeSf",
         "dockHighDoors", "gradeLevelDoors", "powerAmps", "surfaceType", "fenced",
@@ -404,6 +422,50 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
           </div>
         </>
       )}
+
+      {/* Coordinates, for the addresses that will never geocode: build-to-suits
+          with no street number, intersections, stubs like "Victory Circle".
+          Google answers those with a ZIP centroid, which the matcher refuses to
+          measure distance from -- so a pin dropped by hand is the only fix, and
+          it sticks (marked 'manual', and no re-geocode runs over it).
+
+          Collapsed unless it's needed: open by default only when this comp
+          can't currently be distance-matched, since that's the one case where
+          somebody has to come in here and do this. */}
+      <details className="comp-rentroll" open={!LOCATED.has(comp.geocode_precision ?? "")}>
+        <summary>
+          Coordinates
+          {LOCATED.has(comp.geocode_precision ?? "")
+            ? ` · ${comp.geocode_precision?.replace(/_/g, " ")}`
+            : " · not distance-matchable"}
+        </summary>
+        <div className="grid-2" style={{ marginTop: 10 }}>
+          {field("Latitude", "latitude")}
+          {field("Longitude", "longitude")}
+        </div>
+        <p className="hint">
+          {LOCATED.has(comp.geocode_precision ?? "") ? (
+            <>
+              This comp is located well enough to measure distance from
+              {comp.geocode_precision === "supplied" && " (coordinates came with the source file)"}
+              {comp.geocode_precision === "manual" && " (pinned by hand)"}. Editing these overrides
+              it.
+            </>
+          ) : (
+            <>
+              <strong>
+                {comp.latitude != null
+                  ? "Google could only place this at a city or ZIP centroid,"
+                  : "This address wouldn't geocode at all,"}
+              </strong>{" "}
+              so it&apos;s scored on recency, size and coverage but left out of every distance
+              calculation — the middle of a ZIP code isn&apos;t where the deal is. Right-click the
+              spot in Google Maps and choose the lat/long it offers, then paste the two numbers
+              here. Saving marks them as pinned by hand and nothing will re-geocode over them.
+            </>
+          )}
+        </p>
+      </details>
 
       {field("Notes", "notes")}
 

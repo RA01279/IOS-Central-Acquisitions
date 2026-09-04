@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ASSET_CLASS_LABELS } from "@/lib/deals";
 import { isUsableForDistance } from "@/lib/geocode";
@@ -114,10 +115,41 @@ export default async function CompsPage() {
             </span>
             <span className="stat-label">Not distance-matchable</span>
             {unmatched.length > 0 && (
-              <span className="stat-delta stat-delta-bad">address too vague to geocode</span>
+              <span className="stat-delta stat-delta-bad">fixable — see below</span>
             )}
           </div>
         </div>
+
+        {/* A count on its own is a dead end. These comps need one specific
+            thing done to each, so name them and say what it is. */}
+        {unmatched.length > 0 && (
+          <div className="warning">
+            <p style={{ margin: 0 }}>
+              <strong>
+                {unmatched.length} comp{unmatched.length === 1 ? "" : "s"} can&apos;t be
+                distance-matched.
+              </strong>{" "}
+              Google could only place {unmatched.length === 1 ? "it" : "them"} at a city or ZIP
+              centroid, so {unmatched.length === 1 ? "it is" : "they are"} still scored on recency,
+              size and coverage but left out of every distance calculation — the middle of a ZIP
+              code isn&apos;t where the deal is. Addresses like these never geocode: build-to-suits
+              with no street number, intersections, stubs. The fix is to drop a pin: open the comp,
+              expand <em>Coordinates</em>, and paste a lat/long from Google Maps.
+            </p>
+            <ul style={{ marginBottom: 0 }}>
+              {unmatched.slice(0, 12).map((c: any) => (
+                <li key={c.id}>
+                  <Link href={`/comps/${c.id}`}>{c.address}</Link>
+                  {c.city ? <span className="muted"> · {c.city}</span> : null}
+                  {c.market ? <span className="muted">, {c.market}</span> : null}
+                </li>
+              ))}
+              {unmatched.length > 12 && (
+                <li className="muted">…and {unmatched.length - 12} more</li>
+              )}
+            </ul>
+          </div>
+        )}
 
         <CompsMap comps={mapRows as CompMapRow[]} />
 

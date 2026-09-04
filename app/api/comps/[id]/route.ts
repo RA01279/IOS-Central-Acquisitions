@@ -160,6 +160,38 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (key in body) update[spec.column] = spec.coerce(body[key]);
   }
 
+  // COORDINATES TYPED BY A PERSON WIN, and are not re-geocoded over.
+  //
+  // Some addresses will never resolve -- "IH10 East BTS", "Beltway 8 & Fellows
+  // Road", "Victory Circle" -- and Google answers each with a ZIP centroid the
+  // matcher now refuses to measure from. Dropping a pin is the only fix, so it
+  // has to stick: marked 'manual', and the re-geocode below is skipped
+  // entirely, or correcting the address would immediately throw the pin away.
+  const latIn = "latitude" in body ? plain(body.latitude) : undefined;
+  const lngIn = "longitude" in body ? plain(body.longitude) : undefined;
+  const pinned = latIn !== undefined || lngIn !== undefined;
+  if (pinned) {
+    const lat = latIn ?? plain(existing.latitude);
+    const lng = lngIn ?? plain(existing.longitude);
+    if (lat === null || lng === null) {
+      // Clearing one of the pair, which means clearing the point.
+      update.latitude = null;
+      update.longitude = null;
+      update.geocode_precision = null;
+    } else {
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        return NextResponse.json(
+          { error: `Those coordinates are off the map (${lat}, ${lng}). Latitude is -90 to 90, longitude -180 to 180.` },
+          { status: 400 }
+        );
+      }
+      update.latitude = lat;
+      update.longitude = lng;
+      update.geocode_precision = "manual";
+      update.geocoded_at = new Date().toISOString();
+    }
+  }
+
   // A commencement date typed by a human is a stated date, not an inference
   // any more -- so editing it clears the estimate flag and the coarse
   // precision that came with it. Leaving the flag set would keep discounting a
@@ -209,7 +241,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // the lookup or the coordinates stay where they were.
     ("state" in body && update.state !== existing.state) ||
     ("market" in body && update.market !== existing.market);
-  if (addressChanged && merged.address) {
+  if (addressChanged && !pinned && merged.address) {
     const g = await geocodeAddress(
       [merged.address as string, merged.city as string, merged.market as string],
       { state: merged.state as string | null }

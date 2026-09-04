@@ -17,9 +17,10 @@ writeFileSync(
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
   }).outputText
 );
-const { unitValue, ageMonths, scoreComps, suggestRange, haversineMiles, formatUnit } = await import(
-  tmp.href
-);
+const {
+  unitValue, ageMonths, scoreComps, suggestRange, haversineMiles, formatUnit,
+  isUsableForDistance,
+} = await import(tmp.href);
 
 // rates.ts is the display side of the same arithmetic; the two must not drift.
 const ratesSrc = fileURLToPath(new URL("../lib/comps/rates.ts", import.meta.url));
@@ -103,6 +104,11 @@ const SUBJECT = {
 };
 const mk = (id, over = {}) => ({
   id, comp_type: "sale", address: `${id} St`, latitude: 30.32, longitude: -95.46,
+  // Located, unless a test says otherwise. Without this every fixture comp is
+  // treated as unlocated and drops out of distance scoring -- which is the
+  // correct handling for an unknown precision, and exactly why it has to be
+  // stated here rather than left to default.
+  geocode_precision: "rooftop",
   building_sf: 10000, lot_sf: 2 * ACRE, coverage_pct: 10000 / (2 * ACRE),
   sale_price: 1500000, closed_on: "2026-06-01", submarket: "Conroe", ...over,
 });
@@ -283,6 +289,57 @@ const estNone = suggestRange(
 );
 eq("stated dates raise no estimate caveat", estNone.caveats.some((c) => /dated by estimate/i.test(c)), false);
 
+console.log("\n== a centroid is not a location ==");
+// Google always answers. Where it can't resolve a street address it returns
+// the city or ZIP centroid flagged APPROXIMATE -- so measuring distance from
+// it measures to the middle of a postcode, and a comp several miles out scores
+// as if it were next door. It used to.
+const CENTROID = { ...mk("centroid", { geocode_precision: "approximate" }) };
+const PRECISE = { ...mk("precise", { geocode_precision: "rooftop" }) };
+const both = scoreComps([CENTROID, PRECISE], SUBJECT, "sale", { today: TODAY });
+const cent = both.find((s) => s.comp.id === "centroid");
+const prec = both.find((s) => s.comp.id === "precise");
+eq("a precise comp gets a distance", typeof prec.distanceMi, "number");
+eq("a centroid gets NO distance", cent.distanceMi, null);
+eq("...and says why", cent.excluded, "location approximate");
+// It must still be RANKED though -- recency, size and coverage are all known,
+// and throwing the comp away for our geocoding failure would be worse.
+eq("...but is still scored on what is known", cent.score > 0, true);
+// A comp with no coordinates at all needs a different fix, so it reads
+// differently: that one needs an address, this one needs a pin.
+const nowhere = scoreComps([mk("nowhere", { latitude: null, longitude: null })], SUBJECT, "sale", { today: TODAY });
+eq("no coordinates reads as not located", nowhere[0].excluded, "not located");
+
+// Every precision that means "we know where this is".
+for (const p of ["rooftop", "range_interpolated", "geometric_center", "supplied", "manual"]) {
+  eq(`${p} is located`, isUsableForDistance(p), true);
+}
+for (const p of ["approximate", null, undefined, "", "guess"]) {
+  eq(`${JSON.stringify(p)} is not located`, isUsableForDistance(p), false);
+}
+
+// The copy in match.ts must not drift from the geocoder's own version. Two
+// modules, one rule; if they disagree the map and the matcher disagree.
+const geoSrc = fileURLToPath(new URL("../lib/geocode.ts", import.meta.url));
+const geoTmp = new URL("../lib/.geocode.match.mjs", import.meta.url);
+writeFileSync(
+  fileURLToPath(geoTmp),
+  ts.transpileModule(readFileSync(geoSrc, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
+  }).outputText
+);
+const geo = await import(geoTmp.href);
+for (const p of [
+  "rooftop", "range_interpolated", "geometric_center", "supplied", "manual",
+  "approximate", null, undefined, "", "nonsense",
+]) {
+  eq(
+    `match.ts and geocode.ts agree on ${JSON.stringify(p)}`,
+    isUsableForDistance(p),
+    geo.isUsableForDistance(p)
+  );
+}
+
 console.log("\n== rate views: one rent, three ways ==");
 // The real first row of the standard IOS template: 6.19 usable acres, 20,200
 // SF building, $6,785.137/AC/mo. Every derived figure below is checkable by
@@ -335,5 +392,6 @@ eq("null unit", formatUnit(null, "sale", "building"), "—");
 
 unlinkSync(fileURLToPath(tmp));
 unlinkSync(fileURLToPath(ratesTmp));
+unlinkSync(fileURLToPath(geoTmp));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

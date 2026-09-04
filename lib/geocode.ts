@@ -118,7 +118,10 @@ export function isUsableForDistance(precision: string | null | undefined): boole
     precision === "rooftop" ||
     precision === "range_interpolated" ||
     precision === "geometric_center" ||
-    precision === "supplied"
+    precision === "supplied" ||
+    // Pinned by a person, for the addresses that will never geocode --
+    // build-to-suits with no street number, intersections, stubs.
+    precision === "manual"
   );
 }
 

@@ -170,6 +170,25 @@ export function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: n
  * the same comp shows one number in the panel's ranking and a different one on
  * the line right underneath it.
  */
+/**
+ * Precise enough to measure distance from.
+ *
+ * Deliberately a local copy of isUsableForDistance() in lib/geocode.ts rather
+ * than an import: this module is pure and gets compiled on its own by its test
+ * harness, and a dependency on the geocoder would drag fetch and an API key
+ * into it. scripts/test-comp-match.mjs compiles BOTH files and asserts the two
+ * agree on every precision value, so the copy can't drift silently.
+ */
+export function isUsableForDistance(precision: string | null | undefined): boolean {
+  return (
+    precision === "rooftop" ||
+    precision === "range_interpolated" ||
+    precision === "geometric_center" ||
+    precision === "supplied" ||
+    precision === "manual"
+  );
+}
+
 function acresOf(comp: CompRecord): number | null {
   const yard = comp.yard_acres ? Number(comp.yard_acres) : null;
   if (yard && Number.isFinite(yard)) return yard;
@@ -278,7 +297,25 @@ export function scoreComps(
   const scored: ScoredComp[] = comps
     .filter((c) => c.comp_type === compType)
     .map((c) => {
+      // A CENTROID IS NOT A LOCATION.
+      //
+      // Google's geocoder always answers: where it can't resolve a street
+      // address it returns the city or ZIP centroid and flags it APPROXIMATE.
+      // Measuring distance from that is measuring distance to the middle of a
+      // ZIP code, and a comp several miles away then scores as if it were next
+      // door. lib/geocode.ts has said so since it was written -- "callers get
+      // the precision so they can refuse to use a centroid for distance" --
+      // and this caller wasn't refusing.
+      //
+      // So an imprecise comp is treated as UNLOCATED rather than as wrong:
+      // distance drops out, its weight renormalises across the factors that
+      // are known, and the comp is still ranked on recency, size and coverage.
+      // That's the same handling a comp with no coordinates at all gets, which
+      // is right -- both cases mean "we don't know where this is", and the one
+      // that merely looks like it knows is the more dangerous of the two.
+      const located = isUsableForDistance(c.geocode_precision);
       const distanceMi =
+        located &&
         subject.lat != null && subject.lng != null && c.latitude != null && c.longitude != null
           ? haversineMiles(subject.lat, subject.lng, Number(c.latitude), Number(c.longitude))
           : null;
@@ -320,7 +357,12 @@ export function scoreComps(
       let exclusion: string | undefined;
       if (excluded.has(c.id)) exclusion = "ruled out";
       else if (value === null) exclusion = basis === "building" ? "no building SF" : "no land area";
-      else if (distanceMi === null) exclusion = "not located";
+      // Distinguished, because they need different fixes: one needs an address
+      // that geocodes, the other needs coordinates typed in by hand.
+      else if (distanceMi === null) {
+        exclusion =
+          c.latitude != null && !located ? "location approximate" : "not located";
+      }
       else if (distanceMi > radiusMiles) exclusion = `${distanceMi.toFixed(1)} mi away`;
       else if (age === null) exclusion = "no date";
       else if (age > maxAgeMonths) exclusion = `${Math.round(age)} months old`;
