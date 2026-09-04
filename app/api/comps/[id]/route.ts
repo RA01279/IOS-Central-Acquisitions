@@ -185,6 +185,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           { status: 400 }
         );
       }
+      // 0,0 passes every range check and is in the Gulf of Guinea. It's what
+      // an empty field coerced to a number looks like, never a yard.
+      if (lat === 0 && lng === 0) {
+        return NextResponse.json(
+          { error: "0, 0 is in the Atlantic. Clear both fields to remove the location instead." },
+          { status: 400 }
+        );
+      }
       update.latitude = lat;
       update.longitude = lng;
       update.geocode_precision = "manual";

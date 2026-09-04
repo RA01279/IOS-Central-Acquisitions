@@ -8,6 +8,7 @@ import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
 import MapView, { type MapPoint } from "@/components/MapView";
+import CompLocationFixer from "@/components/CompLocationFixer";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -147,10 +148,16 @@ export default async function CompDetailPage({ params }: { params: { id: string 
           <span className="stage-badge">{isSale ? "Sale comp" : "Lease comp"}</span>
         </div>
 
+        {/* The banner used to end "fix the address below to place it", which
+            is advice that cannot work for the addresses that actually land
+            here -- there is no street number in "IH10 East BTS" for a
+            geocoder to find, however it's spelled. It points at the picker
+            below instead, which is the fix that does work. */}
         {!isUsableForDistance(comp.geocode_precision) && (
           <div className="archived-banner">
-            This comp isn&apos;t precisely located ({comp.geocode_precision ?? "no geocode"}), so it
-            can&apos;t take part in distance matching. Fix the address below to place it.
+            This comp isn&apos;t precisely located ({comp.geocode_precision ?? "no geocode"}), so
+            it&apos;s left out of distance matching — it still counts on recency, size and
+            coverage. <a href="#place">Place it on the map</a> to fix that.
           </div>
         )}
 
@@ -283,6 +290,20 @@ export default async function CompDetailPage({ params }: { params: { id: string 
             <CompEditor comp={comp as CompRow} />
           </div>
         </section>
+
+        {/* Only for a comp that needs it. Placed above the read-only Location
+            map so the banner's link lands somewhere useful. */}
+        {!isUsableForDistance(comp.geocode_precision) && (
+          <div id="place">
+            <CompLocationFixer
+              compId={comp.id}
+              address={comp.address}
+              precision={comp.geocode_precision}
+              currentLat={comp.latitude != null ? Number(comp.latitude) : null}
+              currentLng={comp.longitude != null ? Number(comp.longitude) : null}
+            />
+          </div>
+        )}
 
         {points.length > 0 && (
           <section className="panel">

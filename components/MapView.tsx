@@ -49,17 +49,29 @@ export default function MapView({
   legend,
   height = 460,
   emptyMessage = "Nothing to show on the map yet.",
+  onPick,
 }: {
   points: MapPoint[];
   legend?: MapLegendItem[];
   height?: number;
   emptyMessage?: string;
+  /**
+   * Set to make the map a location picker: a click anywhere on it reports the
+   * coordinates. Some addresses will never geocode -- build-to-suits with no
+   * street number, intersections -- and pointing at the spot is a better way
+   * to fix that than copying numbers out of another tab.
+   */
+  onPick?: (lat: number, lng: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const router = useRouter();
+  // The map's click handler is bound once when the map is created, so the
+  // callback has to be reached through a ref to stay current.
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
 
   // Create the map once.
   useEffect(() => {
@@ -165,6 +177,15 @@ export default function MapView({
           }
         });
 
+        // Click-to-place, when the caller wants a point picked rather than
+        // navigated to. Read through a ref so the handler -- bound once, with
+        // the map -- always sees the current callback instead of closing over
+        // the one that existed on first render.
+        map.on("click", (e: any) => {
+          const pick = onPickRef.current;
+          if (pick) pick(e.latlng.lat, e.latlng.lng);
+        });
+
         map.setView([31.0, -97.0], 6); // Texas, until points arrive
         mapRef.current = map;
       } catch (err: any) {
@@ -258,9 +279,11 @@ export default function MapView({
       <div
         ref={containerRef}
         className="map-view"
-        style={{ height }}
+        // Crosshair while picking, so it's obvious the map is an input rather
+        // than a picture.
+        style={{ height, cursor: onPick ? "crosshair" : undefined }}
         role="application"
-        aria-label="Map"
+        aria-label={onPick ? "Map — click to place this comp" : "Map"}
       />
       {points.length === 0 && <p className="muted">{emptyMessage}</p>}
       {legend && legend.length > 0 && (
