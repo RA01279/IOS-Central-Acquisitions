@@ -21,6 +21,10 @@ import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
 import IcDeckPanel from "@/components/IcDeckPanel";
 import DealCompsPanel from "@/components/DealCompsPanel";
+import AssetProximityPanel, {
+  type AssetRow,
+  type NearbyComp,
+} from "@/components/AssetProximityPanel";
 import type { CompRecord, Subject } from "@/lib/comps/match";
 
 function fmtPct(v: number | null | undefined) {
@@ -87,6 +91,16 @@ export default async function DealDetailPage({ params }: { params: { id: string 
       "id, comp_type, address, project_name, suite, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision"
     )
     .eq("status", "confirmed")
+    .not("latitude", "is", null)
+    .limit(1000);
+
+  // The portfolio, for judging this prospect against what we already hold.
+  // Sold assets come through too -- the panel holds them behind a toggle,
+  // because "have we been in this submarket" is a different question from
+  // "what do we own today" and both get asked.
+  const { data: assetRows } = await supabase
+    .from("assets")
+    .select("id, address, city, state, market, submarket, status, occupancy, site_acres, building_sf, latitude, longitude")
     .not("latitude", "is", null)
     .limit(1000);
 
@@ -402,6 +416,17 @@ export default async function DealDetailPage({ params }: { params: { id: string 
         )}
         <ExcelUploadForm dealId={deal.id} />
       </section>
+
+      {/* Where this sits against what we already own. Above the comps, because
+          "have we been here before" is the question that gets asked first --
+          and the answer changes how the comps below are read. */}
+      <AssetProximityPanel
+        assets={(assetRows ?? []) as AssetRow[]}
+        comps={(compRows ?? []) as NearbyComp[]}
+        subjectLat={subject.lat}
+        subjectLng={subject.lng}
+        subjectAddress={deal.properties?.address ?? "This deal"}
+      />
 
       {/* Market evidence sits immediately above the MLA, because the
           assumptions below are meant to follow from it. */}
