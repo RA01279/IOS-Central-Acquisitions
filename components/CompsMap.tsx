@@ -80,10 +80,20 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
   const mappable = useMemo(() => comps.filter((c) => c.latitude != null && c.longitude != null), [comps]);
   const unmappable = comps.length - mappable.length;
 
+  // A comp with no MARKET is a subtler way to disappear: it has coordinates and
+  // draws fine under "All markets", but the dropdown is built from the market
+  // values present, so picking any market hides it and nothing says so. Eight
+  // Savannah suites sat in that hole -- on the map, invisible the moment a
+  // filter was applied. They now get their own option and a count.
+  const marketless = useMemo(() => mappable.filter((c) => !c.market).length, [mappable]);
+
   const filtered = useMemo(
     () =>
       mappable.filter(
-        (c) => (market === "__all" || c.market === market) && types[c.comp_type]
+        (c) =>
+          (market === "__all" ||
+            (market === "__none" ? !c.market : c.market === market)) &&
+          types[c.comp_type]
       ),
     [mappable, market, types]
   );
@@ -151,6 +161,18 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
             {m} <span className="muted">{comps.filter((c) => c.market === m).length}</span>
           </button>
         ))}
+        {/* Only appears when there's something in it, and then it's the one
+            chip you want to click. */}
+        {marketless > 0 && (
+          <button
+            type="button"
+            className={market === "__none" ? "chip chip-active" : "chip"}
+            onClick={() => setMarket("__none")}
+            title="These have coordinates and map fine, but no market — so every other filter hides them. Worth giving them one."
+          >
+            No market <span className="muted">{marketless}</span>
+          </button>
+        )}
       </div>
 
       <div className="filter-chips">

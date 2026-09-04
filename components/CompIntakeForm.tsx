@@ -290,6 +290,12 @@ export default function CompIntakeForm({
   const blocked = included.filter((d) => blockingIssue(d));
   /** Ticked AND complete. These are what Save actually sends. */
   const saveable = included.filter((d) => !blockingIssue(d));
+  // Not a blocker -- a comp with no market is perfectly valid evidence and
+  // still maps. But the comps map builds its market filter from the values
+  // present, so a market-less comp vanishes the moment any filter is applied.
+  // Eight Savannah suites went in that way and were invisible until someone
+  // went looking. Cheaper to fill the box now than to find them later.
+  const noMarket = saveable.filter((d) => !d.market).length;
 
   async function handleSave() {
     if (!drafts) return;
@@ -856,6 +862,20 @@ export default function CompIntakeForm({
               Discard
             </button>
           </div>
+          {noMarket > 0 && (
+            <div className="warning" style={{ marginTop: 10 }}>
+              <p style={{ margin: 0 }}>
+                <strong>
+                  {noMarket} of these {saveable.length} {noMarket === 1 ? "has" : "have"} no market.
+                </strong>{" "}
+                They&apos;ll save and they&apos;ll plot on the map, but the map&apos;s market filter
+                is built from the markets present — so picking any market hides them. Put a metro in
+                the Market box above (it fills every row that hasn&apos;t got one) unless the file
+                spans several, in which case fix them after saving.
+              </p>
+            </div>
+          )}
+
           {blocked.length > 0 && (
             <div className="warning" style={{ marginTop: 10 }}>
               <p style={{ margin: 0 }}>
