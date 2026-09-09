@@ -1,6 +1,9 @@
 // lib/ic-deck/iosDemandMap.ts
 //
 // Shared logic for the IOS Demand Map / IC deck export feature.
+//
+// The Web Mercator arithmetic lives in ./geo, shared with the portfolio
+// proximity map -- see the note there on why there is only one copy.
 // Calls app/api/deals/[id]/demand-map/route.ts, which geocodes the deal's
 // property address on the fly and returns a satellite basemap + nearby-tenant
 // list. This module turns that response into (a) pixel positions for an
@@ -15,6 +18,8 @@
 // 7 miles (spilling off the map entirely). Both the preview and the deck now
 // derive their scale from the same projection as the imagery, so they agree
 // with it and with each other at any radius.
+
+import { latLngToWorldPixel, milesPerLogicalPixel } from "./geo";
 
 export type Category = { label: string; keywords: string[]; color: string };
 
@@ -75,8 +80,6 @@ export type DemandMapResponse = {
 const DEFAULT_LOGICAL_SIZE = 640;
 const DEFAULT_SCALE = 2;
 
-const METERS_PER_MILE = 1609.34;
-
 export function logicalSize(data: DemandMapResponse): number {
   return data.mapLogicalSize ?? DEFAULT_LOGICAL_SIZE;
 }
@@ -107,25 +110,12 @@ export async function fetchDemandMap(
   return res.json();
 }
 
-// ---- Web Mercator projection (matches Google's Static Maps projection exactly) ----
-
-function latLngToWorldPixel(lat: number, lng: number, zoom: number) {
-  const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
-  const scale = 256 * 2 ** zoom;
-  const x = (0.5 + lng / 360) * scale;
-  const y = (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * scale;
-  return { x, y };
-}
-
-/** Ground distance covered by one logical map pixel, in meters. */
-function metersPerLogicalPixel(lat: number, zoom: number): number {
-  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
-}
-
-/** Ground distance covered by one logical map pixel, in miles. */
-export function milesPerLogicalPixel(lat: number, zoom: number): number {
-  return metersPerLogicalPixel(lat, zoom) / METERS_PER_MILE;
-}
+// ---- Web Mercator projection ----
+//
+// Moved to ./geo when the portfolio map needed the same arithmetic. Re-exported
+// so this module's existing callers don't change, and so there is one
+// implementation rather than two that can drift a few pixels apart.
+export { milesPerLogicalPixel };
 
 /**
  * Pixel position of the site and every tenant on the actual raster image
@@ -211,9 +201,13 @@ function loadPptxScript(): Promise<void> {
   if (pptxScriptPromise) return pptxScriptPromise;
   pptxScriptPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/pptxgenjs@3/dist/pptxgen.bundle.js";
+    script.src = "https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js";
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load pptxgenjs from CDN"));
+    script.onerror = () => {
+      pptxScriptPromise = null;
+      script.remove();
+      reject(new Error("Failed to load pptxgenjs from CDN. Please retry."));
+    };
     document.head.appendChild(script);
   });
   return pptxScriptPromise;
@@ -502,9 +496,9 @@ export async function exportToPptx(
             y: y + (LEGEND_ITEM_H - LOGO_BOX) / 2,
             w: LOGO_BOX,
             h: LOGO_BOX,
-            ...(line.website
-              ? { hyperlink: { url: line.website, tooltip: line.name } }
-              : {}),
+            // PptxGenJS 3.12 does not XML-escape image hyperlink targets.
+            // Query-string ampersands corrupt slide relationships. The company
+            // name below retains its correctly escaped text hyperlink.
           });
         }
         target.addText(
