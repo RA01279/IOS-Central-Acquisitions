@@ -3,11 +3,12 @@
 //
 // The pipeline on a map, coloured by stage. Archived deals are excluded (they
 // aren't pipeline), which the server query already handles; everything else --
-// Prospect through Closed -- is here, with each stage toggleable so a dense
+// Prospect through Due Diligence -- is here, with each stage toggleable so a dense
 // market can be read one stage at a time.
 
 import { useMemo, useState } from "react";
 import MapView, { type MapPoint } from "./MapView";
+import { hasMapCoordinates } from "@/lib/comps/mapData";
 
 export interface PipelineMapDeal {
   id: string;
@@ -45,7 +46,7 @@ export default function PipelineMap({
   const [assetClass, setAssetClass] = useState<string>("__all");
 
   const mappable = useMemo(
-    () => deals.filter((d) => d.latitude != null && d.longitude != null),
+    () => deals.filter(hasMapCoordinates),
     [deals]
   );
   const unmappable = deals.length - mappable.length;
@@ -187,10 +188,13 @@ export default function PipelineMap({
             <span className="overdue">
               {unmappable} deal{unmappable === 1 ? "" : "s"} not on the map
             </span>{" "}
-            — the address is a portfolio placeholder or too vague to geocode.
+            — open a deal below to verify its address or place its pin.
           </>
         )}
       </p>
+      {unmappable > 0 && <details><summary>Needs location ({unmappable})</summary><ul>
+        {deals.filter(d=>!hasMapCoordinates(d)).map(d=><li key={d.id}><a href={`/deals/${d.id}#location`}>{d.address ?? "Untitled deal"}</a> · {d.city ?? d.market ?? "City missing"} · {stageLabels[d.stage]}</li>)}
+      </ul></details>}
     </section>
   );
 }

@@ -53,7 +53,7 @@ export default function OffersPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           offeredAt: form.get("offeredAt") || undefined,
-          price: form.get("price") ? Number(form.get("price")) : undefined,
+          price: form.get("price") || undefined,
           notes: form.get("notes") || undefined,
         }),
       });

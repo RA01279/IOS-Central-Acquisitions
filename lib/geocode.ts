@@ -132,7 +132,7 @@ export function isUsableForDistance(precision: string | null | undefined): boole
  */
 export async function geocodeAddress(
   parts: (string | null | undefined)[],
-  opts: { state?: string | null } = {}
+  opts: { state?: string | null; requirePrecise?: boolean } = {}
 ): Promise<GeocodeResult | null> {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY;
   if (!key) return null;
@@ -163,10 +163,25 @@ export async function geocodeAddress(
   url.searchParams.set("key", key);
 
   try {
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
     const data = await res.json();
     if (data.status !== "OK" || !data.results?.length) return null;
     const best = data.results[0];
+    if (opts.requirePrecise) {
+      const component = (type: string) => best.address_components?.find((c: any) => c.types?.includes(type))?.long_name;
+      const number = String(parts[0] ?? "").match(/^\s*(\d+[A-Za-z]?)\b/)?.[1];
+      const city = String(parts[1] ?? "").trim().toLowerCase();
+      const locality = String(component("locality") ?? component("postal_town") ?? "").toLowerCase();
+      const street = (value: string) => value.toLowerCase().replace(/[.,]/g, " ")
+        .replace(/\b(lane|road|street|drive|boulevard|avenue|court|parkway|highway|north|south|east|west)\b/g,
+          (word) => ({ lane: "ln", road: "rd", street: "st", drive: "dr", boulevard: "blvd", avenue: "ave", court: "ct", parkway: "pkwy", highway: "hwy", north: "n", south: "s", east: "e", west: "w" }[word]!))
+        .replace(/\s+/g, " ").trim();
+      const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?\s+/, "");
+      if (data.results.length !== 1 || best.partial_match || best.geometry.location_type !== "ROOFTOP" ||
+          !number || String(component("street_number")).toLowerCase() !== number.toLowerCase() ||
+          street(requestedStreet) !== street(String(component("route") ?? "")) ||
+          (city && city !== locality)) return null;
+    }
     return {
       lat: best.geometry.location.lat,
       lng: best.geometry.location.lng,

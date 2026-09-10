@@ -8,6 +8,9 @@
 
 import { getServiceClient } from "./supabase";
 import { fireStageChangeWebhook } from "./webhooks";
+import { geocodeAddress } from "./geocode";
+import { parseMoney } from "./money";
+import { validDate } from "./stage-rules";
 
 export type MlaStatus = "pending" | "requested" | "provided" | "assumed";
 // 'lease' is legacy: leasing was removed from the UI in Aug 2026 but the rows
@@ -91,6 +94,8 @@ export function isValidAcqStage(stage: string): boolean {
 }
 
 export interface NewDealInput {
+  intakeKey?: string;
+  substantialYard?: boolean;
   address: string;
   market?: string;
   submarket?: string;
@@ -148,12 +153,20 @@ export interface NewDealInput {
 }
 
 export async function createDeal(input: NewDealInput) {
+  if (!input.address?.trim()) throw new Error("A property address is required");
+  if (!input.assetClass || !["ios", "industrial"].includes(input.assetClass)) throw new Error("Choose IOS or Industrial");
+  if (!["ios", "industrial", "flex", "other"].includes(input.assetType)) throw new Error("Choose a property type");
+  for (const amount of [input.acres, input.lotSf, input.buildingSf, input.waltYears]) {
+    if (amount != null && (!Number.isFinite(amount) || amount < 0)) throw new Error("Property sizes and WALT must be nonnegative numbers");
+  }
   const supabase = getServiceClient();
-
-  const { data: property, error: propError } = await supabase
-    .from("properties")
-    .insert({
+  const location = await geocodeAddress([input.address, input.city, input.market], { requirePrecise: true });
+  const property = {
       address: input.address,
+      latitude: location?.lat ?? null,
+      longitude: location?.lng ?? null,
+      geocode_precision: location?.precision ?? null,
+      geocoded_at: location ? new Date().toISOString() : null,
       market: input.market ?? null,
       submarket: input.submarket ?? null,
       city: input.city ?? null,
@@ -163,38 +176,9 @@ export async function createDeal(input: NewDealInput) {
       occupancy_status: input.occupancyStatus ?? null,
       walt_years: input.occupancyStatus === "occupied" ? input.waltYears ?? null : null,
       tenancy: input.tenancy ?? null,
-    })
-    .select()
-    .single();
-
-  if (propError) throw propError;
-
-  const mlaStatus: MlaStatus = input.mla?.status ?? "assumed";
-  const assetClass = input.assetClass ?? assetClassFromAssetType(input.assetType);
-
-  const { data: deal, error: dealError } = await supabase
-    .from("deals")
-    .insert({
-      property_id: property.id,
-      deal_type: "acquisition",
-      stage: OPENING_STAGE,
-      asset_class: assetClass,
-      source_broker_id: input.sourceBrokerId ?? null,
-      mla_status: mlaStatus,
-      marketing_status: input.marketingStatus ?? null,
-      acquisition_type: input.acquisitionType ?? null,
-      created_by: input.createdBy,
-    })
-    .select()
-    .single();
-
-  if (dealError) throw dealError;
-
-  if (input.mla?.status === "provided") {
-    const m = input.mla;
-    const { error: mlaError } = await supabase.from("mla_data").insert({
-      deal_id: deal.id,
-      market_base_rent: m.marketBaseRent ?? null,
+};
+  const m = input.mla?.status === "provided" ? input.mla : null;
+  const mla = m ? { market_base_rent: m.marketBaseRent ?? null,
       term_years: m.termYears ?? null,
       term_months: m.termMonths ?? null,
       renewal_probability: m.renewalProbability ?? null,
@@ -208,53 +192,22 @@ export async function createDeal(input: NewDealInput) {
       asking_rent: m.askingRent ?? null, // legacy, kept for back-compat
       opex: m.opex ?? null,
       other_assumptions: m.otherAssumptions ?? {},
-      provided_by: input.createdBy,
-      provided_at: new Date().toISOString(),
-    });
-    if (mlaError) throw mlaError;
-  }
-
-  if (input.mla?.status === "requested") {
-    await notifyMarketLeadForMla(deal.id, input.address);
-  }
-
-  // Link every typed counterparty as a contact on the deal.
-  const counterparties = [
-    { name: input.currentOwnerName, role: "seller", type: null }, // owner-user vs institutional: classified by hand
-    { name: input.buyerBrokerName, role: "buyer_broker", type: "broker" },
-    { name: input.sellerBrokerName, role: "seller_broker", type: "broker" },
-  ];
-  for (const cp of counterparties) {
-    if (!cp.name?.trim()) continue;
-    const contactId = await findOrCreateContactByName(cp.name.trim(), cp.type);
-    const { error: linkError } = await supabase.from("deal_contacts").insert({
-      deal_id: deal.id,
-      contact_id: contactId,
-      role: cp.role,
-    });
-    if (linkError) throw linkError;
-    await logDealEvent(
-      deal.id,
-      "contact_linked",
-      { contact_id: contactId, role: cp.role, via: "intake" },
-      input.createdBy
-    );
-  }
-
-  await logDealEvent(
-    deal.id,
-    "deal_created",
-    { deal_type: "acquisition", asset_class: assetClass, mla_status: mlaStatus },
-    input.createdBy
-  );
-
-  // Duplicate detection: check address history now that the deal exists.
-  const duplicates = await findDuplicateDeals(input.address, deal.id);
-  if (duplicates.length > 0) {
-    await logDealEvent(deal.id, "duplicate_flagged", { matches: duplicates.map((d) => d.id) }, "system");
-  }
-
-  return { deal, property, duplicates };
+} : null;
+  const { data, error } = await supabase.rpc("create_deal_atomic", {
+    p_key: input.intakeKey ?? crypto.randomUUID(), p_property: property,
+    p_deal: { asset_class: input.substantialYard ? "ios" : input.assetClass, source_broker_id: input.sourceBrokerId ?? null,
+      classification_basis: input.substantialYard ? "User confirmed substantial, separately usable outdoor storage yard (IOS)" : `User selected ${input.assetClass}`,
+      mla_status: input.mla?.status ?? "assumed", marketing_status: input.marketingStatus ?? null,
+      acquisition_type: input.acquisitionType ?? null },
+    p_mla: mla, p_actor: input.createdBy,
+    p_contacts: [
+      { name: input.currentOwnerName, role: "seller", type: null },
+      { name: input.buyerBrokerName, role: "buyer_broker", type: "broker" },
+      { name: input.sellerBrokerName, role: "seller_broker", type: "broker" },
+    ],
+  });
+  if (error) throw error;
+  return data;
 }
 
 // -- Offers ----------------------------------------------------------------
@@ -281,7 +234,8 @@ export async function recordOffer(
 ) {
   const supabase = getServiceClient();
   const offeredAt = input.offeredAt ?? new Date().toISOString().slice(0, 10);
-  const price = input.price ?? null;
+  const price = parseMoney(input.price);
+  if (!validDate(offeredAt)) throw new Error("Enter a valid offer date");
   const source = input.source ?? "manual";
 
   if (opts.dedupeSameDayPrice) {

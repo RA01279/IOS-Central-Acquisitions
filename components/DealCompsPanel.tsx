@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import MapView, { type MapPoint } from "./MapView";
 import { rateSummary } from "@/lib/comps/rates";
+import SavedAnalysis from "./SavedAnalysis";
 import {
   DEFAULT_WEIGHTS,
   formatUnit,
@@ -33,10 +34,12 @@ const RADII = [3, 5, 10, 15, 25];
 const AGES = [12, 24, 36, 60];
 
 export default function DealCompsPanel({
+  dealId,
   comps,
   subject,
   subjectAddress,
 }: {
+  dealId: string;
   comps: CompRecord[];
   subject: Subject;
   subjectAddress: string;
@@ -50,17 +53,22 @@ export default function DealCompsPanel({
   const [maxAgeMonths, setMaxAgeMonths] = useState(24);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [allowOtherClasses, setAllowOtherClasses] = useState(false);
+  const [snapshotComps, setSnapshotComps] = useState<CompRecord[] | null>(null);
+  const [snapshotSubject, setSnapshotSubject] = useState<Subject | null>(null);
+  const [analysisDate, setAnalysisDate] = useState(() => new Date().toISOString());
 
   const scored = useMemo(
     () =>
-      scoreComps(comps, subject, compType, {
+      scoreComps(snapshotComps ?? comps, snapshotSubject ?? subject, compType, {
+        allowOtherClasses, today: new Date(analysisDate),
         basis,
         radiusMiles,
         maxAgeMonths,
         excludedIds: [...excluded],
         weights: DEFAULT_WEIGHTS,
       }),
-    [comps, subject, compType, basis, radiusMiles, maxAgeMonths, excluded]
+    [comps, snapshotComps, snapshotSubject, subject, compType, basis, radiusMiles, maxAgeMonths, excluded, allowOtherClasses, analysisDate]
   );
 
   const range = useMemo(() => suggestRange(scored, compType, basis), [scored, compType, basis]);
@@ -69,14 +77,15 @@ export default function DealCompsPanel({
   const rows = showAll ? scored : scored.slice(0, Math.max(12, eligible.length));
 
   const color = compType === "sale" ? SALE_COLOR : LEASE_COLOR;
+  const evidenceSubject = snapshotSubject ?? subject;
 
   const points: MapPoint[] = useMemo(() => {
     const out: MapPoint[] = [];
-    if (subject.lat != null && subject.lng != null) {
+    if (evidenceSubject.lat != null && evidenceSubject.lng != null) {
       out.push({
         id: "__subject",
-        lat: subject.lat,
-        lng: subject.lng,
+        lat: evidenceSubject.lat,
+        lng: evidenceSubject.lng,
         color: SUBJECT_COLOR,
         title: `${subjectAddress} (this deal)`,
         emphasis: true,
@@ -106,7 +115,7 @@ export default function DealCompsPanel({
       });
     }
     return out;
-  }, [scored, subject, subjectAddress, compType, basis, color]);
+  }, [scored, evidenceSubject, subjectAddress, compType, basis, color]);
 
   function toggle(id: string) {
     setExcluded((prev) => {
@@ -117,10 +126,22 @@ export default function DealCompsPanel({
     });
   }
 
-  const hasCoords = subject.lat != null && subject.lng != null;
+  const hasCoords = evidenceSubject.lat != null && evidenceSubject.lng != null;
 
   return (
     <section className="panel">
+      <SavedAnalysis dealId={dealId} kind="comps"
+        payload={{compType,basis,radiusMiles,maxAgeMonths,excluded:[...excluded],allowOtherClasses,analysisDate,comps:snapshotComps??comps,subject:snapshotSubject??subject}}
+        onRestore={saved=>{
+          if(!["lease","sale"].includes(saved.compType)||!["land","building"].includes(saved.basis)||!Array.isArray(saved.comps)) return;
+          setCompType(saved.compType);setBasis(saved.basis);setRadiusMiles(saved.radiusMiles);setMaxAgeMonths(saved.maxAgeMonths);
+          setExcluded(new Set(saved.excluded??[]));setAllowOtherClasses(saved.allowOtherClasses===true);
+          setSnapshotComps(saved.comps);setSnapshotSubject(saved.subject??null);setAnalysisDate(saved.analysisDate);
+        }} />
+      {snapshotComps && <p className="hint">Using saved comp evidence and property assumptions. <button type="button" className="secondary" onClick={()=>{setSnapshotComps(null);setSnapshotSubject(null);setAnalysisDate(new Date().toISOString());}}>Use latest comps</button></p>}
+      <label><input type="checkbox" checked={allowOtherClasses} onChange={e=>setAllowOtherClasses(e.target.checked)}/> Include unclassified or other-class comps in my analysis</label>
+      {!allowOtherClasses && <p className="hint">Only comps with a matching asset class contribute to the range. Unclassified comps remain listed for review.</p>}
+      {allowOtherClasses && <p className="warning">Class matching is overridden. Review each comp before relying on the suggested range.</p>}
       <h2>
         Market evidence <span className="count">{eligible.length}</span>
       </h2>

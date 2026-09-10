@@ -24,6 +24,15 @@ Stages: `prospect -> uw -> offered -> moving_to_psa -> due_diligence -> closed`,
 with `archived` as the shared terminal. "In contract" in any roll-up means
 `moving_to_psa + due_diligence`.
 
+The pipeline **map** shows Prospect through Due Diligence. Closing an acquisition
+atomically creates or links its property in Our Assets; the closed deal remains
+on the board and in reporting. `deals.portfolio_asset_id` prevents duplicate
+transfers. Correcting a closing restores the asset's prior status; a newly
+transferred asset returns to `under_contract` and is hidden from Our Assets.
+The lifecycle triggers are installed by `20260909171325_closed_deal_assets.sql`.
+Assets without coordinates remain in the portfolio table and need a location
+before they can appear as map pins.
+
 ## Money
 
 Three prices, in decreasing order of certainty, and reporting always uses the
@@ -124,6 +133,14 @@ safe to re-run.
   poll the export API instead.
 
 ## Known gaps
+
+## September 2026 correctness release
+
+Apply `20260909215353_intake_correctness.sql` before deploying the matching app code. It adds transactional and retry-safe deal intake, an atomic stage/event operation, closing completeness, and immutable reviewed analysis versions. Existing access settings on existing tables are unchanged.
+
+New Deal requires an explicit pipeline selection. Confirming a substantial, separately usable outdoor storage yard assigns IOS and records the reason. Existing properties are not reclassified. Comp recommendations require matching class by default; analysts can explicitly include unclassified/other-class comps. Save reviewed versions to preserve comp evidence and demand-map exclusions across refreshes. Saved comp evidence includes the subject assumptions and analysis date; Use latest comps starts a fresh comparison.
+
+Verification: `node scripts/test-correctness.mjs`, `node scripts/test-intake-transaction.mjs` (database assertions rolled back), the existing import/map/export regressions, and `npm run build`. Rollback can return the application to the previous commit while leaving these additive tables/functions in place; do not drop saved review data.
 
 - Documents are stored and listed but there's no signed-URL download button.
 - Duplicate detection runs and logs an event at intake; nothing surfaces it in

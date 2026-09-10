@@ -9,7 +9,7 @@
 //   - "requested": no extra fields -- notifies the market lead on submit
 //   - "assumed": no extra fields -- analyst proceeds on their own judgment
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type MlaChoice = "provided" | "requested" | "assumed";
@@ -21,11 +21,17 @@ export default function DealForm() {
   const [occupancy, setOccupancy] = useState<Occupancy>("vacant");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const intakeKey = useRef<string>();
+  const [substantialYard,setSubstantialYard] = useState(false);
+  const [pipeline,setPipeline] = useState("");
+  const [duplicates, setDuplicates] = useState<{id:string;address:string;city:string;stage:string}[]>([]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    setDuplicates([]);
+    intakeKey.current ??= crypto.randomUUID();
 
     const form = new FormData(e.currentTarget);
     const num = (key: string) => (form.get(key) ? Number(form.get(key)) : undefined);
@@ -49,11 +55,13 @@ export default function DealForm() {
         : { status: mlaChoice };
 
     const payload = {
+      intakeKey: intakeKey.current,
       address: form.get("address"),
       market: form.get("market"),
       city: (form.get("city") as string) || undefined,
       assetType: form.get("assetType"),
-      assetClass: form.get("assetClass"),
+      assetClass: substantialYard ? "ios" : pipeline,
+      substantialYard,
       acres: form.get("acres") ? Number(form.get("acres")) : undefined,
       buildingSf: form.get("buildingSf") ? Number(form.get("buildingSf")) : undefined,
       marketingStatus: (form.get("marketingStatus") as string) || undefined,
@@ -77,6 +85,7 @@ export default function DealForm() {
       });
       if (!res.ok) {
         const body = await res.json();
+        if (res.status === 409) setDuplicates(body.duplicates ?? []);
         throw new Error(body.error ?? "Failed to create deal");
       }
       const { deal } = await res.json();
@@ -90,6 +99,8 @@ export default function DealForm() {
 
   return (
     <form onSubmit={handleSubmit} className="deal-form">
+      {duplicates.map(match => <p key={match.id}><a href={`/deals/${match.id}`}>Open {match.address}, {match.city} ({match.stage})</a></p>)}
+      <p className="hint">Choose IOS when a warehouse has a substantial, separately usable outdoor storage yard. Ordinary parking or loading areas alone do not establish IOS.</p>
       <label>
         Property address
         <input name="address" required />
@@ -139,7 +150,8 @@ export default function DealForm() {
       <div className="grid-2">
         <label>
           Pipeline
-          <select name="assetClass" defaultValue="ios">
+          <select name="assetClass" value={substantialYard ? "ios" : pipeline} onChange={e=>setPipeline(e.target.value)} disabled={substantialYard} required>
+            <option value="" disabled>Choose pipeline</option>
             <option value="ios">IOS</option>
             <option value="industrial">Industrial</option>
           </select>
@@ -154,6 +166,8 @@ export default function DealForm() {
           </select>
         </label>
       </div>
+
+      <label><input type="checkbox" checked={substantialYard} onChange={e=>setSubstantialYard(e.target.checked)}/> This property has a substantial, separately usable outdoor storage yard (classify as IOS)</label>
 
       <div className="grid-2">
         <label>

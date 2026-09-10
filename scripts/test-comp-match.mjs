@@ -104,6 +104,7 @@ const SUBJECT = {
 };
 const mk = (id, over = {}) => ({
   id, comp_type: "sale", address: `${id} St`, latitude: 30.32, longitude: -95.46,
+  asset_class: "industrial", // Classification is explicit; unknown classes require review.
   // Located, unless a test says otherwise. Without this every fixture comp is
   // treated as unlocated and drops out of distance scoring -- which is the
   // correct handling for an unknown precision, and exactly why it has to be

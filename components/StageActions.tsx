@@ -17,6 +17,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { moneyPreview } from "@/lib/money";
 
 export default function StageActions({
   dealId,
@@ -150,6 +151,7 @@ export default function StageActions({
                 onChange={(e) => setContract(e.target.value)}
                 autoFocus
               />
+              <span className="hint">{moneyPreview(contract)}</span>
             </label>
             <p className="hint">
               Optional now, but until it's set the in-contract total falls back to the last offer.
@@ -196,6 +198,7 @@ export default function StageActions({
                   value={contract}
                   onChange={(e) => setContract(e.target.value)}
                 />
+                <span className="hint">{moneyPreview(contract)}</span>
               </label>
             </div>
             <div className="stage-actions" style={{ marginBottom: 0 }}>
@@ -245,6 +248,7 @@ export default function StageActions({
                   required
                   autoFocus
                 />
+                <span className="hint">{moneyPreview(closedPrice)}</span>
               </label>
             </div>
             <p className="hint">

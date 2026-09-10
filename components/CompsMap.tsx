@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from "react";
 import MapView, { type MapPoint } from "./MapView";
+import { hasMapCoordinates } from "@/lib/comps/mapData";
 
 const SALE_COLOR = "1E7A46"; // green
 const LEASE_COLOR = "2E6DA4"; // blue
@@ -77,7 +78,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
 
   // A comp with no coordinates can't be drawn. Counted rather than dropped
   // silently, so a batch that won't map is visible.
-  const mappable = useMemo(() => comps.filter((c) => c.latitude != null && c.longitude != null), [comps]);
+  const mappable = useMemo(() => comps.filter(hasMapCoordinates), [comps]);
   const unmappable = comps.length - mappable.length;
 
   // A comp with no MARKET is a subtler way to disappear: it has coordinates and

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import SavedAnalysis from "./SavedAnalysis";
 import {
   fetchDemandMap,
   computePixelPositions,
@@ -98,6 +99,11 @@ export default function IcDeckPanel({
 
   return (
     <section className="panel">
+      <SavedAnalysis dealId={dealId} kind="demand" payload={{data,excluded:[...excluded]}} canSave={!!data}
+        onRestore={saved=>{
+          if(!saved.data?.center||!Array.isArray(saved.data.tenants)||typeof saved.data.imageBase64!=="string") return;
+          setData(saved.data);setExcluded(new Set(saved.excluded??[]));setRadiusMiles(saved.data.radiusMiles);setMaptype(saved.data.maptype??"satellite");
+        }} />
       <h2>IC Deck — IOS Demand Map</h2>
       <p className="muted">
         Yard-occupying businesses near the site, by use category, pulled live from Google Places

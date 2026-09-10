@@ -17,6 +17,7 @@ export default async function AssetsPage() {
   const { data } = await supabase
     .from("assets")
     .select("*")
+    .neq("status", "under_contract")
     .order("market", { ascending: true, nullsFirst: false })
     .order("address", { ascending: true })
     .limit(2000);

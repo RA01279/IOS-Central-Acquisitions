@@ -8,6 +8,7 @@ import MlaProvideForm from "@/components/MlaProvideForm";
 import ExcelUploadForm from "@/components/ExcelUploadForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealEditForm from "@/components/DealEditForm";
+import DealLocationEditor from "@/components/DealLocationEditor";
 import DealCrmPanels from "@/components/DealCrmPanels";
 import OffersPanel from "@/components/OffersPanel";
 import LoiPanel from "@/components/LoiPanel";
@@ -26,6 +27,7 @@ import AssetProximityPanel, {
   type NearbyComp,
 } from "@/components/AssetProximityPanel";
 import type { CompRecord, Subject } from "@/lib/comps/match";
+import { LOCATED_PRECISIONS } from "@/lib/ic-deck/geo";
 
 function fmtPct(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
@@ -101,7 +103,19 @@ export default async function DealDetailPage({ params }: { params: { id: string 
   const { data: assetRows } = await supabase
     .from("assets")
     .select("id, address, city, state, market, submarket, status, occupancy, site_acres, building_sf, latitude, longitude")
+    .neq("status", "under_contract")
+    .in("geocode_precision", LOCATED_PRECISIONS)
     .not("latitude", "is", null)
+    .limit(1000);
+
+  // Other live deals, for the pipeline layer on the proximity map. Archiving
+  // is a stage here, and an archived deal isn't current context.
+  const { data: pipelineRows } = await supabase
+    .from("deals")
+    .select("id, stage, asset_class, properties!inner(address, city, market, latitude, longitude)")
+    .neq("stage", "archived")
+    .neq("stage", "closed")
+    .not("properties.latitude", "is", null)
     .limit(1000);
 
   const subject: Subject = {
@@ -235,6 +249,7 @@ export default async function DealDetailPage({ params }: { params: { id: string 
 
       <section className="panel">
         <h2>Property</h2>
+        {deal.classification_basis && <p className="hint">Classification: {deal.classification_basis}</p>}
         <div className="metrics-grid">
           <div>
             <span className="label">City / Submarket</span>
@@ -420,9 +435,25 @@ export default async function DealDetailPage({ params }: { params: { id: string 
       {/* Where this sits against what we already own. Above the comps, because
           "have we been here before" is the question that gets asked first --
           and the answer changes how the comps below are read. */}
+      <DealLocationEditor dealId={deal.id} address={deal.properties?.address ?? "This property"}
+        latitude={subject.lat} longitude={subject.lng} />
       <AssetProximityPanel
+        dealId={deal.id}
         assets={(assetRows ?? []) as AssetRow[]}
         comps={(compRows ?? []) as NearbyComp[]}
+        pipeline={(pipelineRows ?? []).map((d: any) => {
+          const dp = Array.isArray(d.properties) ? d.properties[0] : d.properties;
+          return {
+            id: d.id,
+            stage: d.stage,
+            asset_class: d.asset_class,
+            address: dp?.address ?? "(no address)",
+            city: dp?.city ?? null,
+            market: dp?.market ?? null,
+            latitude: dp?.latitude != null ? Number(dp.latitude) : null,
+            longitude: dp?.longitude != null ? Number(dp.longitude) : null,
+          };
+        })}
         subjectLat={subject.lat}
         subjectLng={subject.lng}
         subjectAddress={deal.properties?.address ?? "This deal"}
@@ -431,6 +462,7 @@ export default async function DealDetailPage({ params }: { params: { id: string 
       {/* Market evidence sits immediately above the MLA, because the
           assumptions below are meant to follow from it. */}
       <DealCompsPanel
+        dealId={deal.id}
         comps={(compRows ?? []) as CompRecord[]}
         subject={subject}
         subjectAddress={deal.properties?.address ?? "This deal"}

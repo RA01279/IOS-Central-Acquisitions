@@ -17,6 +17,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import MapView, { type MapPoint } from "./MapView";
 import { rateSummary } from "@/lib/comps/rates";
+import { STAGE_LABELS } from "@/lib/deals";
+import { haversineMiles as miles, LOCATED_PRECISIONS } from "@/lib/ic-deck/geo";
+import {
+  exportPortfolioMap,
+  fetchPortfolioMap,
+  portfolioMapCsv,
+} from "@/lib/ic-deck/portfolioMap";
 
 const SUBJECT_COLOR = "FF5A4E";
 const ASSET_COLOR = "6C4AB6";
@@ -57,6 +64,17 @@ export interface AssetRow {
   longitude: number | null;
 }
 
+export interface PipelineDeal {
+  id: string;
+  stage: string;
+  asset_class: string | null;
+  address: string;
+  city: string | null;
+  market: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
 export interface NearbyComp {
   id: string;
   comp_type: "lease" | "sale";
@@ -75,26 +93,19 @@ export interface NearbyComp {
   geocode_precision: string | null;
 }
 
-/** Straight-line miles. */
-function miles(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 3958.7613;
-  const r = (d: number) => (d * Math.PI) / 180;
-  const dLat = r(bLat - aLat);
-  const dLng = r(bLng - aLng);
-  const q =
-    Math.sin(dLat / 2) ** 2 + Math.cos(r(aLat)) * Math.cos(r(bLat)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(q), Math.sqrt(1 - q));
-}
-
 export default function AssetProximityPanel({
+  dealId,
   assets,
   comps,
+  pipeline,
   subjectLat,
   subjectLng,
   subjectAddress,
 }: {
+  dealId: string;
   assets: AssetRow[];
   comps: NearbyComp[];
+  pipeline: PipelineDeal[];
   subjectLat: number | null;
   subjectLng: number | null;
   subjectAddress: string;
@@ -102,7 +113,10 @@ export default function AssetProximityPanel({
   const [radiusMiles, setRadiusMiles] = useState(25);
   const [showLease, setShowLease] = useState(false);
   const [showSale, setShowSale] = useState(false);
+  const [showPipeline, setShowPipeline] = useState(false);
   const [includeSold, setIncludeSold] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const hasSubject = subjectLat != null && subjectLng != null;
 
@@ -124,10 +138,10 @@ export default function AssetProximityPanel({
 
   const inRadius = useMemo(
     () =>
-      radiusMiles === 0
+      radiusMiles === 0 || !hasSubject
         ? ranked
         : ranked.filter((r) => r.distanceMi !== null && r.distanceMi <= radiusMiles),
-    [ranked, radiusMiles]
+    [ranked, radiusMiles, hasSubject]
   );
 
   const compsInRadius = useMemo(() => {
@@ -135,6 +149,7 @@ export default function AssetProximityPanel({
       (c) =>
         c.latitude != null &&
         c.longitude != null &&
+        LOCATED_PRECISIONS.includes(c.geocode_precision ?? "") &&
         ((showLease && c.comp_type === "lease") || (showSale && c.comp_type === "sale"))
     );
     if (!hasSubject || radiusMiles === 0) return wanted;
@@ -142,6 +157,26 @@ export default function AssetProximityPanel({
       (c) => miles(subjectLat!, subjectLng!, Number(c.latitude), Number(c.longitude)) <= radiusMiles
     );
   }, [comps, showLease, showSale, hasSubject, subjectLat, subjectLng, radiusMiles]);
+
+  // Other live deals use the same gold pins as the exported slide.
+  // Excludes this deal -- it's the red one.
+  const pipelineInRadius = useMemo(() => {
+    if (!showPipeline) return [];
+    const out = pipeline
+      .filter((d) => d.id !== dealId && d.latitude != null && d.longitude != null)
+      .map((d) => ({
+        deal: d,
+        distanceMi: hasSubject
+          ? miles(subjectLat!, subjectLng!, Number(d.latitude), Number(d.longitude))
+          : null,
+      }));
+    const filtered =
+      radiusMiles === 0 || !hasSubject
+        ? out
+        : out.filter((r) => r.distanceMi !== null && r.distanceMi <= radiusMiles);
+    filtered.sort((x, y) => (x.distanceMi ?? Infinity) - (y.distanceMi ?? Infinity));
+    return filtered;
+  }, [pipeline, showPipeline, dealId, hasSubject, subjectLat, subjectLng, radiusMiles]);
 
   const points: MapPoint[] = useMemo(() => {
     const out: MapPoint[] = [];
@@ -175,6 +210,22 @@ export default function AssetProximityPanel({
         ].filter((l) => l.length > 0),
       });
     }
+    for (const { deal, distanceMi } of pipelineInRadius) {
+      out.push({
+        id: `deal-${deal.id}`,
+        lat: Number(deal.latitude),
+        lng: Number(deal.longitude),
+        color: "C9971F",
+        title: deal.address,
+        href: `/deals/${deal.id}`,
+        lines: [
+          `${STAGE_LABELS[deal.stage] ?? deal.stage}${deal.asset_class ? ` · ${deal.asset_class.toUpperCase()}` : ""}`,
+          [deal.city, distanceMi !== null ? `${distanceMi.toFixed(1)} mi` : null]
+            .filter(Boolean)
+            .join(" · "),
+        ].filter((l) => l.length > 0),
+      });
+    }
     for (const { asset, distanceMi } of inRadius) {
       out.push({
         id: `asset-${asset.id}`,
@@ -196,13 +247,54 @@ export default function AssetProximityPanel({
       });
     }
     return out;
-  }, [hasSubject, subjectLat, subjectLng, subjectAddress, inRadius, compsInRadius]);
+  }, [hasSubject, subjectLat, subjectLng, subjectAddress, inRadius, compsInRadius, pipelineInRadius]);
 
-  const nearest = ranked[0];
-  const availableNearby = inRadius.filter((r) => r.asset.occupancy === "available").length;
+  /**
+   * Re-fetches server-side rather than exporting what's in the browser: the
+   * slide needs a basemap image, and the Google key that fetches it must stay
+   * on the server. The radius and layers on screen are passed through, so the
+   * export is what was being looked at rather than a different query.
+   */
+  async function runExport(kind: "pptx" | "csv") {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const layers = [
+        "assets",
+        ...(showLease ? ["lease"] : []),
+        ...(showSale ? ["sale"] : []),
+        ...(showPipeline ? ["pipeline"] : []),
+      ];
+      const data = await fetchPortfolioMap(dealId, {
+        radiusMiles,
+        layers,
+        maptype: "roadmap",
+        includeSold,
+        includeImage: kind === "pptx",
+      });
+      if (kind === "pptx") {
+        await exportPortfolioMap(data);
+      } else {
+        const blob = new Blob([portfolioMapCsv(data)], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${data.target.address.replace(/[^a-z0-9]+/gi, "-")}-vs-portfolio.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e: any) {
+      setExportError(e.message ?? "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const nearest = ranked.find((r) => r.asset.status !== "sold");
+  const availableNearby = inRadius.filter((r) => r.asset.status !== "sold" && r.asset.occupancy === "available").length;
   // Assets on this very site, which is a different fact from a nearby one.
   const sameSite = ranked.filter(
-    (r) => r.distanceMi !== null && r.distanceMi <= SAME_SITE_MI
+    (r) => r.asset.status !== "sold" && r.distanceMi !== null && r.distanceMi <= SAME_SITE_MI
   );
 
   return (
@@ -213,8 +305,9 @@ export default function AssetProximityPanel({
 
       {!hasSubject && (
         <div className="warning">
-          This deal&apos;s property has no coordinates, so nothing can be measured against it. The
-          whole portfolio is shown below — fix the property address to get distances.
+          Nearby assets cannot be determined until this property has coordinates. Use
+          <strong> Add or correct location</strong> above to place it. The portfolio below is shown
+          without distance filtering; it does not mean there are no assets nearby.
         </div>
       )}
 
@@ -299,6 +392,13 @@ export default function AssetProximityPanel({
         </button>
         <button
           type="button"
+          className={showPipeline ? "chip chip-active" : "chip"}
+          onClick={() => setShowPipeline((v) => !v)}
+        >
+          <span className="map-legend-dot" style={{ background: "#C9971F" }} /> Pipeline deals
+        </button>
+        <button
+          type="button"
           className={includeSold ? "chip chip-active" : "chip"}
           onClick={() => setIncludeSold((v) => !v)}
         >
@@ -314,10 +414,41 @@ export default function AssetProximityPanel({
           ...(hasSubject ? [{ label: "This deal", color: SUBJECT_COLOR }] : []),
           { label: "Ours — occupied", color: ASSET_COLOR },
           { label: "Ours — space available", color: ASSET_AVAIL_COLOR },
+          ...(showPipeline ? [{ label: "Live pipeline deals", color: "C9971F" }] : []),
           ...(showLease ? [{ label: "Lease comps", color: LEASE_COLOR }] : []),
           ...(showSale ? [{ label: "Sale comps", color: SALE_COLOR }] : []),
         ]}
       />
+
+      {/* The slide is the deliverable this panel exists to produce -- the
+          on-screen map answers the question, and this is how it leaves the
+          building. Exactly the layers and radius currently shown, so what
+          exports is what was looked at. */}
+      <div className="stage-actions" style={{ marginTop: 12 }}>
+        <button type="button" onClick={() => runExport("pptx")} disabled={exporting || !hasSubject || radiusMiles === 0}>
+          {exporting ? "Building…" : "Export IC slide (.pptx)"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => runExport("csv")}
+          disabled={exporting || !hasSubject}
+        >
+          Export distances (.csv)
+        </button>
+        <span className="muted" style={{ alignSelf: "center" }}>
+          {[
+            "target",
+            `${inRadius.length} asset${inRadius.length === 1 ? "" : "s"}`,
+            showPipeline ? `${pipelineInRadius.length} deals` : null,
+            showLease || showSale ? `${compsInRadius.length} comps` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </div>
+      {exportError && <p className="error">{exportError}</p>}
+      {radiusMiles === 0 && <p className="muted">Choose a mileage radius to export a slide. CSV includes all distances.</p>}
 
       {inRadius.length > 0 && (
         <div className="table-scroll" style={{ marginTop: 14 }}>

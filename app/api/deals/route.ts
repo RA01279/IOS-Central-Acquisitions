@@ -12,7 +12,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   try {
+    if (body.intakeKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.intakeKey)) {
+      return NextResponse.json({ error: "Invalid intake key" }, { status: 400 });
+    }
     const result = await createDeal({
+      intakeKey: body.intakeKey,
+      substantialYard: body.substantialYard === true,
       address: body.address,
       market: body.market,
       submarket: body.submarket,
@@ -36,7 +41,8 @@ export async function POST(req: NextRequest) {
       mla: body.mla,
     });
 
-    return NextResponse.json(result, { status: 201 });
+    if (!result.deal && result.duplicates?.length) return NextResponse.json({ ...result, error: "This address already has a deal. Open the existing record below." }, { status: 409 });
+    return NextResponse.json(result, { status: result.replayed ? 200 : 201 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

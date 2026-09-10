@@ -1,0 +1,12 @@
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const moneyExports={};
+vm.runInNewContext(ts.transpileModule(readFileSync('lib/money.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports:moneyExports});
+console.log('Money parser actual results:',JSON.stringify(['$4.2M','-100','4,200,000'].map(input=>{try{return {input,result:moneyExports.parseMoney(input)}}catch{return {input,rejected:true}}})));
+const exports={};
+vm.runInNewContext(ts.transpileModule(readFileSync('lib/comps/match.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports});
+const subject={lat:30,lng:-97,buildingSf:10000,lotSf:100000,coveragePct:10,assetClass:'ios',market:'Austin',submarket:null};
+const comp={id:'audit-fixture',comp_type:'lease',address:'Synthetic fixture',asset_class:'industrial',latitude:30,longitude:-97,geocode_precision:'rooftop',building_sf:10000,lot_sf:100000,rent:1,rent_basis:'per_sf_bldg_monthly',date_commenced:'2026-09-01'};
+const results=exports.scoreComps([comp],subject,'lease',{today:new Date('2026-09-09T12:00:00Z')});
+console.log('Industrial comp against IOS subject:',JSON.stringify(results.map(r=>({excluded:r.excluded??null,inRange:r.inRange,score:r.score}))));

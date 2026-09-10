@@ -3,15 +3,12 @@ import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent, isValidAcqStage, STAGE_LABELS } from "@/lib/deals";
 import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
+import { parseMoney } from "@/lib/money";
+import { transitionError, validDate } from "@/lib/stage-rules";
 
 // A price off a form: "4,200,000" / "$4.2M" -> 4200000, or null when there's
 // no usable positive number. The DB has CHECK (> 0) on both price columns, so a
 // zero or a stray character has to become null rather than reach Postgres.
-function parseMoney(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(String(v).replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
-}
 
 // Every stage move goes through here so the audit event and the outbound
 // webhook fire in exactly one place per transition.
@@ -24,19 +21,21 @@ async function advance(
   extraColumns: Record<string, unknown> = {}
 ) {
   const supabase = getServiceClient();
-  const { data: before } = await supabase
+  const { data: before, error: readError } = await supabase
     .from("deals")
     .select("stage")
     .eq("id", dealId)
     .maybeSingle();
 
-  const { error } = await supabase
-    .from("deals")
-    .update({ stage: toStage, ...extraColumns })
-    .eq("id", dealId);
+  if (readError || !before) return { error: "Deal not found or unavailable" };
+  const invalid = transitionError(before.stage, toStage, eventType === "stage_corrected");
+  if (invalid) return { error: invalid };
+  const { error } = await supabase.rpc("transition_deal", {
+    p_id: dealId, p_expected: before.stage, p_to: toStage,
+    p_event: eventType, p_detail: detail, p_actor: actor, p_columns: extraColumns,
+  });
   if (error) return { error: error.message };
 
-  await logDealEvent(dealId, eventType, detail, actor);
   await fireStageChangeWebhook(dealId, { from: before?.stage ?? null, to: toStage, actor });
   return { error: null };
 }
@@ -57,6 +56,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const body = await req.json();
   const supabase = getServiceClient();
+  // Validate before any property or deal writes, including optional prices.
+  try {
+    for (const field of ["contractPrice", "closedPrice"]) {
+      if (field in body) body[field] = parseMoney(body[field]);
+    }
+    for (const field of ["ddEndOn", "closingOn", "closedOn"]) {
+      if (body[field] && !validDate(body[field])) throw new Error("Enter a valid calendar date");
+    }
+  } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
 
   if (body.action === "mark_offered") {
     const { error } = await advance(params.id, "offered", "marked_offered", {}, user.email);
@@ -190,16 +198,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.action === "update_details") {
     const { data: deal } = await supabase
       .from("deals")
-      .select("property_id")
+      .select("property_id,stage,closed_price,asset_class")
       .eq("id", params.id)
       .single();
     if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    if (deal.stage === "closed" && "closedPrice" in body && body.closedPrice == null) {
+      return NextResponse.json({ error: "A closed deal must retain its closing price" }, { status: 400 });
+    }
 
     if (deal.property_id) {
+      const { data: existingProperty } = await supabase.from("properties").select("address,city,market").eq("id", deal.property_id).single();
+      const locationChanged = existingProperty && ["address", "city", "market"].some(key => key in body && String(body[key] ?? "").trim() !== String((existingProperty as any)[key] ?? "").trim());
       const { error: propErr } = await supabase
         .from("properties")
         .update({
           address: body.address,
+          ...(locationChanged ? { latitude: null, longitude: null, geocode_precision: null, geocoded_at: null } : {}),
           city: body.city || null,
           market: body.market || null,
           submarket: body.submarket || null,
@@ -223,13 +237,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       // Both prices are clearable here (unlike the stage transitions, where a
       // blank must not wipe a recorded price) -- the edit form always submits
       // both fields, so a cleared input genuinely means "remove this".
-      contract_price: parseMoney(body.contractPrice),
-      closed_price: parseMoney(body.closedPrice),
+      ...("contractPrice" in body ? { contract_price: body.contractPrice } : {}),
+      ...("closedPrice" in body ? { closed_price: body.closedPrice } : {}),
     };
     // asset_class is NOT NULL -- only write it when a valid value came in, so a
     // caller that omits the field can't null out which pipeline a deal is in.
     if (body.assetClass === "ios" || body.assetClass === "industrial") {
       dealUpdate.asset_class = body.assetClass;
+      if (body.assetClass !== deal.asset_class) dealUpdate.classification_basis = `User selected ${body.assetClass} on edit`;
     }
 
     const { error: dealErr } = await supabase

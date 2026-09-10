@@ -1,0 +1,23 @@
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import assert from 'node:assert/strict';
+function module(path){const exports={};vm.runInNewContext(ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports});return exports;}
+const {parseMoney}=module('lib/money.ts');
+for(const [input,expected] of [['$4.2M',4200000],['4,200,000',4200000],['$500K',500000],['12.34',12.34],['',null],[null,null]]) assert.equal(parseMoney(input),expected);
+for(const input of ['-100','1,23','4.2MM','NaN',0,{},'1e6','four million']) assert.throws(()=>parseMoney(input));
+const {transitionError,validDate}=module('lib/stage-rules.ts');
+assert.equal(transitionError('closed','due_diligence',true),null);
+assert.ok(transitionError('prospect','closed',true));assert.ok(transitionError('offered','closed',false));
+assert.equal(transitionError('offered','moving_to_psa',false),null);
+assert.ok(transitionError('archived','prospect',true));
+assert.equal(validDate('2026-02-30'),false);assert.equal(validDate('2028-02-29'),true);
+const {scoreComps}=module('lib/comps/match.ts');
+const subject={lat:30,lng:-97,buildingSf:10000,lotSf:100000,coveragePct:10,assetClass:'ios',market:'Austin',submarket:null};
+const comp={id:'fixture',comp_type:'lease',address:'Fixture',asset_class:'industrial',latitude:30,longitude:-97,geocode_precision:'rooftop',building_sf:10000,lot_sf:100000,rent:1,rent_basis:'per_sf_bldg_monthly',date_commenced:'2026-09-01'};
+const opts={today:new Date('2026-09-09')};
+assert.ok(scoreComps([comp],subject,'lease',opts)[0].excluded);
+assert.ok(scoreComps([{...comp,asset_class:null}],subject,'lease',opts)[0].excluded);
+assert.equal(scoreComps([comp],subject,'lease',{...opts,allowOtherClasses:true})[0].excluded,undefined);
+assert.equal(scoreComps([{...comp,asset_class:'ios'}],subject,'lease',opts)[0].excluded,undefined);
+console.log('PASS: money, date, stage and asset-class regression checks');

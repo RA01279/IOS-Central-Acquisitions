@@ -12,6 +12,8 @@
 // what the drop zone is for.
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 type CompType = "lease" | "sale";
 
@@ -90,6 +92,7 @@ export default function CompIntakeForm({
   defaultMarket?: string | null;
   defaultCity?: string | null;
 }) {
+  const router = useRouter();
   const [market, setMarket] = useState(defaultMarket ?? "");
   const [city, setCity] = useState(defaultCity ?? "");
   const [submarket, setSubmarket] = useState("");
@@ -319,7 +322,7 @@ export default function CompIntakeForm({
       // own saved/duplicate/rejected counts and they add up.
       const BATCH = 100;
       const totals: any = {
-        saved: 0, duplicates: 0, rejected: [], failed: [],
+        saved: 0, duplicates: 0, rejected: [], failed: [], savedComps: [],
         geocoding: { centroidOnly: 0, failed: 0, fromFile: 0 },
         batches: 0,
       };
@@ -340,6 +343,7 @@ export default function CompIntakeForm({
           );
         }
         totals.saved += body.saved ?? 0;
+        totals.savedComps.push(...(body.savedComps ?? []));
         totals.duplicates += body.duplicates ?? 0;
         totals.rejected.push(...(body.rejected ?? []));
         totals.failed.push(...(body.failed ?? []));
@@ -347,18 +351,21 @@ export default function CompIntakeForm({
         totals.geocoding.failed += body.geocoding?.failed ?? 0;
         totals.geocoding.fromFile += body.geocoding?.fromFile ?? 0;
         totals.batches++;
+        setResult({ ...totals, savedComps: [...totals.savedComps] });
         // Progress, because 300 rows is several seconds of nothing otherwise.
         setWarnings([`Saving… ${Math.min(i + BATCH, rows.length)} of ${rows.length}`]);
       }
       setWarnings([]);
       setResult(totals);
-      setDrafts(null);
+      if (!totals.failed.length && !totals.rejected.length) setDrafts(null);
       setWarnings([]);
       setSeen(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setBusy(false);
+      // Refresh even after a partial failure: earlier batches may have saved.
+      router.refresh();
     }
   }
 
@@ -638,6 +645,21 @@ export default function CompIntakeForm({
               : ""}
             {result.batches > 1 ? ` · saved in ${result.batches} batches` : ""}
           </p>
+          {result.savedComps?.length > 0 && (
+            <ul>
+              {result.savedComps.slice(0, 20).map((c: any) => (
+                <li key={c.id}>
+                  <Link href={`/comps/${c.id}`}>{c.address}</Link>{" — "}
+                  {c.latitude == null || c.longitude == null
+                    ? "Saved; needs a map location. Open to place a pin."
+                    : c.geocode_precision === "approximate"
+                      ? "Saved; approximate location. Open to correct the pin."
+                      : "Saved with coordinates. Check the selected market and lease/sale filters on the map."}
+                </li>
+              ))}
+              {result.savedComps.length > 20 && <li>{result.savedComps.length - 20} more saved comps.</li>}
+            </ul>
+          )}
           {result.failed?.length > 0 && (
             <ul>
               {result.failed.slice(0, 10).map((f: any, i: number) => (

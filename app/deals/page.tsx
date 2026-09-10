@@ -149,8 +149,8 @@ export default async function DealsPage({
             <h1>Pipeline</h1>
             <p className="muted" style={{ margin: "4px 0 0" }}>
               {asset === "all"
-                ? `All acquisitions · ${deals?.length ?? 0} active`
-                : `${ASSET_CLASS_LABELS[asset]} acquisitions · ${deals?.length ?? 0} active`}
+                ? `All acquisitions · ${(deals??[]).filter(d=>d.stage!=="closed").length} active`
+                : `${ASSET_CLASS_LABELS[asset]} acquisitions · ${(deals??[]).filter(d=>d.stage!=="closed").length} active`}
             </p>
           </div>
           <div className="header-actions">
@@ -176,8 +176,8 @@ export default async function DealsPage({
         </div>
 
         <PipelineMap
-          deals={mapDeals}
-          stages={[...STAGES]}
+          deals={mapDeals.filter((d) => d.stage !== "closed")}
+          stages={STAGES.filter((stage) => stage !== "closed")}
           stageLabels={STAGE_LABELS}
           stageColors={STAGE_COLORS}
           assetClassLabels={ASSET_CLASS_LABELS}

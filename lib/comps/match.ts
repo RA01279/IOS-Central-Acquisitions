@@ -96,6 +96,8 @@ export const DEFAULT_WEIGHTS: MatchWeights = {
 };
 
 export interface MatchOptions {
+  /** Analyst explicitly permits unknown or different classes as supporting evidence. */
+  allowOtherClasses?: boolean;
   basis?: ValueBasis;
   /** Comps beyond this are excluded outright, not merely scored low. */
   radiusMiles?: number;
@@ -356,6 +358,7 @@ export function scoreComps(
 
       let exclusion: string | undefined;
       if (excluded.has(c.id)) exclusion = "ruled out";
+      else if (subject.assetClass && !opts.allowOtherClasses && c.asset_class !== subject.assetClass) exclusion = c.asset_class ? `${c.asset_class.toUpperCase()} class differs` : "asset class needs review";
       else if (value === null) exclusion = basis === "building" ? "no building SF" : "no land area";
       // Distinguished, because they need different fixes: one needs an address
       // that geocodes, the other needs coordinates typed in by hand.

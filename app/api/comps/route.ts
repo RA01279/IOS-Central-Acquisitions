@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
   let saved = 0;
   let duplicates = 0;
   const failed: { address: string; reason: string }[] = [];
+  const savedComps: { id: string; address: string; latitude: number | null; longitude: number | null; geocode_precision: string | null }[] = [];
 
   const rows: { address: string; row: Record<string, unknown> }[] = [];
   for (let i = 0; i < valid.length; i++) {
@@ -280,25 +281,29 @@ export async function POST(req: NextRequest) {
   const CHUNK = 50;
   for (let start = 0; start < rows.length; start += CHUNK) {
     const chunk = rows.slice(start, start + CHUNK);
-    const { error } = await supabase.from("comps").insert(chunk.map((r) => r.row));
+    const { data, error } = await supabase.from("comps").insert(chunk.map((r) => r.row))
+      .select("id,address,latitude,longitude,geocode_precision");
     if (!error) {
       saved += chunk.length;
+      savedComps.push(...(data ?? []));
       continue;
     }
     for (const { address, row } of chunk) {
-      const { error: rowErr } = await supabase.from("comps").insert(row);
-      if (!rowErr) saved++;
+      const { data: savedRow, error: rowErr } = await supabase.from("comps").insert(row)
+        .select("id,address,latitude,longitude,geocode_precision");
+      if (!rowErr) { saved++; savedComps.push(...(savedRow ?? [])); }
       else if (rowErr.code === "23505") duplicates++; // already in the repository
       else failed.push({ address, reason: rowErr.message });
     }
   }
 
-  const centroids = geo.filter((g) => g?.precision === "approximate").length;
-  const ungeocoded = geo.filter((g) => !g).length;
-  const supplied = geo.filter((g) => g?.precision === "supplied").length;
+  const centroids = savedComps.filter((c) => c.geocode_precision === "approximate").length;
+  const ungeocoded = savedComps.filter((c) => c.latitude == null || c.longitude == null).length;
+  const supplied = savedComps.filter((c) => c.geocode_precision === "supplied").length;
 
   return NextResponse.json({
     saved,
+    savedComps,
     duplicates,
     rejected,
     failed,
