@@ -18,6 +18,8 @@ export type CompType = "lease" | "sale";
 export type DatePrecision = "day" | "month" | "quarter" | "year";
 
 export interface ParsedComp {
+  /** A transaction candidate recovered from labeled email text, even if incomplete. */
+  fromEmailText?: boolean;
   compType: CompType;
   address: string;
   /** Building or park name, where a street address alone isn't unique. */
@@ -800,6 +802,7 @@ export function assessSheet(name: string, text: string): SheetAssessment {
  */
 export function asPropertyReport(comps: ParsedComp[]): ParsedComp[] | null {
   if (!comps.length) return null;
+  if (comps.some(c => c.fromEmailText)) return null;
   // Any priced or rented row and this is a comp table with gaps in it.
   if (comps.some((c) => c.salePrice !== null || c.rent !== null || c.quotedPsf !== null)) {
     return null;
@@ -818,6 +821,57 @@ export function parseCompHtml(html: string, opts: ParseOptions = {}): ParseResul
   return parseCompTable(htmlToDelimitedText(html), opts);
 }
 
+
+/** Recover labeled email details without guessing lost table columns or rent units. */
+export function parseCompEmailText(text: string, opts: ParseOptions = {}): ParseResult {
+  const lines = stripQuotedReply(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const groups: { label: string; value: string; field: Field }[][] = [];
+  let fields: { label: string; value: string; field: Field }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const pair = lines[i].match(/^([^:\t]{1,60})\s*[:\t]\s*(.*)$/);
+    let label = pair?.[1] ?? lines[i];
+    let field = fieldFor(label);
+    if (!field) continue;
+    let value = pair?.[2]?.trim();
+    if (!value && i + 1 < lines.length && !fieldFor(lines[i + 1]) && !/^[^:]{1,60}:/.test(lines[i + 1])) value = lines[++i];
+    if (!value) continue;
+    if (field === 'address' && fields.some(f => f.field === 'address')) { groups.push(fields); fields = []; }
+    fields.push({ label, value, field });
+  }
+  if (fields.length) groups.push(fields);
+  const comps: ParsedComp[] = [];
+  for (const group of groups) {
+    if (!group.some(f => f.field === 'address') || group.length < 2) continue;
+    // Repeated labels may be flattened columns, not one transaction. Do not merge them.
+    if (new Set(group.map(f => f.field)).size !== group.length) continue;
+    const lease = group.some(f => LEASE_SIGNALS.includes(f.field) || f.field === 'ratePerAcre');
+    const sale = group.some(f => SALE_SIGNALS.includes(f.field));
+    if (lease === sale) continue;
+    let ambiguousRent = false;
+    const cells = group.map(f => {
+      if (f.field !== 'monthlyRent') return f;
+      // A bare Rent label does not state whether dollars are total, per SF, or per acre.
+      const rate = f.value.match(/^\$?([\d,]+(?:\.\d+)?)\s*(?:\/|per\s+)(acre|ac|sf|sq\.?\s*ft)\s*(?:\/|per\s+)(mo(?:nth)?|yr|year)(?:\s+(?:NNN|gross))?$/i);
+      if (rate) return { ...f, label: /^(ac|acre)$/i.test(rate[2]) ? (/^(yr|year)$/i.test(rate[3]) ? 'Unresolved rent' : 'Rate AC Mo') : (/^(yr|year)$/i.test(rate[3]) ? 'Rent SF Yr' : 'Rent SF Mo'), value: rate[1] };
+      const total = f.value.match(/^\$?([\d,]+(?:\.\d+)?)\s*(?:\/|per\s+)(?:mo|month)(?:\s+(?:NNN|gross))?$/i);
+      if (total) return { ...f, label: 'Monthly Rent', value: total[1] };
+      if (!/monthly|per month|\/\s*mo\b/i.test(f.label)) { ambiguousRent = true; return { ...f, label: 'Unresolved rent' }; }
+      return f;
+    });
+    const clean = (v: string) => v.replace(/[|\t\r\n]/g, ' ');
+    const table = [cells.map(f => clean(f.label)).concat('Notes').join('\t'), cells.map(f => clean(f.value)).concat('Imported from labeled email text').join('\t')].join('\n');
+    const parsed = parseCompTable(table, { ...opts, defaultCompType: lease ? 'lease' : 'sale' });
+    for (const comp of parsed.comps) {
+      comp.fromEmailText = true;
+      comp.notes = text;
+      comp.warnings.push('Read from email text. Review every field against the original email before saving.');
+      if (ambiguousRent) comp.warnings.push('Rent units were not stated. Enter the rent and select its units before saving.');
+      comps.push(comp);
+    }
+  }
+  return { comps, warnings: comps.length ? ['Recovered labeled email details for review; original text is retained in notes.'] : [] };
+}
+
 /**
  * Parse whatever the drop zone or clipboard produced. Prefers HTML, since it
  * carries real cell boundaries; falls back to delimited text.
@@ -830,7 +884,12 @@ export function parseCompInput(
     const fromHtml = parseCompHtml(input.html, opts);
     if (fromHtml.comps.length) return fromHtml;
   }
-  if (input.text) return parseCompTable(input.text, opts);
+  if (input.text) {
+    const table = parseCompTable(input.text, opts);
+    if (table.comps.length) return table;
+    const email = parseCompEmailText(input.text, opts);
+    return email.comps.length ? email : table;
+  }
   if (input.html) return parseCompHtml(input.html, opts);
   return { comps: [], warnings: ["Nothing to parse."] };
 }
