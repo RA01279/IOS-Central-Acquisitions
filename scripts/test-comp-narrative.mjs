@@ -14,3 +14,20 @@ assert.equal(exports.parseCompInput({text:text.replace('7/26','13/26')}).comps[0
 console.log('PASS: exact Todd St email, monthly rent vs per-acre amount, July 2026 month precision, 36-month term, no TI, power, notes, hook-height distinction, no location invented, missing units, availability, multiple comps and invalid month.');
 
 assert.equal(exports.parseCompInput({html:text.split("\n").map(l=>"<p>"+l+"</p>").join("")}).comps[0].rent,28442);
+const cunningham = `6210 Cunningham Rd
+$1.35/SF ($63,057/mo NNN) 3 yr lease, no TI, 4% bumps
+46,709 SF on 5.0 AC
+1,170 SF office
+14,400 SF high bay
+(1) 30T, (3) 10T, (4) 5T
+Two power services - 2,000A & 1,600A`;
+const cc = exports.parseCompInput({text:cunningham}).comps;
+assert.equal(cc.length,1);
+for(const [key,value] of Object.entries({address:'6210 Cunningham Rd',compType:'lease',rent:63057,rentBasis:'total_monthly',buildingSf:46709,acres:5,officeSf:1170,dateCommenced:null,leaseTermMonths:36,leaseType:'nnn',tiPsf:0,powerAmps:null,escalationsPct:null,clearHeightFt:null})) assert.equal(cc[0][key],value,key);
+assert.equal(cc[0].notes,cunningham);
+assert.ok(cc[0].warnings.some(w=>w.includes('commencement')));
+assert.equal(exports.parseCompInput({text:cunningham.replace('3 yr lease','Sale price: $4,000,000')}).comps.length,0);
+assert.equal(exports.parseCompInput({text:cunningham+'\n'+text}).comps.length,2);
+assert.equal(exports.parseCompInput({html:cunningham.split('\n').map(l=>'<p>'+l+'</p>').join('')}).comps[0].buildingSf,46709);
+assert.equal(exports.parseCompInput({text:cunningham.replace('4% bumps','4% annual bumps')}).comps[0].escalationsPct,4);
+console.log('PASS: exact Cunningham email, no date invented, total vs office/high-bay SF, five acres, separate services, unspecified vs annual escalations, mixed blocks, and HTML paste.');
