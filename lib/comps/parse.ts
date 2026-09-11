@@ -20,6 +20,7 @@ export type DatePrecision = "day" | "month" | "quarter" | "year";
 export interface ParsedComp {
   /** A transaction candidate recovered from labeled email text, even if incomplete. */
   fromEmailText?: boolean;
+  powerAmps?: number | null;
   compType: CompType;
   address: string;
   /** Building or park name, where a street address alone isn't unique. */
@@ -822,6 +823,55 @@ export function parseCompHtml(html: string, opts: ParseOptions = {}): ParseResul
 }
 
 
+/** Broker narrative blocks headed by an address and an explicit leased date. */
+export function parseNarrativeLeaseEmail(text: string, opts: ParseOptions = {}): ParseResult {
+  const body = stripQuotedReply(text);
+  const lines = body.split(/\r?\n/);
+  const heading = /^\s*(\d+[A-Za-z-]*\s+[^\n]+?)\s*\(leased\s+([^\)]+)\)\s*$/i;
+  const starts = lines.flatMap((line, index) => heading.test(line) ? [index] : []);
+  const comps: ParsedComp[] = [];
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i];
+    const match = lines[start].match(heading)!;
+    const block = lines.slice(start, starts[i + 1] ?? lines.length).join('\n').trim();
+    const sf = block.match(/^\s*[\u00b1~]?\s*([\d,]+(?:\.\d+)?)\s*(?:SF|sq\.?\s*ft)\s*$/im);
+    const acres = block.match(/^\s*[\u00b1~]?\s*([\d,]+(?:\.\d+)?)\s*(?:AC|acres?)\b/im);
+    // A total monthly amount is explicit; PSF alone does not state a period.
+    const amounts = [...block.matchAll(/\$([\d,]+(?:\.\d+)?)\s*\/\s*mo(?:nth)?\b(?!\s*\/\s*(?:AC|acre|SF)\b)/gi)].map(m => num(m[1])!);
+    const totals = [...new Set(amounts)];
+    const term = block.match(/\b(\d+)\s*(yr|year|mo|month)s?\s+lease\b/i);
+    const power = block.match(/\b(?:3P|3[- ]phase)\s*[\u00b1~]?\s*([\d,]+)\s*amps?\b/i);
+    const shortDate = match[2].trim().match(/^(\d{1,2})\/(\d{2}|\d{4})$/);
+    const date = shortDate && Number(shortDate[1]) >= 1 && Number(shortDate[1]) <= 12
+      ? { date: (shortDate[2].length === 2 ? '20' : '') + shortDate[2] + '-' + shortDate[1].padStart(2, '0') + '-01', precision: 'month' as const }
+      : parseCompDate(match[2]);
+    const columns = ['Address', 'Monthly Rent', 'Building SF', 'Acres', 'Commencement'];
+    const values = [match[1].trim(), totals.length === 1 ? String(totals[0]) : '', sf?.[1] ?? '', acres?.[1] ?? '', date?.date ?? ''];
+    const parsed = parseCompTable(columns.join('\t') + '\n' + values.join('\t'), { ...opts, defaultCompType: 'lease' });
+    for (const comp of parsed.comps) {
+      comp.fromEmailText = true;
+      comp.notes = block;
+      comp.datePrecision = date?.precision ?? 'day';
+      comp.leaseType = /\bNNN\b/i.test(block) ? 'nnn' : null;
+      comp.leaseTermMonths = term ? Number(term[1]) * (/^(yr|year)$/i.test(term[2]) ? 12 : 1) : null;
+      comp.tiPsf = /\bno\s+TI\b/i.test(block) ? 0 : null;
+      comp.powerAmps = power ? num(power[1]) : null;
+      comp.warnings.push('Read from broker email text. Review the extracted terms and location before saving.');
+      if (shortDate && date) comp.warnings.push('Interpreted Leased ' + match[2] + ' as ' + date.date.slice(0, 7) + ' (month only). Confirm this is the commencement month.');
+      if (totals.length !== 1) comp.warnings.push('No single explicit total monthly rent found. Enter rent and units before saving; PSF alone does not specify monthly or annual.');
+      if (/hook\s+height/i.test(block)) comp.warnings.push('Crane hook height is retained in notes; it is not building clear height.');
+      const psf = block.match(/\$([\d,]+(?:\.\d+)?)\s*PSF\b/i);
+      if (psf && comp.rent && comp.buildingSf) {
+        const quoted = num(psf[1])!;
+        if (Math.abs(quoted * comp.buildingSf - comp.rent) / comp.rent > 0.01) comp.warnings.push('Quoted PSF does not reconcile with the stated monthly rent and building area. Verify the rate period and figures.');
+      }
+      if (/\basking|\bproposed|\bnot\s+leased\b/i.test(block)) { comp.rent = null; comp.rentBasis = null; comp.warnings.push('This text also refers to asking or proposed terms. Confirm executed lease terms before saving.'); }
+      comps.push(comp);
+    }
+  }
+  return { comps, warnings: comps.length ? ['Recovered narrative lease comps for review. Full source details, including equipment, are retained in notes.'] : [] };
+}
+
 /** Recover labeled email details without guessing lost table columns or rent units. */
 export function parseCompEmailText(text: string, opts: ParseOptions = {}): ParseResult {
   const lines = stripQuotedReply(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -888,9 +938,11 @@ export function parseCompInput(
     const table = parseCompTable(input.text, opts);
     if (table.comps.length) return table;
     const email = parseCompEmailText(input.text, opts);
-    return email.comps.length ? email : table;
+    if (email.comps.length) return email;
+    const narrative = parseNarrativeLeaseEmail(input.text, opts);
+    return narrative.comps.length ? narrative : table;
   }
-  if (input.html) return parseCompHtml(input.html, opts);
+  if (input.html) return parseCompInput({ text: htmlToDelimitedText(input.html) }, opts);
   return { comps: [], warnings: ["Nothing to parse."] };
 }
 
