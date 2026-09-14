@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
+import { transactionUpdate, type AssetTransactions } from "@/lib/asset-transactions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const update: Record<string, unknown> = {};
+  const supabase = getServiceClient();
+  if (["purchasePrice", "salePrice", "purchasedOn", "soldOn", "acquisitionCosts", "sellingCosts", "status"].some(key => key in body)) {
+    const { data: current, error: readError } = await supabase.from("assets").select("status,purchase_price,purchased_on,sale_price,sold_on,acquisition_costs,selling_costs").eq("id", params.id).maybeSingle();
+    if (readError) return NextResponse.json({ error: readError.message }, { status: 500 });
+    if (!current) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    try { Object.assign(update, transactionUpdate(body, current as AssetTransactions)); }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid transaction details" }, { status: 400 }); }
+  }
 
   if ("siteAcres" in body) {
     const acres = num(body.siteAcres);
@@ -49,13 +58,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ("submarket" in body) update.submarket = str(body.submarket);
   if ("notes" in body) update.notes = str(body.notes);
   if ("market" in body) update.market = str(body.market);
-  if ("status" in body) {
-    const s = str(body.status);
-    if (s && !["owned", "sold", "under_contract"].includes(s)) {
-      return NextResponse.json({ error: `Unknown status "${s}".` }, { status: 400 });
-    }
-    update.status = s ?? "owned";
-  }
 
   // A pin dropped by hand, same contract as a comp's: it wins, it's marked
   // 'manual', and nothing re-geocodes over it.
@@ -91,7 +93,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   update.updated_at = new Date().toISOString();
   update.updated_by = user.email;
 
-  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("assets")
     .update(update)

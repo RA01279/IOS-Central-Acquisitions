@@ -7,6 +7,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapView, { type MapPoint } from "./MapView";
+import AssetTransactionEditor from "./AssetTransactionEditor";
+import { saleComparison } from "@/lib/asset-transactions";
 
 const OCCUPIED_COLOR = "6C4AB6";
 const AVAILABLE_COLOR = "C77DFF";
@@ -29,6 +31,12 @@ export interface AssetDetail {
   geocode_precision: string | null;
   notes: string | null;
   source_url: string | null;
+  purchase_price: number | null;
+  purchased_on: string | null;
+  sale_price: number | null;
+  sold_on: string | null;
+  acquisition_costs: number | null;
+  selling_costs: number | null;
 }
 
 function colorFor(a: AssetDetail): string {
@@ -39,7 +47,10 @@ function colorFor(a: AssetDetail): string {
 export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
   const router = useRouter();
   const [market, setMarket] = useState("__all");
-  const [includeSold, setIncludeSold] = useState(false);
+  const [portfolioFilter, setPortfolioFilter] = useState("owned");
+  const includeSold = portfolioFilter !== "owned";
+  const [transaction, setTransaction] = useState<{ asset: AssetDetail; recordSale: boolean } | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<{ acres: string; sf: string; submarket: string; notes: string }>(
     { acres: "", sf: "", submarket: "", notes: "" }
@@ -55,9 +66,9 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
   const shown = useMemo(
     () =>
       assets
-        .filter((a) => includeSold || a.status !== "sold")
+        .filter((a) => portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))
         .filter((a) => market === "__all" || a.market === market),
-    [assets, includeSold, market]
+    [assets, portfolioFilter, market]
   );
 
   const points: MapPoint[] = useMemo(
@@ -144,17 +155,11 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
             >
               {m}{" "}
               <span className="muted">
-                {assets.filter((a) => a.market === m && (includeSold || a.status !== "sold")).length}
+                {assets.filter((a) => a.market === m && (portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))).length}
               </span>
             </button>
           ))}
-          <button
-            type="button"
-            className={includeSold ? "chip chip-active" : "chip"}
-            onClick={() => setIncludeSold((v) => !v)}
-          >
-            Include sold
-          </button>
+          {[ ["owned", "Owned"], ["sold", "Sold history"], ["all", "All assets"] ].map(([value, label]) => <button type="button" key={value} className={portfolioFilter === value ? "chip chip-active" : "chip"} onClick={() => setPortfolioFilter(value)}>{label}</button>)}
         </div>
 
         <MapView
@@ -168,6 +173,13 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
           ]}
         />
       </section>
+
+      {savedMessage && <p role="status">{savedMessage}</p>}
+      {transaction && <AssetTransactionEditor key={`${transaction.asset.id}-${transaction.recordSale}`} asset={transaction.asset} recordSale={transaction.recordSale} onCancel={() => setTransaction(null)} onSaved={status => {
+        setSavedMessage(`Purchase and sale details saved for ${transaction.asset.address}.`);
+        if (status === "sold" || transaction.asset.status === "sold") setPortfolioFilter("all");
+        setTransaction(null); router.refresh();
+      }} />}
 
       <section className="panel">
         <h2>
@@ -185,6 +197,9 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                 <th>Acres</th>
                 <th>Bldg SF</th>
                 <th>Status</th>
+                <th>Purchase</th>
+                <th>Sale</th>
+                <th>Change after costs</th>
                 <th />
               </tr>
             </thead>
@@ -192,7 +207,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
               {shown.map((a) => (
                 // id on the row so a map popup or a deal panel can link
                 // straight to it with /assets#<id>.
-                <tr key={a.id} id={a.id} style={{ opacity: a.status === "sold" ? 0.55 : 1 }}>
+                <tr key={a.id} id={a.id}>
                   <td>
                     {a.address}
                     {a.latitude == null && (
@@ -248,6 +263,9 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         ? "space available"
                         : "occupied"}
                   </td>
+                  <td>{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
+                  <td>{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "—"}</td>
+                  <td>{comparisonLabel(a)}</td>
                   <td>
                     {editing === a.id ? (
                       <>
@@ -259,9 +277,10 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         </button>
                       </>
                     ) : (
-                      <button type="button" className="secondary" onClick={() => startEdit(a)}>
+                      <><button type="button" className="secondary" onClick={() => startEdit(a)}>
                         Edit
-                      </button>
+                      </button>{" "}<button type="button" className="secondary" onClick={() => { setEditing(null); setTransaction({ asset: a, recordSale: false }); }}>Purchase / sale</button>{" "}
+                      {a.status !== "sold" && <button type="button" onClick={() => { setEditing(null); setTransaction({ asset: a, recordSale: true }); }}>Record sale</button>}</>
                     )}
                   </td>
                 </tr>
@@ -275,9 +294,16 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
             dalfen.com/ios
           </a>
           , which publishes addresses and occupancy but no acreage or building size. Re-running the
-          seed updates occupancy and status and leaves anything entered here alone.
+          seed updates occupancy and preserves recorded sales and purchase details.
         </p>
       </section>
     </>
   );
+}
+
+function assetMoney(value: number | null) { return value == null ? "—" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+function comparisonLabel(asset: AssetDetail) {
+  const comparison = saleComparison(asset);
+  if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "—";
+  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
 }
