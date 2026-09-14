@@ -47,6 +47,8 @@ function colorFor(a: AssetDetail): string {
 export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
   const router = useRouter();
   const [market, setMarket] = useState("__all");
+  const [state, setState] = useState("__all");
+  const [city, setCity] = useState("__all");
   const [portfolioFilter, setPortfolioFilter] = useState("owned");
   const includeSold = portfolioFilter !== "owned";
   const [transaction, setTransaction] = useState<{ asset: AssetDetail; recordSale: boolean } | null>(null);
@@ -63,12 +65,24 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
     [assets]
   );
 
+  const states = useMemo(() => Array.from(new Set(assets.map(assetState))).sort(), [assets]);
+  const cities = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const asset of assets) {
+      if (state !== "__all" && assetState(asset) !== state) continue;
+      options.set(assetCity(asset), `${asset.city?.trim() || "City not recorded"}, ${assetState(asset) === "__none" ? "state not recorded" : assetState(asset)}`);
+    }
+    return Array.from(options, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [assets, state]);
+
   const shown = useMemo(
     () =>
       assets
         .filter((a) => portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))
-        .filter((a) => market === "__all" || a.market === market),
-    [assets, portfolioFilter, market]
+        .filter((a) => market === "__all" || a.market === market)
+        .filter((a) => state === "__all" || assetState(a) === state)
+        .filter((a) => city === "__all" || assetCity(a) === city),
+    [assets, portfolioFilter, market, state, city]
   );
 
   const points: MapPoint[] = useMemo(
@@ -138,6 +152,22 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
           Portfolio map <span className="count">{points.length}</span>
         </h2>
 
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 16 }}>
+          <label style={{ minWidth: 180 }}>State
+            <select value={state} onChange={e => { setState(e.target.value); setCity("__all"); }}>
+              <option value="__all">All states</option>
+              {states.map(s => <option key={s} value={s}>{s === "__none" ? "State not recorded" : s}</option>)}
+            </select>
+          </label>
+          <label style={{ minWidth: 220 }}>City
+            <select value={city} onChange={e => setCity(e.target.value)}>
+              <option value="__all">All cities</option>
+              {cities.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          {(state !== "__all" || city !== "__all" || market !== "__all") && <button type="button" className="secondary" onClick={() => { setState("__all"); setCity("__all"); setMarket("__all"); }}>Clear geography filters</button>}
+        </div>
+
         <div className="filter-chips">
           <button
             type="button"
@@ -155,17 +185,19 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
             >
               {m}{" "}
               <span className="muted">
-                {assets.filter((a) => a.market === m && (portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))).length}
+                {assets.filter((a) => a.market === m && (state === "__all" || assetState(a) === state) && (city === "__all" || assetCity(a) === city) && (portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))).length}
               </span>
             </button>
           ))}
           {[ ["owned", "Owned"], ["sold", "Sold history"], ["all", "All assets"] ].map(([value, label]) => <button type="button" key={value} className={portfolioFilter === value ? "chip chip-active" : "chip"} onClick={() => setPortfolioFilter(value)}>{label}</button>)}
         </div>
 
+        <p className="hint" role="status">Showing {shown.length} matching asset{shown.length === 1 ? "" : "s"}. State, city, market and ownership filters apply to the map and table.</p>
+
         <MapView
           points={points}
           height={460}
-          emptyMessage="No assets to show. Run scripts/seed-assets.mjs to load the portfolio."
+          emptyMessage="No located assets match these filters. Change or clear the geography filters."
           legend={[
             { label: "Occupied", color: OCCUPIED_COLOR },
             { label: "Space available", color: AVAILABLE_COLOR },
@@ -204,6 +236,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
               </tr>
             </thead>
             <tbody>
+              {shown.length === 0 && <tr><td colSpan={11} className="muted">No assets match these filters. Change the state, city, market or ownership selection.</td></tr>}
               {shown.map((a) => (
                 // id on the row so a map popup or a deal panel can link
                 // straight to it with /assets#<id>.
@@ -301,6 +334,8 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
   );
 }
 
+function assetState(a: AssetDetail) { return a.state?.trim().toUpperCase() || "__none"; }
+function assetCity(a: AssetDetail) { return JSON.stringify([a.city?.trim().toLowerCase() || "", assetState(a)]); }
 function assetMoney(value: number | null) { return value == null ? "—" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
 function comparisonLabel(asset: AssetDetail) {
   const comparison = saleComparison(asset);
