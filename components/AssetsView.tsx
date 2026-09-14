@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 // components/AssetsView.tsx
 //
 // The portfolio map and table, with a market filter and inline editing for the
@@ -103,7 +103,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
               a.building_sf ? `${Math.round(Number(a.building_sf)).toLocaleString()} SF` : null,
             ]
               .filter(Boolean)
-              .join(" Â· "),
+              .join(" · "),
           ].filter((l) => l.length > 0),
         })),
     [shown]
@@ -246,7 +246,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                     {a.latitude == null && (
                       <span className="muted" title="No coordinates, so it can't be mapped or measured">
                         {" "}
-                        Â· not located
+                        · not located
                       </span>
                     )}
                   </td>
@@ -297,13 +297,13 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         : "occupied"}
                   </td>
                   <td data-label="Purchase">{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
-                  <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">âˆ’ {assetMoney(a.selling_costs)} costs</div>}</> : "â€”"}</td>
+                  <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "â€”"}</td>
                   <td data-label="Change after costs">{comparisonLabel(a)}</td>
                   <td data-label="Actions">
                     {editing === a.id ? (
                       <>
                         <button onClick={() => save(a.id)} disabled={busy}>
-                          {busy ? "â€¦" : "Save"}
+                          {busy ? "…" : "Save"}
                         </button>{" "}
                         <button type="button" className="secondary" onClick={() => setEditing(null)}>
                           Cancel
@@ -340,6 +340,6 @@ function assetMoney(value: number | null) { return value == null ? "â€”" : 
 function comparisonLabel(asset: AssetDetail) {
   const comparison = saleComparison(asset);
   if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "â€”";
-  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "âˆ’" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "âˆ’" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
+  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
 }
 
