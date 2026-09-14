@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 // components/AssetsView.tsx
 //
 // The portfolio map and table, with a market filter and inline editing for the
@@ -103,7 +103,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
               a.building_sf ? `${Math.round(Number(a.building_sf)).toLocaleString()} SF` : null,
             ]
               .filter(Boolean)
-              .join(" · "),
+              .join(" Â· "),
           ].filter((l) => l.length > 0),
         })),
     [shown]
@@ -218,8 +218,8 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
           Assets <span className="count">{shown.length}</span>
         </h2>
         {error && <p className="error">{error}</p>}
-        <div className="table-scroll">
-          <table className="summary-table log-table">
+        <div className="asset-table-container">
+          <table className="summary-table log-table asset-table"><colgroup>{[15,8,8,8,5,6,7,9,8,11,15].map((width,index)=><col key={index} style={{width:`${width}%`}} />)}</colgroup>
             <thead>
               <tr>
                 <th>Address</th>
@@ -232,7 +232,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                 <th>Purchase</th>
                 <th>Sale</th>
                 <th>Change after costs</th>
-                <th />
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -241,69 +241,69 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                 // id on the row so a map popup or a deal panel can link
                 // straight to it with /assets#<id>.
                 <tr key={a.id} id={a.id}>
-                  <td>
+                  <td data-label="Address">
                     {a.address}
                     {a.latitude == null && (
                       <span className="muted" title="No coordinates, so it can't be mapped or measured">
                         {" "}
-                        · not located
+                        Â· not located
                       </span>
                     )}
                   </td>
-                  <td className="muted">{[a.city, a.state].filter(Boolean).join(", ") || "—"}</td>
-                  <td className="muted">{a.market ?? "—"}</td>
-                  <td>
+                  <td data-label="City" className="muted">{[a.city, a.state].filter(Boolean).join(", ") || "â€”"}</td>
+                  <td data-label="Market" className="muted">{a.market ?? "â€”"}</td>
+                  <td data-label="Submarket">
                     {editing === a.id ? (
                       <input
                         value={form.submarket}
                         onChange={(e) => setForm((f) => ({ ...f, submarket: e.target.value }))}
-                        style={{ width: 130 }}
+                        style={{ width: "100%" }}
                       />
                     ) : (
-                      <span className="muted">{a.submarket ?? "—"}</span>
+                      <span className="muted">{a.submarket ?? "â€”"}</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Acres">
                     {editing === a.id ? (
                       <input
                         value={form.acres}
                         onChange={(e) => setForm((f) => ({ ...f, acres: e.target.value }))}
                         placeholder="6.19"
-                        style={{ width: 80 }}
+                        style={{ width: "100%" }}
                       />
                     ) : (
-                      a.site_acres ?? <span className="overdue">—</span>
+                      a.site_acres ?? <span className="overdue">â€”</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Bldg SF">
                     {editing === a.id ? (
                       <input
                         value={form.sf}
                         onChange={(e) => setForm((f) => ({ ...f, sf: e.target.value }))}
                         placeholder="20200"
-                        style={{ width: 90 }}
+                        style={{ width: "100%" }}
                       />
                     ) : a.building_sf ? (
                       Math.round(Number(a.building_sf)).toLocaleString()
                     ) : (
-                      "—"
+                      "â€”"
                     )}
                   </td>
-                  <td className="muted">
+                  <td data-label="Status" className="muted">
                     {a.status === "sold"
                       ? "sold"
                       : a.occupancy === "available"
                         ? "space available"
                         : "occupied"}
                   </td>
-                  <td>{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
-                  <td>{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "—"}</td>
-                  <td>{comparisonLabel(a)}</td>
-                  <td>
+                  <td data-label="Purchase">{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
+                  <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">âˆ’ {assetMoney(a.selling_costs)} costs</div>}</> : "â€”"}</td>
+                  <td data-label="Change after costs">{comparisonLabel(a)}</td>
+                  <td data-label="Actions">
                     {editing === a.id ? (
                       <>
                         <button onClick={() => save(a.id)} disabled={busy}>
-                          {busy ? "…" : "Save"}
+                          {busy ? "â€¦" : "Save"}
                         </button>{" "}
                         <button type="button" className="secondary" onClick={() => setEditing(null)}>
                           Cancel
@@ -336,9 +336,10 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
 
 function assetState(a: AssetDetail) { return a.state?.trim().toUpperCase() || "__none"; }
 function assetCity(a: AssetDetail) { return JSON.stringify([a.city?.trim().toLowerCase() || "", assetState(a)]); }
-function assetMoney(value: number | null) { return value == null ? "—" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+function assetMoney(value: number | null) { return value == null ? "â€”" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
 function comparisonLabel(asset: AssetDetail) {
   const comparison = saleComparison(asset);
-  if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "—";
-  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
+  if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "â€”";
+  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "âˆ’" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "âˆ’" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
 }
+

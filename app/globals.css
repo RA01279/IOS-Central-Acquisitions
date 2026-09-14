@@ -1181,3 +1181,63 @@ main.wide {
 .log-table td:nth-child(6) {
   text-align: right;
 }
+
+/* Keep every portfolio column within the available page width. */
+.asset-table {
+  table-layout: fixed;
+  font-size: 12px;
+}
+.asset-table th,
+.asset-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 5px;
+  vertical-align: top;
+}
+.asset-table input {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.asset-table td[data-label="Actions"] button {
+  display: block;
+  width: 100%;
+  margin-bottom: 5px;
+  padding: 6px 4px;
+  font-size: 12px;
+  white-space: normal;
+}
+@media (max-width: 900px) {
+  .asset-table colgroup,
+  .asset-table thead {
+    display: none;
+  }
+  .asset-table,
+  .asset-table tbody,
+  .asset-table tr {
+    display: block;
+    width: 100%;
+  }
+  .asset-table tr {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .asset-table td[data-label] {
+    display: grid;
+    grid-template-columns: minmax(100px, 32%) minmax(0, 1fr);
+    gap: 8px;
+    text-align: left;
+    border: none;
+  }
+  .asset-table td[data-label]::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .asset-table td[data-label] > div {
+    grid-column: 2;
+  }
+  .asset-table td[data-label="Actions"] button {
+    grid-column: 2;
+  }
+}
