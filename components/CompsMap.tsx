@@ -11,13 +11,21 @@
 
 import { useMemo, useState } from "react";
 import MapView, { type MapPoint } from "./MapView";
-import { hasMapCoordinates } from "@/lib/comps/mapData";
+import { hasMapCoordinates as validMapCoordinates } from "@/lib/comps/mapData";
+import { isUsableForDistance } from "@/lib/geocode";
+import Link from "next/link";
+import { haversineMiles } from "@/lib/comps/match";
 
 const SALE_COLOR = "1E7A46"; // green
 const LEASE_COLOR = "2E6DA4"; // blue
 const SQFT_PER_ACRE = 43560;
 
+function hasMapCoordinates(value: { latitude: unknown; longitude: unknown; geocode_precision?: string | null }) {
+  return validMapCoordinates(value) && isUsableForDistance(value.geocode_precision);
+}
+
 export interface CompMapRow {
+  geocode_precision?: string | null;
   id: string;
   comp_type: "lease" | "sale";
   address: string;
@@ -69,6 +77,32 @@ function rate(c: CompMapRow): string | null {
 
 export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
   const [market, setMarket] = useState<string>("__all");
+  const [address, setAddress] = useState("");
+  const [subject, setSubject] = useState<{ latitude: number; longitude: number; address: string } | null>(null);
+  const [minMiles, setMinMiles] = useState("0");
+  const [maxMiles, setMaxMiles] = useState("10");
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const bandValid = minMiles.trim() !== "" && maxMiles.trim() !== "" && Number.isFinite(Number(minMiles)) && Number.isFinite(Number(maxMiles)) && Number(minMiles) >= 0 && Number(maxMiles) > Number(minMiles) && Number(maxMiles) <= 500;
+
+  async function searchAddress(event: React.FormEvent) {
+    event.preventDefault();
+    if (!address.trim() || !bandValid || searching) return;
+    setSearching(true);
+    setSearchError(null);
+    setSubject(null);
+    try {
+      const response = await fetch("/api/comps/search-address", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: address.trim() }) });
+      const result = await response.json();
+      if (!response.ok || !result.location || !hasMapCoordinates(result.location)) throw new Error(result.error || result.message || "Could not locate this address.");
+      setSubject({ ...result.location, address: result.matchedAddress || address.trim() });
+      setMarket("__all");
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : "Address lookup failed. Please retry.");
+    } finally {
+      setSearching(false);
+    }
+  }
   const [types, setTypes] = useState<{ sale: boolean; lease: boolean }>({ sale: true, lease: true });
 
   const markets = useMemo(
@@ -94,10 +128,12 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
         (c) =>
           (market === "__all" ||
             (market === "__none" ? !c.market : c.market === market)) &&
-          types[c.comp_type]
-      ),
-    [mappable, market, types]
+          types[c.comp_type] && (!subject || (bandValid && haversineMiles(subject.latitude, subject.longitude, Number(c.latitude), Number(c.longitude)) >= Number(minMiles) && haversineMiles(subject.latitude, subject.longitude, Number(c.latitude), Number(c.longitude)) <= Number(maxMiles)))
+      ).sort((a, b) => subject ? haversineMiles(subject.latitude, subject.longitude, Number(a.latitude), Number(a.longitude)) - haversineMiles(subject.latitude, subject.longitude, Number(b.latitude), Number(b.longitude)) : 0),
+    [mappable, market, types, subject, bandValid, minMiles, maxMiles]
   );
+
+  const radiusBand = useMemo(() => subject && bandValid ? { lat: subject.latitude, lng: subject.longitude, minMiles: Number(minMiles), maxMiles: Number(maxMiles) } : undefined, [subject, bandValid, minMiles, maxMiles]);
 
   const points: MapPoint[] = useMemo(
     () =>
@@ -143,6 +179,19 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
       <h2>
         Comps map <span className="count">{filtered.length}</span>
       </h2>
+
+      <form onSubmit={searchAddress} style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 12 }}>
+        <label style={{ flex: "1 1 300px" }}>Subject address
+          <input aria-label="Subject address" placeholder="Street address, city, state" value={address} maxLength={300} disabled={searching} onChange={e => { setAddress(e.target.value); setSubject(null); setSearchError(null); }} required />
+        </label>
+        <label>Minimum miles<input aria-label="Minimum miles" type="number" min="0" max="499" step="any" value={minMiles} onChange={e => setMinMiles(e.target.value)} style={{ width: 110 }} required /></label>
+        <label>Maximum miles<input aria-label="Maximum miles" type="number" min="0.1" max="500" step="any" value={maxMiles} onChange={e => setMaxMiles(e.target.value)} style={{ width: 110 }} required /></label>
+        <button type="submit" disabled={searching || !address.trim() || !bandValid}>{searching ? "Locating…" : "Find comps"}</button>
+        {subject && <button type="button" className="secondary" onClick={() => { setSubject(null); setAddress(""); setSearchError(null); }}>Clear radius search</button>}
+      </form>
+      {!bandValid && <p className="error">Enter a band from zero to 500 miles, with the maximum greater than the minimum.</p>}
+      {searchError && <p className="error" role="alert">{searchError}</p>}
+      {subject ? <p role="status">{saleCount} sale and {leaseCount} lease comps within {minMiles}–{maxMiles} miles of <strong>{subject.address}</strong>.</p> : <p className="hint">Enter an address to search by straight-line distance. Use 0–5 miles for a radius, or 5–10 miles for a band.</p>}
 
       <div className="filter-chips">
         <button
@@ -194,7 +243,8 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
       </div>
 
       <MapView
-        points={points}
+        points={subject ? [...points, { id: "subject", lat: subject.latitude, lng: subject.longitude, title: subject.address, color: "C07824", emphasis: true }] : points}
+        radiusBand={radiusBand}
         legend={[
           { label: "Sale", color: SALE_COLOR, count: saleCount },
           { label: "Lease", color: LEASE_COLOR, count: leaseCount },
@@ -206,6 +256,16 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
             : "No comps match this filter."
         }
       />
+
+      {subject && (filtered.length ? <div className="table-scroll" style={{ marginTop: 16 }}><table className="summary-table log-table">
+        <thead><tr><th>Distance</th><th>Type</th><th>Address</th><th>Date</th><th>Price / Rent</th><th>Rate</th><th>Bldg SF</th><th>Acres</th></tr></thead>
+        <tbody>{filtered.map(c => <tr key={c.id}>
+          <td>{haversineMiles(subject.latitude, subject.longitude, Number(c.latitude), Number(c.longitude)).toFixed(2)} mi</td>
+          <td>{c.comp_type === "sale" ? "Sale" : "Lease"}</td><td><Link href={`/comps/${c.id}`}>{c.address}</Link>{c.city ? `, ${c.city}` : ""}</td>
+          <td>{(c.comp_type === "sale" ? c.closed_on : c.date_commenced) || "—"}</td><td>{usd(c.comp_type === "sale" ? c.sale_price : c.rent) || "—"}</td><td>{rate(c) || "—"}</td>
+          <td>{c.building_sf ? Number(c.building_sf).toLocaleString() : "—"}</td><td>{c.lot_sf ? (c.lot_sf / SQFT_PER_ACRE).toFixed(2) : "—"}</td>
+        </tr>)}</tbody>
+      </table></div> : <p className="muted">No comps match this radius band and the selected filters. Widen the band or change the filters.</p>)}
 
       <p className="hint" style={{ marginTop: 10 }}>
         Hover a pin for the numbers, click it to open the comp. Scroll to zoom, drag to pan. Use the layers control (top right) to switch to satellite.
