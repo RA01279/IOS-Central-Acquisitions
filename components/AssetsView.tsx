@@ -250,8 +250,8 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                       </span>
                     )}
                   </td>
-                  <td data-label="City" className="muted">{[a.city, a.state].filter(Boolean).join(", ") || "â€”"}</td>
-                  <td data-label="Market" className="muted">{a.market ?? "â€”"}</td>
+                  <td data-label="City" className="muted">{[a.city, a.state].filter(Boolean).join(", ") || "—"}</td>
+                  <td data-label="Market" className="muted">{a.market ?? "—"}</td>
                   <td data-label="Submarket">
                     {editing === a.id ? (
                       <input
@@ -260,7 +260,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         style={{ width: "100%" }}
                       />
                     ) : (
-                      <span className="muted">{a.submarket ?? "â€”"}</span>
+                      <span className="muted">{a.submarket ?? "—"}</span>
                     )}
                   </td>
                   <td data-label="Acres">
@@ -272,7 +272,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         style={{ width: "100%" }}
                       />
                     ) : (
-                      a.site_acres ?? <span className="overdue">â€”</span>
+                      a.site_acres ?? <span className="overdue">—</span>
                     )}
                   </td>
                   <td data-label="Bldg SF">
@@ -286,7 +286,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                     ) : a.building_sf ? (
                       Math.round(Number(a.building_sf)).toLocaleString()
                     ) : (
-                      "â€”"
+                      "—"
                     )}
                   </td>
                   <td data-label="Status" className="muted">
@@ -297,7 +297,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         : "occupied"}
                   </td>
                   <td data-label="Purchase">{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
-                  <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "â€”"}</td>
+                  <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "—"}</td>
                   <td data-label="Change after costs">{comparisonLabel(a)}</td>
                   <td data-label="Actions">
                     {editing === a.id ? (
@@ -336,10 +336,10 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
 
 function assetState(a: AssetDetail) { return a.state?.trim().toUpperCase() || "__none"; }
 function assetCity(a: AssetDetail) { return JSON.stringify([a.city?.trim().toLowerCase() || "", assetState(a)]); }
-function assetMoney(value: number | null) { return value == null ? "â€”" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+function assetMoney(value: number | null) { return value == null ? "—" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
 function comparisonLabel(asset: AssetDetail) {
   const comparison = saleComparison(asset);
-  if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "â€”";
+  if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "—";
   return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
 }
 
