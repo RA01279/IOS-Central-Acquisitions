@@ -14,10 +14,19 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import LocationPreview from "./LocationPreview";
+import CompIntakeCard from "./CompIntakeCard";
+import { validCoordinates } from "@/lib/location";
+import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
 
 type CompType = "lease" | "sale";
 
 interface DraftComp {
+  _key: string;
+  state?: string | null;
+  assetClass?: string | null;
+  geocodePrecision?: string | null;
+  _locationMessage?: string;
   compType: CompType;
   address: string;
   city: string | null;
@@ -27,6 +36,8 @@ interface DraftComp {
   buildingSf: number | null;
   lotSf: number | null;
   acres: number | null;
+  yardAcres?: number | null;
+  notes?: string | null;
   coveragePct: number | null;
   rent: number | null;
   rentBasis: string | null;
@@ -93,6 +104,8 @@ export default function CompIntakeForm({
   defaultCity?: string | null;
 }) {
   const router = useRouter();
+  const [view,setView] = useState<"cards" | "table">("cards");
+  const [showNeedsWork, setShowNeedsWork] = useState(false);
   const [market, setMarket] = useState(defaultMarket ?? "");
   const [city, setCity] = useState(defaultCity ?? "");
   const [submarket, setSubmarket] = useState("");
@@ -115,6 +128,8 @@ export default function CompIntakeForm({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [dragging, setDragging] = useState(false);
+  const [plainText, setPlainText] = useState("");
+  const [entryMode, setEntryMode] = useState<"paste" | "file" | "single">("paste");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const context = () => ({
@@ -127,6 +142,8 @@ export default function CompIntakeForm({
   });
 
   async function sendToParser(payload: Record<string, unknown>) {
+    setView("table");
+    setShowNeedsWork(false);
     setBusy(true);
     setError(null);
     setResult(null);
@@ -141,8 +158,9 @@ export default function CompIntakeForm({
       setDrafts(
         (body.comps ?? []).map((c: any) => ({
           ...c,
+          _key: crypto.randomUUID(),
           _include: true,
-          assetClass: assetClass || null,
+          assetClass: assetClass || c.assetClass || null,
         }))
       );
       setProperties(body.properties ?? []);
@@ -272,27 +290,52 @@ export default function CompIntakeForm({
   }
 
   function update(i: number, patch: Partial<DraftComp>) {
+    if ("dateCommenced" in patch) patch = { ...patch, dateEstimated: false };
+    if ("acres" in patch) patch = { ...patch, lotSf: patch.acres == null ? null : Math.round(patch.acres * 43560) };
+    if (["address", "city", "state", "market"].some(key => key in patch)) {
+      patch = { ...patch, latitude: null, longitude: null, geocodePrecision: null, _locationMessage: "Address changed; verify the location again." };
+    }
     setDrafts((prev) => (prev ? prev.map((d, idx) => (idx === i ? { ...d, ...patch } : d)) : prev));
+  }
+
+  function addManual(compType: CompType) {
+    setView("cards");
+    setShowNeedsWork(false);
+    setDrafts(prev => [...(prev ?? []), { _key: crypto.randomUUID(), _include: true, compType, address: "", city: city || null, state: stateCode || null, market: market || null, submarket: submarket || null, assetClass: assetClass || null, yearBuilt: null, buildingSf: null, lotSf: null, acres: null, coveragePct: null, rent: null, rentBasis: null, leaseType: null, dateCommenced: null, salePrice: null, closedOn: null, capRate: null, datePrecision: "day", quotedPsf: null, warnings: [] }]);
+  }
+
+  async function checkLocations() {
+    setBusy(true); setError(null);
+    const rows = (drafts ?? []).filter(d => d._include && !validCoordinates(d));
+    try {
+      const cache = new Map<string, any>();
+      for (const d of rows) {
+        const addressKey = JSON.stringify([d.address, d.city, d.state, d.market]);
+        let result = cache.get(addressKey);
+        if (!result) {
+          const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
+          result = await res.json();
+          if (!res.ok && res.status !== 400) throw new Error(result.error ?? "Location lookup failed");
+          cache.set(addressKey, result);
+        }
+        setDrafts(prev => prev?.map(row => row._key === d._key ? { ...row, latitude: result.location?.latitude ?? null, longitude: result.location?.longitude ?? null, geocodePrecision: result.location?.geocode_precision ?? null, _locationMessage: result.matchedAddress ?? result.message ?? result.error } : row) ?? null);
+      }
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
   }
 
   // Mirrors the server's validation so a row that can't save is obvious before
   // clicking, not after.
   function blockingIssue(d: DraftComp): string | null {
-    if (!d.address?.trim()) return "needs an address";
-    if (d.compType === "lease") {
-      if (!d.rent) return "needs a rent";
-      if (!d.dateCommenced) return "needs a commencement date";
-    } else {
-      if (!d.salePrice) return "needs a price";
-      if (!d.closedOn) return "needs a close date";
-    }
-    return null;
+    return compIssue(d) ?? (!validCoordinates(d) ? "Verify location or place a pin" : null);
   }
 
   const included = (drafts ?? []).filter((d) => d._include);
   const blocked = included.filter((d) => blockingIssue(d));
   /** Ticked AND complete. These are what Save actually sends. */
   const saveable = included.filter((d) => !blockingIssue(d));
+  const reviewRows = (drafts ?? []).map((draft, index) => ({ draft, index }))
+    .filter(({ draft }) => !showNeedsWork || (draft._include && !!blockingIssue(draft)));
   // Not a blocker -- a comp with no market is perfectly valid evidence and
   // still maps. But the comps map builds its market filter from the values
   // present, so a market-less comp vanishes the moment any filter is applied.
@@ -307,7 +350,7 @@ export default function CompIntakeForm({
     try {
       // Only complete rows. The server would reject the others anyway; sending
       // them just spends a round trip to be told so.
-      const rows = saveable.map((d) => ({ ...d, assetClass: assetClass || null }));
+      const rows = saveable;
 
       // Saved in batches rather than one request.
       //
@@ -352,12 +395,13 @@ export default function CompIntakeForm({
         totals.geocoding.fromFile += body.geocoding?.fromFile ?? 0;
         totals.batches++;
         setResult({ ...totals, savedComps: [...totals.savedComps] });
+        const completed = new Set<string>(body.completedKeys ?? []);
+        setDrafts(prev => prev?.filter(d => !completed.has(d._key)) ?? null);
         // Progress, because 300 rows is several seconds of nothing otherwise.
         setWarnings([`Saving… ${Math.min(i + BATCH, rows.length)} of ${rows.length}`]);
       }
       setWarnings([]);
       setResult(totals);
-      if (!totals.failed.length && !totals.rejected.length) setDrafts(null);
       setWarnings([]);
       setSeen(null);
     } catch (e: any) {
@@ -371,8 +415,24 @@ export default function CompIntakeForm({
 
   return (
     <section className="panel">
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <h2>Add comps</h2>
+      <p>Start with a broker table, spreadsheet, or one transaction. Nothing is saved until you review the extracted rows.</p>
+      <div className="comp-entry-modes" role="group" aria-label="Choose how to add comps">
+        <button type="button" className={entryMode === "paste" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("paste")}>Paste email or table</button>
+        <button type="button" className={entryMode === "file" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("file")}>Upload spreadsheet</button>
+        <button type="button" className={entryMode === "single" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("single")}>Enter one comp</button>
+      </div>
+      <div className="stage-actions">
+        {entryMode === "single" && <>
+          <button type="button" disabled={busy} onClick={() => addManual("lease")}>Add lease comp</button>
+          <button type="button" disabled={busy} onClick={() => addManual("sale")}>Add sale comp</button>
+        </>}
+      </div>
 
+      <details className="comp-rentroll">
+        <summary>Set shared location and asset class (optional)</summary>
+        <p className="hint">Use these when all rows belong to one place. Leave them blank for a multi-market file; review each row after parsing.</p>
       <div className="grid-2">
         <label>
           Market * — the metro
@@ -415,7 +475,7 @@ export default function CompIntakeForm({
         </label>
         <label>
           Asset class
-          <select value={assetClass} onChange={(e) => setAssetClass(e.target.value)}>
+          <select value={assetClass} onChange={(e) => { setAssetClass(e.target.value); setDrafts(prev => prev?.map(d => ({ ...d, assetClass: e.target.value || null })) ?? null); }}>
             <option value="">—</option>
             <option value="ios">IOS</option>
             <option value="industrial">Industrial</option>
@@ -436,6 +496,8 @@ export default function CompIntakeForm({
         under whatever you type. If that happens the warnings say so and name the markets you
         overrode, so it&apos;s recoverable rather than silent.
       </p>
+
+      </details>
 
       {/* A rent roll is contracted rent at a comparable property, which is
           better evidence than an asking rate -- but it arrives shaped unlike
@@ -476,7 +538,7 @@ export default function CompIntakeForm({
         </p>
       </details>
 
-      <div
+      {entryMode !== "single" && <div
         className={dragging ? "comp-dropzone comp-dropzone-active" : "comp-dropzone"}
         onPaste={handlePaste}
         onDrop={handleDrop}
@@ -489,7 +551,7 @@ export default function CompIntakeForm({
         role="textbox"
         aria-label="Paste comp table or drop a spreadsheet"
       >
-        <strong>Click here, then paste the comp table</strong>
+        <strong>{entryMode === "file" ? "Drop a spreadsheet here" : "Paste a formatted broker table here"}</strong>
         <span className="muted">
           Select the table in the email body, Ctrl+C, then Ctrl+V here — the copied HTML keeps the
           real columns.
@@ -512,9 +574,20 @@ export default function CompIntakeForm({
             e.target.value = "";
           }}
         />
-      </div>
+      </div>}
 
-      {busy && <p className="hint">Reading…</p>}
+      {entryMode === "paste" && <details className="comp-rentroll">
+        <summary>Have plain text instead?</summary>
+        <label htmlFor="comp-plain-text">Paste the email text or tab separated rows</label>
+        <textarea id="comp-plain-text" value={plainText} onChange={e => setPlainText(e.target.value)}
+          onPaste={e => e.stopPropagation()} rows={7} style={{ width: "100%", marginTop: 8 }}
+          placeholder="Address, city, rent or sale price, date, and any other details" />
+        <button type="button" disabled={busy || !plainText.trim()} onClick={() => void sendToParser({ text: plainText })}>
+          Review pasted text
+        </button>
+      </details>}
+
+      {busy && <p className="hint" role="status">Working…</p>}
       {error && <p className="error">{error}</p>}
 
       {warnings.length > 0 && (
@@ -686,6 +759,11 @@ export default function CompIntakeForm({
           <h2 style={{ marginTop: 20 }}>
             Review <span className="count">{included.length}</span>
           </h2>
+          <p className="hint" role="status">{saveable.length} ready to save · {blocked.length} need attention · {(drafts?.length ?? 0) - included.length} excluded</p>
+          <button type="button" disabled={busy} onClick={checkLocations}>Check missing locations with Google</button>
+          <button type="button" className="secondary" onClick={()=>setView(view === "table" ? "cards" : "table")}>{view === "table" ? "Use form view" : "Use table view"}</button>
+          <button type="button" className="secondary" aria-pressed={showNeedsWork} onClick={() => setShowNeedsWork(value => !value)}>{showNeedsWork ? "Show all rows" : `Show ${blocked.length} needing attention`}</button>
+          <p className="hint">A substantial, separately usable outdoor storage yard is IOS. Choose the asset class for each row; the setting above applies to all rows.</p>
           <p className="hint">
             Fill in anything missing — dates especially, since broker lease tables usually omit
             them. Untick a row to leave it out.
@@ -727,13 +805,15 @@ export default function CompIntakeForm({
               </div>
             );
           })()}
-          <div className="table-scroll">
+          {view === "cards" ? reviewRows.map(({draft:d,index:i})=><CompIntakeCard key={d._key} draft={d} update={patch=>update(i,patch)} issue={blockingIssue(d)} />) : <div className="table-scroll">
             <table className="summary-table log-table">
               <thead>
                 <tr>
                   <th />
                   <th>Type</th>
                   <th>Address</th>
+                  <th>City / State / Asset class</th>
+                  <th>Map location</th>
                   <th>Market · Submarket</th>
                   <th>Date</th>
                   <th>Price / Rent</th>
@@ -747,10 +827,10 @@ export default function CompIntakeForm({
                 </tr>
               </thead>
               <tbody>
-                {drafts.map((d, i) => {
+                {reviewRows.map(({ draft: d, index: i }) => {
                   const issue = blockingIssue(d);
                   return (
-                    <tr key={i} style={{ opacity: d._include ? 1 : 0.45 }}>
+                    <tr key={d._key} style={{ opacity: d._include ? 1 : 0.45 }}>
                       <td>
                         <input
                           type="checkbox"
@@ -781,12 +861,26 @@ export default function CompIntakeForm({
                             {[d.suite, d.tenantName].filter(Boolean).join(" · ")}
                           </div>
                         )}
+                        {d.yardAcres != null && <div className="muted">Usable yard: {d.yardAcres} acres</div>}
+                        {d.notes && <details><summary>Original broker wording</summary><pre style={{whiteSpace: "pre-wrap", maxWidth: 320}}>{d.notes}</pre></details>}
+                      </td>
+                      <td>
+                        <label>City<input disabled={busy} value={d.city ?? ""} onChange={e => update(i, { city: e.target.value })} /></label>
+                        <label>State<input disabled={busy} value={d.state ?? ""} maxLength={2} onChange={e => update(i, { state: e.target.value.toUpperCase() })} /></label>
+                        <label>Asset class<select disabled={busy} value={d.assetClass ?? ""} onChange={e => update(i, { assetClass: e.target.value })}><option value="">Choose class</option><option value="ios">IOS</option><option value="industrial">Industrial</option></select></label>
+                      </td>
+                      <td>
+                        <LocationPreview key={JSON.stringify([d.address,d.city,d.state,d.market])} address={d.address} city={d.city} state={d.state} market={d.market}
+                          value={validCoordinates(d) ? { latitude: Number(d.latitude), longitude: Number(d.longitude), geocode_precision: d.geocodePrecision || "supplied" } : null}
+                          onChange={p => update(i, { latitude: p?.latitude ?? null, longitude: p?.longitude ?? null, geocodePrecision: p?.geocode_precision ?? null })} />
+                        {d._locationMessage && <p className="hint">{d._locationMessage}</p>}
                       </td>
                       {/* Market shown, not just submarket: a multi-market file
                           is exactly where a wrong market is worth catching
                           before 282 rows are filed under one metro. */}
                       <td className="muted">
-                        {[d.market, d.submarket].filter(Boolean).join(" · ") || "—"}
+                        <label>Market<input value={d.market ?? ""} onChange={e => update(i, { market: e.target.value })} /></label>
+                        <label>Submarket<input value={d.submarket ?? ""} onChange={e => update(i, { submarket: e.target.value })} /></label>
                       </td>
                       <td>
                         <input
@@ -826,9 +920,7 @@ export default function CompIntakeForm({
                       {/* The basis is shown because it's where a 12x error
                           hides: an annual rate read as monthly looks plausible. */}
                       <td className="muted">
-                        {d.compType === "sale"
-                          ? "sale"
-                          : (d.rentBasis ?? "—").replace(/_/g, " ").replace("per sf bldg ", "$/SF ")}
+                        {d.compType === "sale" ? "sale" : <select aria-label="Rent units" value={d.rentBasis ?? ""} onChange={e => update(i, { rentBasis: e.target.value })}><option value="">Choose rent units</option>{RENT_BASES.map(basis => <option key={basis} value={basis}>{basis.replace(/_/g, " ")}</option>)}</select>}
                       </td>
                       <td>
                         <input
@@ -866,6 +958,7 @@ export default function CompIntakeForm({
             </table>
           </div>
 
+          }
           {/* A few incomplete rows must NOT hold back the rest.
               This used to disable Save entirely whenever any included row was
               missing a required field, which meant a 282-row import with ten
@@ -891,9 +984,8 @@ export default function CompIntakeForm({
                   {noMarket} of these {saveable.length} {noMarket === 1 ? "has" : "have"} no market.
                 </strong>{" "}
                 They&apos;ll save and they&apos;ll plot on the map, but the map&apos;s market filter
-                is built from the markets present — so picking any market hides them. Put a metro in
-                the Market box above (it fills every row that hasn&apos;t got one) unless the file
-                spans several, in which case fix them after saving.
+                is built from the markets present — so picking any market hides them. Fill the
+                Market field on each review row before saving.
               </p>
             </div>
           )}
@@ -920,6 +1012,7 @@ export default function CompIntakeForm({
           )}
         </>
       )}
+      </fieldset>
     </section>
   );
 }

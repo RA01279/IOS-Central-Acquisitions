@@ -1121,6 +1121,19 @@ form textarea {
   max-width: 520px;
 }
 
+.comp-entry-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 10px;
+}
+.comp-entry-modes button {
+  flex: 1 1 160px;
+}
+.comp-entry-active {
+  box-shadow: inset 0 -3px 0 var(--accent-2);
+}
+
 /* Wide pages: the six-column pipeline board and the offer log don't fit the
    960px reading width the rest of the app uses. */
 main.wide {

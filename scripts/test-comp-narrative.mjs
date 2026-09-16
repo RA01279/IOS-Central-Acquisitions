@@ -31,3 +31,18 @@ assert.equal(exports.parseCompInput({text:cunningham+'\n'+text}).comps.length,2)
 assert.equal(exports.parseCompInput({html:cunningham.split('\n').map(l=>'<p>'+l+'</p>').join('')}).comps[0].buildingSf,46709);
 assert.equal(exports.parseCompInput({text:cunningham.replace('4% bumps','4% annual bumps')}).comps[0].escalationsPct,4);
 console.log('PASS: exact Cunningham email, no date invented, total vs office/high-bay SF, five acres, separate services, unspecified vs annual escalations, mixed blocks, and HTML paste.');
+
+const saleLeaseback = `11301 Boudreaux rd, gumball, TX 77375\n\nSold for $2,950,000\n25k Sf on 3.9 AC, roughly 2 AC of usable dirt.\nLease $0.85 + NNN, sale leaseback. (Below market.)`;
+const pairedDrafts = exports.parseCompInput({ text: saleLeaseback }).comps;
+assert.equal(pairedDrafts.length, 2);
+const saleDraft = pairedDrafts[0];
+const leaseDraft = pairedDrafts[1];
+assert.ok(saleDraft, 'sale narrative should yield a review draft');
+for (const [key, value] of Object.entries({ compType: 'sale', address: '11301 Boudreaux rd', city: 'gumball', state: 'TX', salePrice: 2950000, buildingSf: 25000, acres: 3.9, yardAcres: 2, closedOn: null, rent: null })) assert.equal(saleDraft[key], value, key);
+assert.equal(saleDraft.notes, saleLeaseback);
+assert.ok(saleDraft.warnings.some(w => w.includes('below market')));
+assert.ok(saleDraft.warnings.some(w => w.includes('No closing date')));
+for (const [key, value] of Object.entries({ compType: 'lease', address: '11301 Boudreaux rd', rent: 0.85, rentBasis: null, leaseType: 'nnn', dateCommenced: null, salePrice: null, buildingSf: 25000, acres: 3.9, yardAcres: 2 })) assert.equal(leaseDraft[key], value, key);
+assert.equal(leaseDraft.notes, saleLeaseback);
+assert.ok(leaseDraft.warnings.some(w => w.includes('below market')));
+console.log('PASS: sale leaseback narrative creates separate sale and lease drafts without inventing dates or rent units.');
