@@ -31,6 +31,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Expected an object" }, { status: 400 });
+  for (const field of ["html", "text"]) {
+    if (body[field] != null && (typeof body[field] !== "string" || body[field].length > 1_000_000)) {
+      return NextResponse.json({ error: "Email text must be a string no larger than 1 MB." }, { status: 400 });
+    }
+  }
   const term = Number(body.assumedTermMonths);
   const context = {
     city: body.city || null,
@@ -152,6 +158,12 @@ export async function POST(req: NextRequest) {
     }
 
     const result = parseCompInput({ html: body.html, text: body.text }, context);
+    if (body.source === "email") {
+      const sourceRef = typeof body.sourceRef === "string" ? body.sourceRef.slice(0, 12000) : null;
+      for (const comp of result.comps) comp.sourceRef = sourceRef || comp.sourceRef;
+      result.warnings.push("Review the full email against these rows. Unsupported wording may not produce a comp; add any missing transactions manually.");
+      if (body.emailHasAttachments) result.warnings.push("This email has attachments. Only its body was read; upload any comp spreadsheets separately.");
+    }
     // A pasted property report gets the same treatment as a dropped one.
     const asProperties = asPropertyReport(result.comps);
     if (asProperties) {
@@ -164,10 +176,10 @@ export async function POST(req: NextRequest) {
             `Its ${asProperties.length} building${asProperties.length === 1 ? "" : "s"} can fill in ` +
             `the address and market for a rent roll instead; pick one below.`,
         ],
-        source: body.html ? "email" : "manual",
+        source: body.source === "email" || body.html ? "email" : "manual",
       });
     }
-    return NextResponse.json({ ...result, properties: [], source: body.html ? "email" : "manual" });
+    return NextResponse.json({ ...result, properties: [], source: body.source === "email" || body.html ? "email" : "manual" });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

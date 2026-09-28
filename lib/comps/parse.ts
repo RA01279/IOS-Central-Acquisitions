@@ -533,7 +533,7 @@ function stripQuotedReply(text: string): string {
   let cut = -1;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i].replace(/^\s*\*\*(From|Sent|To|Subject):\*\*/i, "$1:");
     if (!line.trim()) continue;
 
     if (QUOTE_MARKER.some((re) => re.test(line))) {
@@ -827,15 +827,18 @@ export function parseCompHtml(html: string, opts: ParseOptions = {}): ParseResul
 export function parseNarrativeLeaseEmail(text: string, opts: ParseOptions = {}): ParseResult {
   const body = stripQuotedReply(text);
   const lines = body.split(/\r?\n/);
-  const heading = /^\s*(\d+[A-Za-z-]*\s+[^\n]+?)\s*\(leased\s+([^\)]+)\)\s*$/i;
-  const bareAddress = /^\s*(\d+[A-Za-z-]*\s+[^\n]*?\b(?:Rd|Road|St|Street|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ave|Avenue|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway|Loop|Trail|Trl)\.?(?:\s+(?:N|S|E|W|NE|NW|SE|SW))?(?:,\s*[^\n]+)?)\s*$/i;
+  const heading = /^\s*(\d+[A-Za-z-]*\s+[^\n]+?)\s*\((?:leased\s+)?([^\)]+)\)\s*$/i;
+  const bareAddress = /^\s*(\d+[A-Za-z-]*\s+[^\n]*?\b(?:Rd|Road|St|Street|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ave|Avenue|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway|Loop|Trail|Trl|Tollway)\.?(?:\s+(?:N|S|E|W|NE|NW|SE|SW))?(?:,\s*[^\n]+)?)\s*$/i;
   const starts = lines.flatMap((line, index) => heading.test(line) || bareAddress.test(line) ? [index] : []);
   const comps: ParsedComp[] = [];
   for (let i = 0; i < starts.length; i++) {
     const start = starts[i];
     const match = lines[start].match(heading) ?? lines[start].match(bareAddress)!;
-    const block = lines.slice(start, starts[i + 1] ?? lines.length).join('\n').trim();
-    if (!match[2] && !/\b(?:\d+\s*(?:yr|year|mo|month)s?\s+lease|leased|lease\s+term)\b/i.test(block)) continue;
+    const originalBlock = lines.slice(start, starts[i + 1] ?? lines.length).join('\n').trim();
+    const block = originalBlock.replace(/^\s*[*•-]\s+/gm, '');
+    const perAcre = [...block.matchAll(/\$([\d,]+(?:\.\d+)?)\s*\/\s*(?:AC|acre)\s*\/\s*(?:MO|month)\b/gi)];
+    if (/\bavailable\b/i.test(lines[start])) continue;
+    if (!match[2] && !perAcre.length && !/\b(?:\d+\s*(?:yr|year|mo|month)s?\s+lease|leased|lease\s+term)\b/i.test(block)) continue;
     const sf = block.match(/^\s*[\u00b1~]?\s*([\d,]+(?:\.\d+)?)\s*(?:SF|sq\.?\s*ft)(?:\s+on\s+[\u00b1~]?\s*[\d,.]+\s*(?:AC|acres?))?\s*$/im);
     const acres = block.match(/(?:^\s*|\bon\s+)[\u00b1~]?\s*([\d,]+(?:\.\d+)?)\s*(?:AC|acres?)\b/im);
     // A total monthly amount is explicit; PSF alone does not state a period.
@@ -847,12 +850,17 @@ export function parseNarrativeLeaseEmail(text: string, opts: ParseOptions = {}):
     const date = shortDate && Number(shortDate[1]) >= 1 && Number(shortDate[1]) <= 12
       ? { date: (shortDate[2].length === 2 ? '20' : '') + shortDate[2] + '-' + shortDate[1].padStart(2, '0') + '-01', precision: 'month' as const }
       : parseCompDate(match[2]);
-    const columns = ['Address', 'Monthly Rent', 'Building SF', 'Acres', 'Commencement'];
-    const values = [match[1].trim(), totals.length === 1 ? String(totals[0]) : '', sf?.[1] ?? '', acres?.[1] ?? '', date?.date ?? ''];
+    const location = match[1].trim().split(/,\s*/);
+    const hasState = location.length >= 3 && /^[A-Z]{2}(?:\s+\d{5})?$/i.test(location[location.length - 1]);
+    const quotedAcres = [...new Set(perAcre.map(m => num(m[1])!))];
+    const useAcreRate = totals.length === 0 && quotedAcres.length === 1;
+    const columns = ['Address', useAcreRate ? 'Rate AC Mo' : 'Monthly Rent', 'Building SF', 'Acres', 'Commencement', 'City', 'State', 'Project Name'];
+    const values = [hasState ? location[0] : match[1].trim(), useAcreRate ? String(quotedAcres[0]) : totals.length === 1 ? String(totals[0]) : '', sf?.[1] ?? '', acres?.[1] ?? '', date?.date ?? '',
+      hasState ? location[location.length - 2] : '', hasState ? location[location.length - 1].slice(0,2).toUpperCase() : '', hasState ? location.slice(1,-2).join(', ') : ''];
     const parsed = parseCompTable(columns.join('\t') + '\n' + values.join('\t'), { ...opts, defaultCompType: 'lease' });
     for (const comp of parsed.comps) {
       comp.fromEmailText = true;
-      comp.notes = block;
+      comp.notes = originalBlock;
       comp.datePrecision = date?.precision ?? 'day';
       comp.leaseType = /\bNNN\b/i.test(block) ? 'nnn' : null;
       comp.leaseTermMonths = term ? Number(term[1]) * (/^(yr|year)$/i.test(term[2]) ? 12 : 1) : null;
@@ -866,11 +874,12 @@ export function parseNarrativeLeaseEmail(text: string, opts: ParseOptions = {}):
       if (bump && !bump[2]) comp.warnings.push(bump[1] + '% bumps retained in notes; confirm the escalation frequency.');
       if (multipleServices) comp.warnings.push('Separate power services retained in notes; their amperages are not combined.');
       comp.warnings.push('Read from broker email text. Review the extracted terms and location before saving.');
+      if (date && !/\(leased\b/i.test(lines[start])) comp.warnings.push('Date shown beside the property is treated as its lease transaction date; confirm commencement before saving.');
       if (shortDate && date) comp.warnings.push('Interpreted Leased ' + match[2] + ' as ' + date.date.slice(0, 7) + ' (month only). Confirm this is the commencement month.');
-      if (totals.length !== 1) comp.warnings.push('No single explicit total monthly rent found. Enter rent and units before saving; PSF alone does not specify monthly or annual.');
+      if (totals.length !== 1 && !useAcreRate) comp.warnings.push('No single explicit total monthly rent found. Enter rent and units before saving; PSF alone does not specify monthly or annual.');
       if (/hook\s+height/i.test(block)) comp.warnings.push('Crane hook height is retained in notes; it is not building clear height.');
       const psf = block.match(/\$([\d,]+(?:\.\d+)?)\s*(?:PSF|\/\s*SF)\b/i);
-      if (psf && comp.rent && comp.buildingSf) {
+      if (psf && comp.rentBasis === 'total_monthly' && comp.rent && comp.buildingSf) {
         const quoted = num(psf[1])!;
         if (Math.abs(quoted * comp.buildingSf - comp.rent) / comp.rent > 0.01) comp.warnings.push('Quoted PSF does not reconcile with the stated monthly rent and building area. Verify the rate period and figures.');
       }
@@ -879,6 +888,56 @@ export function parseNarrativeLeaseEmail(text: string, opts: ParseOptions = {}):
     }
   }
   return { comps, warnings: comps.length ? ['Recovered narrative lease comps for review. Full source details, including equipment, are retained in notes.'] : [] };
+}
+
+/** A closed-sale sentence with property attributes, often followed by leaseback terms. */
+export function parseNarrativeSaleEmail(text: string, opts: ParseOptions = {}): ParseResult {
+  const body = stripQuotedReply(text).trim();
+  const lines = body.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const addressLine = lines.find(line => /^\d+[A-Za-z-]*\s+.+?\b(?:Rd|Road|St|Street|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ave|Avenue|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway)\.?\b/i.test(line));
+  const price = body.match(/\b(?:sold\s+for|sale\s+price|closed\s+for)\s*\$\s*([\d,]+(?:\.\d+)?)\s*(million|m)?\b/i);
+  if (!addressLine || !price) return { comps: [], warnings: [] };
+  const addressParts = addressLine.match(/^(.+?),\s*([^,]+),\s*([A-Z]{2})\s*(\d{5})?$/i);
+  const salePrice = Number(price[1].replace(/,/g, "")) * (price[2] ? 1_000_000 : 1);
+  const sf = body.match(/\b([\d,]+(?:\.\d+)?)\s*(k)?\s*(?:SF|sq\.?\s*ft)\b/i);
+  const acres = body.match(/\b(?:on\s+)?([\d,]+(?:\.\d+)?)\s*(?:AC|acres?)\b/i);
+  const yard = body.match(/\b(?:roughly|about|approximately|approx\.?|~)?\s*([\d,]+(?:\.\d+)?)\s*(?:AC|acres?)\s+of\s+usable\s+(?:dirt|yard|land)\b/i);
+  const soldDate = body.match(/\b(?:sold|closed)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2})\b/i);
+  const date = soldDate ? parseCompDate(soldDate[1]) : null;
+  const columns = ['Address', 'City', 'State', 'Sale Price', 'Building SF', 'Acres', 'Close Date'];
+  const values = [addressParts?.[1] ?? addressLine, addressParts?.[2] ?? '', addressParts?.[3] ?? '', String(salePrice), sf ? String(Number(sf[1].replace(/,/g, "")) * (sf[2] ? 1000 : 1)) : '', acres?.[1] ?? '', date?.date ?? ''];
+  const parsed = parseCompTable(columns.join('\t') + '\n' + values.join('\t'), { ...opts, defaultCompType: 'sale' });
+  const leaseRate = body.match(/\blease\s+\$\s*([\d,]+(?:\.\d+)?)\s*\+\s*NNN\b/i);
+  const leaseComps: ParsedComp[] = [];
+  for (const comp of parsed.comps) {
+    comp.fromEmailText = true;
+    comp.notes = body;
+    comp.yardAcres = yard ? Number(yard[1].replace(/,/g, "")) : null;
+    comp.warnings.push('Read from a broker sale narrative. Confirm the address, price, area and closing date before saving.');
+    if (!date) comp.warnings.push('No closing date stated. Enter the actual closing date; do not use the email date as a substitute.');
+    if (/sale\s*leaseback/i.test(body)) comp.warnings.push('Paired with a sale leaseback lease draft from the same broker email.');
+    if (/below\s+market/i.test(body)) comp.warnings.push('The quoted lease rate is described as below market and is retained in notes.');
+    if (leaseRate && /sale\s*leaseback/i.test(body)) {
+      const lease: ParsedComp = {
+        ...comp,
+        compType: 'lease',
+        rent: Number(leaseRate[1].replace(/,/g, '')),
+        rentBasis: null,
+        leaseType: 'nnn',
+        dateCommenced: null,
+        salePrice: null,
+        closedOn: null,
+        warnings: [
+          'Sale leaseback lease paired with the sale draft from this email.',
+          'Confirm whether $' + leaseRate[1] + ' is per building SF, land SF, acre, or total, and whether it is monthly or annual.',
+          'No lease commencement date stated. Enter the actual date before saving.',
+          ...(/below\s+market/i.test(body) ? ['Broker describes this leaseback rent as below market; use that context when comparing market leases.'] : []),
+        ],
+      };
+      leaseComps.push(lease);
+    }
+  }
+  return { comps: [...parsed.comps, ...leaseComps], warnings: parsed.comps.length ? ['Recovered sale and leaseback terms from broker email text for review. Original wording is retained in both notes.'] : [] };
 }
 
 /** Recover labeled email details without guessing lost table columns or rent units. */
@@ -939,20 +998,49 @@ export function parseCompInput(
   input: { html?: string | null; text?: string | null },
   opts: ParseOptions = {}
 ): ParseResult {
-  if (input.html && /<t[dr]\b|<table\b/i.test(input.html)) {
-    const fromHtml = parseCompHtml(input.html, opts);
-    if (fromHtml.comps.length) return fromHtml;
+  // Flatten once: running separate HTML and plain-text passes duplicates rows
+  // and returning the first successful format hides the rest of a mixed email.
+  const text = input.html && /<t[dr]\b|<table\b/i.test(input.html) ? htmlToDelimitedText(input.html) : input.text || (input.html ? htmlToDelimitedText(input.html) : "");
+  if (!text.trim()) return { comps: [], warnings: ["Nothing to parse."] };
+  const body = opts.includeQuotedReply ? text : stripQuotedReply(text);
+  const lines = body.split(/\r?\n/);
+  const addressHeading = /^\s*(?:address\s*(?::|\t)\s*\S.*|address|\d+[A-Za-z-]*\s+[^\t|]*?\b(?:Rd|Road|St|Street|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ave|Avenue|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway|Loop|Trail|Trl|Tollway)\.?(?:\s+(?:N|S|E|W|NE|NW|SE|SW))?(?:,\s*[^\t|]+)?(?:\s*\((?:leased\s+)?[^)]+\))?)\s*$/i;
+  const sections: string[] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    // A new property starts a new extraction scope, so a sale price in a
+    // later property cannot get attached to the first address in the email.
+    if (addressHeading.test(line) && current.some(l => l.trim()) && current.filter(l => l.trim()).at(-1)?.trim().toLowerCase() !== "address") {
+      sections.push(current.join("\n")); current = [];
+    }
+    // A table following prose is another scope. Keep its header with its rows.
+    const cells = splitRow(line);
+    if (cells.length >= 3 && cells.filter(c => fieldFor(c)).length >= 3 &&
+        current.some(l => addressHeading.test(l))) {
+      sections.push(current.join("\n")); current = [];
+    }
+    current.push(line);
   }
-  if (input.text) {
-    const table = parseCompTable(input.text, opts);
-    if (table.comps.length) return table;
-    const email = parseCompEmailText(input.text, opts);
-    if (email.comps.length) return email;
-    const narrative = parseNarrativeLeaseEmail(input.text, opts);
-    return narrative.comps.length ? narrative : table;
+  if (current.length) sections.push(current.join("\n"));
+  const comps: ParsedComp[] = [];
+  const warnings: string[] = [];
+  for (const section of sections) {
+    const table = parseCompTable(section, opts);
+    const labeled = table.comps.length ? table : parseCompEmailText(section, opts);
+    const sale = labeled.comps.length ? labeled : parseNarrativeSaleEmail(section, opts);
+    const result = sale.comps.length ? sale : parseNarrativeLeaseEmail(section, opts);
+    if (result.comps.length) {
+      comps.push(...result.comps); warnings.push(...result.warnings);
+    } else if (addressHeading.test(section.split(/\r?\n/)[0] ?? "")) {
+      warnings.push("Could not extract a transaction for " + section.split(/\r?\n/)[0].trim() + ". Review this section and add the comp manually.");
+    }
   }
-  if (input.html) return parseCompInput({ text: htmlToDelimitedText(input.html) }, opts);
-  return { comps: [], warnings: ["Nothing to parse."] };
+  if (!comps.length) {
+    const fallback = parseCompTable(body, opts);
+    return { ...fallback, warnings: [...new Set([...fallback.warnings, ...warnings])] };
+  }
+  if (body.length < text.length) warnings.push("Ignored quoted reply history; review forwarded content separately if it contains additional comps.");
+  return { comps, warnings: [...new Set(warnings)] };
 }
 
 // -- the parser -----------------------------------------------------------

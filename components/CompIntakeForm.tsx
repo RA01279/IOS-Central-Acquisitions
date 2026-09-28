@@ -14,6 +14,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+const OutlookCompPicker = dynamic(() => import("./OutlookCompPicker"), { ssr: false });
 
 type CompType = "lease" | "sale";
 
@@ -149,6 +151,7 @@ export default function CompIntakeForm({
       setWarnings(body.warnings ?? []);
       setSeen(body.seen ?? null);
       setSource(body.source ?? "manual");
+      if (typeof payload.sourceRef === "string") setSourceRef(payload.sourceRef);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -372,6 +375,8 @@ export default function CompIntakeForm({
   return (
     <section className="panel">
       <h2>Add comps</h2>
+      <OutlookCompPicker onSelect={sendToParser} disabled={busy} hasDrafts={!!drafts?.length} />
+      <h3>Or paste an email / upload a spreadsheet</h3>
 
       <div className="grid-2">
         <label>
