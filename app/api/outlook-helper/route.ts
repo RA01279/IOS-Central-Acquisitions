@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 async function context(req: NextRequest, mutation = false) {
   const user = await getCurrentUser(req);
   if (!user) return { response: helperJson({ error: "Not authenticated" }, 401) };
-  if (mutation && req.headers.get("origin") !== req.nextUrl.origin)
+  if (mutation && (!req.headers.get("origin") || new URL(req.headers.get("origin")!).host !== req.headers.get("host")))
     return { response: helperJson({ error: "Invalid request origin" }, 403) };
   const db = getServiceClient();
   await cleanupHelperJobs(db);

@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 export class OutlookConnection {
@@ -50,6 +49,7 @@ export class OutlookConnection {
     return this;
   }
   rpc(method, params) {
+    if (!this.child || this.child.killed) return Promise.reject(new Error("Outlook connection closed. Restart the helper."));
     return new Promise((resolve, reject) => {
       const id = ++this.seq;
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error("Outlook took too long. Please try again.")); }, 90000);

@@ -48,7 +48,7 @@ const lib=load("lib/outlook-helper.ts",deps);deps["@/lib/outlook-helper"]=lib;
 const browser=load("app/api/outlook-helper/route.ts",deps),worker=load("app/api/outlook-helper/worker/route.ts",deps);
 function req(body,options={}) {return {json:async()=>body,text:async()=>JSON.stringify(body),
  nextUrl:new URL("https://hopper.test/api/outlook-helper"+(options.path||"")),
- headers:new Headers({origin:options.origin||"https://hopper.test",...(options.token?{authorization:"Bearer "+options.token}:{})})};}
+ headers:new Headers({host:"hopper.test",origin:options.origin||"https://hopper.test",...(options.token?{authorization:"Bearer "+options.token}:{})})};}
 email=null;assert.equal((await browser.GET(req())).status,401);
 email="owner@example.com";assert.equal((await browser.POST(req({action:"pair"},{origin:"https://evil.test"}))).status,403);
 const paired=await browser.POST(req({action:"pair"}));assert.equal(paired.status,200);const token=paired.body.token;

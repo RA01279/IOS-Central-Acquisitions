@@ -1,7 +1,7 @@
 import { OutlookConnection, searchResult, emailResult } from "./codex.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 const args = process.argv.slice(2);
@@ -50,6 +50,7 @@ try {
   console.log("Outlook helper started. Keep this running to import emails in Hopper.");
   while (true) {
     try {
+      if (!connection.child) connection = await new OutlookConnection({ launcher: option("--codex-launcher"), cwd: directory }).start();
       const { ownerEmail, job } = await request();
       if (connection.mailbox !== ownerEmail?.toLowerCase()) {
         const error = new Error("The Hopper login and Outlook connection must belong to the same email address."); error.fatal = true; throw error;
