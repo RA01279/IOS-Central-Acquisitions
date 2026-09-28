@@ -39,6 +39,9 @@ const tmp = new URL("../lib/.geocode.seed.mjs", import.meta.url);
 writeFileSync(fileURLToPath(tmp), ts.transpileModule(readFileSync(src, "utf8"),
   { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText);
 const { geocodeAddress } = await import(tmp.href);
+const transactionSource = new URL("../lib/asset-transactions.ts", import.meta.url);
+const transactionCode = ts.transpileModule(readFileSync(transactionSource, "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { seededAssetStatus } = await import(`data:text/javascript;base64,${Buffer.from(transactionCode).toString("base64")}`);
 
 // address, city, state, occupancy. "Sold" becomes status rather than occupancy.
 const ASSETS = [
@@ -148,8 +151,8 @@ for (const [address, city, state, occ] of ASSETS) {
     state,
     market: prior?.market ?? MARKET[city] ?? null,
     asset_class: "ios",
-    status: sold ? "sold" : (prior?.status === "under_contract" ? "under_contract" : "owned"),
-    occupancy: sold ? null : occ,
+    status: seededAssetStatus(prior, sold),
+    occupancy: sold || prior?.status === "sold" ? null : occ,
     source_url: SOURCE,
     ...(geo
       ? {

@@ -7,6 +7,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapView, { type MapPoint } from "./MapView";
+import AssetTransactionEditor from "./AssetTransactionEditor";
+import { saleComparison } from "@/lib/asset-transactions";
 
 const OCCUPIED_COLOR = "6C4AB6";
 const AVAILABLE_COLOR = "C77DFF";
@@ -29,6 +31,12 @@ export interface AssetDetail {
   geocode_precision: string | null;
   notes: string | null;
   source_url: string | null;
+  purchase_price: number | null;
+  purchased_on: string | null;
+  sale_price: number | null;
+  sold_on: string | null;
+  acquisition_costs: number | null;
+  selling_costs: number | null;
 }
 
 function colorFor(a: AssetDetail): string {
@@ -39,7 +47,12 @@ function colorFor(a: AssetDetail): string {
 export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
   const router = useRouter();
   const [market, setMarket] = useState("__all");
-  const [includeSold, setIncludeSold] = useState(false);
+  const [state, setState] = useState("__all");
+  const [city, setCity] = useState("__all");
+  const [portfolioFilter, setPortfolioFilter] = useState("owned");
+  const includeSold = portfolioFilter !== "owned";
+  const [transaction, setTransaction] = useState<{ asset: AssetDetail; recordSale: boolean } | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<{ acres: string; sf: string; submarket: string; notes: string }>(
     { acres: "", sf: "", submarket: "", notes: "" }
@@ -52,12 +65,24 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
     [assets]
   );
 
+  const states = useMemo(() => Array.from(new Set(assets.map(assetState))).sort(), [assets]);
+  const cities = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const asset of assets) {
+      if (state !== "__all" && assetState(asset) !== state) continue;
+      options.set(assetCity(asset), `${asset.city?.trim() || "City not recorded"}, ${assetState(asset) === "__none" ? "state not recorded" : assetState(asset)}`);
+    }
+    return Array.from(options, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [assets, state]);
+
   const shown = useMemo(
     () =>
       assets
-        .filter((a) => includeSold || a.status !== "sold")
-        .filter((a) => market === "__all" || a.market === market),
-    [assets, includeSold, market]
+        .filter((a) => portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))
+        .filter((a) => market === "__all" || a.market === market)
+        .filter((a) => state === "__all" || assetState(a) === state)
+        .filter((a) => city === "__all" || assetCity(a) === city),
+    [assets, portfolioFilter, market, state, city]
   );
 
   const points: MapPoint[] = useMemo(
@@ -127,6 +152,22 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
           Portfolio map <span className="count">{points.length}</span>
         </h2>
 
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 16 }}>
+          <label style={{ minWidth: 180 }}>State
+            <select value={state} onChange={e => { setState(e.target.value); setCity("__all"); }}>
+              <option value="__all">All states</option>
+              {states.map(s => <option key={s} value={s}>{s === "__none" ? "State not recorded" : s}</option>)}
+            </select>
+          </label>
+          <label style={{ minWidth: 220 }}>City
+            <select value={city} onChange={e => setCity(e.target.value)}>
+              <option value="__all">All cities</option>
+              {cities.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          {(state !== "__all" || city !== "__all" || market !== "__all") && <button type="button" className="secondary" onClick={() => { setState("__all"); setCity("__all"); setMarket("__all"); }}>Clear geography filters</button>}
+        </div>
+
         <div className="filter-chips">
           <button
             type="button"
@@ -144,23 +185,19 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
             >
               {m}{" "}
               <span className="muted">
-                {assets.filter((a) => a.market === m && (includeSold || a.status !== "sold")).length}
+                {assets.filter((a) => a.market === m && (state === "__all" || assetState(a) === state) && (city === "__all" || assetCity(a) === city) && (portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))).length}
               </span>
             </button>
           ))}
-          <button
-            type="button"
-            className={includeSold ? "chip chip-active" : "chip"}
-            onClick={() => setIncludeSold((v) => !v)}
-          >
-            Include sold
-          </button>
+          {[ ["owned", "Owned"], ["sold", "Sold history"], ["all", "All assets"] ].map(([value, label]) => <button type="button" key={value} className={portfolioFilter === value ? "chip chip-active" : "chip"} onClick={() => setPortfolioFilter(value)}>{label}</button>)}
         </div>
+
+        <p className="hint" role="status">Showing {shown.length} matching asset{shown.length === 1 ? "" : "s"}. State, city, market and ownership filters apply to the map and table.</p>
 
         <MapView
           points={points}
           height={460}
-          emptyMessage="No assets to show. Run scripts/seed-assets.mjs to load the portfolio."
+          emptyMessage="No located assets match these filters. Change or clear the geography filters."
           legend={[
             { label: "Occupied", color: OCCUPIED_COLOR },
             { label: "Space available", color: AVAILABLE_COLOR },
@@ -169,13 +206,20 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
         />
       </section>
 
+      {savedMessage && <p role="status">{savedMessage}</p>}
+      {transaction && <AssetTransactionEditor key={`${transaction.asset.id}-${transaction.recordSale}`} asset={transaction.asset} recordSale={transaction.recordSale} onCancel={() => setTransaction(null)} onSaved={status => {
+        setSavedMessage(`Purchase and sale details saved for ${transaction.asset.address}.`);
+        if (status === "sold" || transaction.asset.status === "sold") setPortfolioFilter("all");
+        setTransaction(null); router.refresh();
+      }} />}
+
       <section className="panel">
         <h2>
           Assets <span className="count">{shown.length}</span>
         </h2>
         {error && <p className="error">{error}</p>}
-        <div className="table-scroll">
-          <table className="summary-table log-table">
+        <div className="asset-table-container">
+          <table className="summary-table log-table asset-table"><colgroup>{[15,8,8,8,5,6,7,9,8,11,15].map((width,index)=><col key={index} style={{width:`${width}%`}} />)}</colgroup>
             <thead>
               <tr>
                 <th>Address</th>
@@ -185,15 +229,19 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                 <th>Acres</th>
                 <th>Bldg SF</th>
                 <th>Status</th>
-                <th />
+                <th>Purchase</th>
+                <th>Sale</th>
+                <th>Change after costs</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
+              {shown.length === 0 && <tr><td colSpan={11} className="muted">No assets match these filters. Change the state, city, market or ownership selection.</td></tr>}
               {shown.map((a) => (
                 // id on the row so a map popup or a deal panel can link
                 // straight to it with /assets#<id>.
-                <tr key={a.id} id={a.id} style={{ opacity: a.status === "sold" ? 0.55 : 1 }}>
-                  <td>
+                <tr key={a.id} id={a.id}>
+                  <td data-label="Address">
                     {a.address}
                     {a.latitude == null && (
                       <span className="muted" title="No coordinates, so it can't be mapped or measured">
@@ -202,38 +250,38 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                       </span>
                     )}
                   </td>
-                  <td className="muted">{[a.city, a.state].filter(Boolean).join(", ") || "—"}</td>
-                  <td className="muted">{a.market ?? "—"}</td>
-                  <td>
+                  <td data-label="City" className="muted">{[a.city, a.state].filter(Boolean).join(", ") || "—"}</td>
+                  <td data-label="Market" className="muted">{a.market ?? "—"}</td>
+                  <td data-label="Submarket">
                     {editing === a.id ? (
                       <input
                         value={form.submarket}
                         onChange={(e) => setForm((f) => ({ ...f, submarket: e.target.value }))}
-                        style={{ width: 130 }}
+                        style={{ width: "100%" }}
                       />
                     ) : (
                       <span className="muted">{a.submarket ?? "—"}</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Acres">
                     {editing === a.id ? (
                       <input
                         value={form.acres}
                         onChange={(e) => setForm((f) => ({ ...f, acres: e.target.value }))}
                         placeholder="6.19"
-                        style={{ width: 80 }}
+                        style={{ width: "100%" }}
                       />
                     ) : (
                       a.site_acres ?? <span className="overdue">—</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Bldg SF">
                     {editing === a.id ? (
                       <input
                         value={form.sf}
                         onChange={(e) => setForm((f) => ({ ...f, sf: e.target.value }))}
                         placeholder="20200"
-                        style={{ width: 90 }}
+                        style={{ width: "100%" }}
                       />
                     ) : a.building_sf ? (
                       Math.round(Number(a.building_sf)).toLocaleString()
@@ -241,14 +289,17 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                       "—"
                     )}
                   </td>
-                  <td className="muted">
+                  <td data-label="Status" className="muted">
                     {a.status === "sold"
                       ? "sold"
                       : a.occupancy === "available"
                         ? "space available"
                         : "occupied"}
                   </td>
-                  <td>
+                  <td data-label="Purchase">{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
+                  <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "—"}</td>
+                  <td data-label="Change after costs">{comparisonLabel(a)}</td>
+                  <td data-label="Actions">
                     {editing === a.id ? (
                       <>
                         <button onClick={() => save(a.id)} disabled={busy}>
@@ -259,9 +310,10 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                         </button>
                       </>
                     ) : (
-                      <button type="button" className="secondary" onClick={() => startEdit(a)}>
+                      <><button type="button" className="secondary" onClick={() => startEdit(a)}>
                         Edit
-                      </button>
+                      </button>{" "}<button type="button" className="secondary" onClick={() => { setEditing(null); setTransaction({ asset: a, recordSale: false }); }}>Purchase / sale</button>{" "}
+                      {a.status !== "sold" && <button type="button" onClick={() => { setEditing(null); setTransaction({ asset: a, recordSale: true }); }}>Record sale</button>}</>
                     )}
                   </td>
                 </tr>
@@ -275,9 +327,19 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
             dalfen.com/ios
           </a>
           , which publishes addresses and occupancy but no acreage or building size. Re-running the
-          seed updates occupancy and status and leaves anything entered here alone.
+          seed updates occupancy and preserves recorded sales and purchase details.
         </p>
       </section>
     </>
   );
 }
+
+function assetState(a: AssetDetail) { return a.state?.trim().toUpperCase() || "__none"; }
+function assetCity(a: AssetDetail) { return JSON.stringify([a.city?.trim().toLowerCase() || "", assetState(a)]); }
+function assetMoney(value: number | null) { return value == null ? "—" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+function comparisonLabel(asset: AssetDetail) {
+  const comparison = saleComparison(asset);
+  if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "—";
+  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
+}
+

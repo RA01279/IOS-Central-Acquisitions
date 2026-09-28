@@ -177,7 +177,9 @@ export async function geocodeAddress(
           (word) => ({ lane: "ln", road: "rd", street: "st", drive: "dr", boulevard: "blvd", avenue: "ave", court: "ct", parkway: "pkwy", highway: "hwy", north: "n", south: "s", east: "e", west: "w" }[word]!))
         .replace(/\s+/g, " ").trim();
       const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?\s+/, "");
-      if (data.results.length !== 1 || best.partial_match || best.geometry.location_type !== "ROOFTOP" ||
+      const exactPremise = best.geometry.location_type === "GEOMETRIC_CENTER" &&
+        best.types?.includes("premise") && best.types?.includes("street_address");
+      if (data.results.length !== 1 || best.partial_match || (!exactPremise && best.geometry.location_type !== "ROOFTOP") ||
           !number || String(component("street_number")).toLowerCase() !== number.toLowerCase() ||
           street(requestedStreet) !== street(String(component("route") ?? "")) ||
           (city && city !== locality)) return null;
@@ -205,7 +207,8 @@ export async function geocodeMany<T>(
   items: T[],
   toParts: (item: T) => (string | null | undefined)[],
   limit = 5,
-  toState?: (item: T) => string | null | undefined
+  toState?: (item: T) => string | null | undefined,
+  requirePrecise = false
 ): Promise<(GeocodeResult | null)[]> {
   const out: (GeocodeResult | null)[] = new Array(items.length);
   let next = 0;
@@ -216,6 +219,7 @@ export async function geocodeMany<T>(
         if (i >= items.length) return;
         out[i] = await geocodeAddress(toParts(items[i]), {
           state: toState ? toState(items[i]) : null,
+          requirePrecise,
         });
       }
     })

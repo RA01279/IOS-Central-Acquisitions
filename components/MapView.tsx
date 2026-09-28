@@ -50,6 +50,7 @@ export default function MapView({
   height = 460,
   emptyMessage = "Nothing to show on the map yet.",
   onPick,
+  radiusBand,
 }: {
   points: MapPoint[];
   legend?: MapLegendItem[];
@@ -62,6 +63,7 @@ export default function MapView({
    * to fix that than copying numbers out of another tab.
    */
   onPick?: (lat: number, lng: number) => void;
+  radiusBand?: { lat: number; lng: number; minMiles: number; maxMiles: number };
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -216,6 +218,11 @@ export default function MapView({
       if (!points.length) return;
 
       const group = L.featureGroup();
+      if (radiusBand) {
+        for (const miles of [radiusBand.maxMiles, radiusBand.minMiles].filter(m => m > 0)) {
+          L.circle([radiusBand.lat, radiusBand.lng], { radius: miles * 1609.344, color: "#C07824", weight: 2, fillOpacity: 0, dashArray: miles === radiusBand.minMiles ? "6 5" : undefined }).bindTooltip(`${miles} miles`).addTo(group);
+        }
+      }
       for (const p of points) {
         // White outline rather than dark: it reads against both the pale
         // street basemap and dark satellite imagery, where a near-black stroke
@@ -261,14 +268,14 @@ export default function MapView({
       if (bounds.isValid()) {
         // A single point has zero-size bounds, which fitBounds zooms to street
         // level -- too close to give any context.
-        if (points.length === 1) map.setView([points[0].lat, points[0].lng], 13);
+        if (points.length === 1 && !radiusBand) map.setView([points[0].lat, points[0].lng], 13);
         else map.fitBounds(bounds, { padding: [28, 28], maxZoom: 14 });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [points, router]);
+  }, [points, router, radiusBand]);
 
   if (failed) {
     return <p className="error">Map failed to load: {failed}</p>;

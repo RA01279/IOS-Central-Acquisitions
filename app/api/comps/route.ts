@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { geocodeMany } from "@/lib/geocode";
+import { compIssue } from "@/lib/comps/intake-validation";
+import { validCoordinates } from "@/lib/location";
+import { parseMoney } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +81,13 @@ export async function POST(req: NextRequest) {
   const rejected: { address: string; reason: string }[] = [];
   const valid: any[] = [];
   for (const c of incoming) {
+    if (!c || typeof c !== "object") { rejected.push({ address: "(blank)", reason: "Invalid comp row" }); continue; }
+    let reviewed;
+    try { reviewed = { ...c, rent: parseMoney(c.rent), salePrice: parseMoney(c.salePrice) }; }
+    catch { rejected.push({ address: String(c.address ?? "(blank)"), reason: "Invalid rent or sale price" }); continue; }
+    const issue = compIssue(reviewed);
+    if (issue) { rejected.push({ address: String(c.address ?? "(blank)"), reason: issue }); continue; }
+    Object.assign(c, reviewed);
     const address = str(c.address);
     if (!address) {
       rejected.push({ address: "(blank)", reason: "No address" });
@@ -122,9 +132,7 @@ export async function POST(req: NextRequest) {
   const preset = valid.map((c) => {
     const lat = Number(c.latitude);
     const lng = Number(c.longitude);
-    const ok =
-      Number.isFinite(lat) && Number.isFinite(lng) &&
-      lat !== 0 && lng !== 0 && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    const ok = validCoordinates(c);
     return ok ? { lat, lng } : null;
   });
   const needGeo = valid.filter((_, i) => !preset[i]);
@@ -136,7 +144,8 @@ export async function POST(req: NextRequest) {
     needGeo,
     (c) => [c.address, c.city, c.market],
     5,
-    (c) => c.state
+    (c) => c.state,
+    true
   );
   let nextResolved = 0;
   const geo = valid.map((_, i) =>
@@ -146,15 +155,17 @@ export async function POST(req: NextRequest) {
   );
 
   const supabase = getServiceClient();
+  const completedKeys: string[] = [];
   let saved = 0;
   let duplicates = 0;
   const failed: { address: string; reason: string }[] = [];
   const savedComps: { id: string; address: string; latitude: number | null; longitude: number | null; geocode_precision: string | null }[] = [];
 
-  const rows: { address: string; row: Record<string, unknown> }[] = [];
+  const rows: { address: string; key: string; row: Record<string, unknown> }[] = [];
   for (let i = 0; i < valid.length; i++) {
     const c = valid[i];
     const g = geo[i];
+    if (!g) { rejected.push({ address: c.address, reason: "Verify the address with Google or provide a manual pin before saving." }); continue; }
     const acres = plain(c.acres);
     const lotSf = plain(c.lotSf) ?? (acres !== null ? Math.round(acres * SQFT_PER_ACRE) : null);
 
@@ -231,7 +242,7 @@ export async function POST(req: NextRequest) {
       date_estimated: c.dateEstimated === true,
       latitude: g?.lat ?? null,
       longitude: g?.lng ?? null,
-      geocode_precision: g?.precision ?? null,
+      geocode_precision: preset[i] && ["manual", "rooftop", "geometric_center", "supplied"].includes(c.geocodePrecision) ? c.geocodePrecision : g?.precision ?? null,
       geocoded_at: g ? new Date().toISOString() : null,
     };
 
@@ -264,7 +275,7 @@ export async function POST(req: NextRequest) {
       row.occupancy_at_sale = plain(c.occupancyAtSale);
     }
 
-    rows.push({ address: c.address, row });
+    rows.push({ address: c.address, key: c._key, row });
   }
 
   // Written in chunks, falling back to one-at-a-time only for a chunk that
@@ -286,13 +297,14 @@ export async function POST(req: NextRequest) {
     if (!error) {
       saved += chunk.length;
       savedComps.push(...(data ?? []));
+      completedKeys.push(...chunk.map(r => r.key).filter(Boolean));
       continue;
     }
-    for (const { address, row } of chunk) {
+    for (const { address, key, row } of chunk) {
       const { data: savedRow, error: rowErr } = await supabase.from("comps").insert(row)
         .select("id,address,latitude,longitude,geocode_precision");
-      if (!rowErr) { saved++; savedComps.push(...(savedRow ?? [])); }
-      else if (rowErr.code === "23505") duplicates++; // already in the repository
+      if (!rowErr) { saved++; savedComps.push(...(savedRow ?? [])); if (key) completedKeys.push(key); }
+      else if (rowErr.code === "23505") { duplicates++; if (key) completedKeys.push(key); }
       else failed.push({ address, reason: rowErr.message });
     }
   }
@@ -303,6 +315,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     saved,
+    completedKeys,
     savedComps,
     duplicates,
     rejected,
