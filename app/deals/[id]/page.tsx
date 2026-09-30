@@ -6,6 +6,7 @@ import Link from "next/link";
 import StageActions from "@/components/StageActions";
 import MlaProvideForm from "@/components/MlaProvideForm";
 import ExcelUploadForm from "@/components/ExcelUploadForm";
+import ZoningResearchPanel from "@/components/ZoningResearchPanel";
 import DealContactsPanel from "@/components/DealContactsPanel";
 import DealEditForm from "@/components/DealEditForm";
 import DealLocationEditor from "@/components/DealLocationEditor";
@@ -358,6 +359,8 @@ export default async function DealDetailPage({ params }: { params: { id: string 
           />
         </div>
       </section>
+
+      <ZoningResearchPanel dealId={deal.id} />
 
       <IcDeckPanel
         dealId={deal.id}
