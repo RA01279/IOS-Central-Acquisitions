@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(req: NextRequest) {
   // This exact route verifies its owner-scoped helper bearer credential itself.
-  if (req.nextUrl.pathname === "/api/outlook-helper/worker") return NextResponse.next();
+  if (req.nextUrl.pathname === "/api/outlook-helper/worker" || req.nextUrl.pathname === "/api/agents/worker") return NextResponse.next();
   let response = NextResponse.next({ request: { headers: req.headers } });
 
   const supabase = createServerClient(

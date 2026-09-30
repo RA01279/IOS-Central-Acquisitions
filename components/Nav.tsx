@@ -14,6 +14,7 @@ import SignOutButton from "./SignOutButton";
 import NavSearch from "./NavSearch";
 
 const LINKS = [
+  { href: "/agents", label: "Agents", key: "agents" },
   { href: "/", label: "Home", key: "home" },
   { href: "/deals", label: "Pipeline", key: "pipeline" },
   { href: "/offers", label: "Offers", key: "offers" },

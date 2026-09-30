@@ -1,3 +1,4 @@
+import { startAgentLoop } from "./agents.mjs";
 import { OutlookConnection, searchResult, emailResult } from "./codex.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -31,7 +32,7 @@ if (args.includes("--pair")) {
   try { const saved = JSON.parse(await readFile(configPath, "utf8")); if (saved.origin === base.origin) token = protect(saved.token, true); } catch {}
 }
 if (!/^[A-Za-z0-9_-]{43}$/.test(token || "")) throw new Error("Pair this computer first: npm run outlook:helper -- --pair");
-let connection;
+let connection; let stopAgents;
 async function request(method = "GET", body) {
   const response = await fetch(new URL("/api/outlook-helper/worker", base), { method, redirect: "error",
     headers: { Authorization: "Bearer " + token, ...(body ? { "Content-Type": "application/json" } : {}) },
@@ -57,7 +58,7 @@ try {
       }
       if (!persisted) {
         await writeFile(configPath, JSON.stringify({ origin: base.origin, token: protect(token) }), { mode: 0o600 });
-        persisted = true; console.log("Connected to Hopper. Search for an email in Comps.");
+        persisted = true; stopAgents = startAgentLoop({ base, token, launcher: option("--codex-launcher") }); console.log("Connected to Hopper. Search for an email in Comps.");
       }
       if (job) {
         let result, error;
@@ -76,4 +77,4 @@ try {
     await sleep(4000);
   }
 } catch (e) { console.error(e.message); process.exitCode = 1; }
-finally { connection?.close(); }
+finally { stopAgents?.(); connection?.close(); }
