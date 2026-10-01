@@ -25,3 +25,13 @@ Apply `20260929205444_hopper_agents.sql` after the existing Outlook helper migra
 Reports are private to the requesting Hopper account. The existing application treats deal records as shared across authenticated workspace users. Database tables have RLS enabled and no browser grants; server routes enforce run ownership. Disconnecting the helper revokes access. Reports survive disconnection.
 
 Validation: `node scripts/test-agents.cjs`, `npm run typecheck`, and a synthetic Codex report followed by authenticated queue/run/report verification.
+
+## Investment memo PowerPoint
+
+New investment memo runs follow the 25-slide executive-summary reference supplied by the user. The stored result uses `exec-summary-v1`; the same saved run can be reopened and downloaded as an editable `.pptx`. The sanitized template retains the reference's 4:3 size, slide layouts, theme and two branding images. It contains no example-deal facts, tenant images, maps, model screenshots, notes, or embedded workbooks.
+
+The memo content follows the reference order: cover, overview, demographics, growth, peer valuation, market/submarket, maps, zoning, site, tenant, model, leasing assumptions, cash flow, sensitivities, competitive set, lease/sale comps and maps, pursuit terms, and diligence budget. Tables/text are editable; supplied exhibits remain images. Missing evidence is identified explicitly. Sources and open items are included in speaker notes.
+
+Users can add PNG/JPEG exhibits with a source/date to the saved report before export. These files are resized in the browser, posted only to Hopper, and used for that download; they are not persisted. The export route enforces run ownership, request origin, slide/image limits and file signatures. No remote URL fetching occurs. Existing Markdown memo runs remain readable and must be regenerated for the deck format.
+
+Validation: `node scripts/test-memo.cjs`, existing agent-flow checks, TypeScript/build, real Codex content-contract check, and opening/rendering all 25 generated slides in installed PowerPoint.

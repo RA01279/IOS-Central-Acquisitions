@@ -1,3 +1,4 @@
+import { parseMemo, MEMO_VERSION } from "@/lib/agents/memo";
 import { NextRequest } from "next/server";
 import { workerContext, json, reap } from "@/lib/agents/server";
 import { UUID } from "@/lib/agents/catalog";
@@ -29,6 +30,12 @@ export async function POST(req: NextRequest) {
   if (!body.error && (!r || typeof r.report !== "string" || !r.report.trim() || r.report.length > 100000 ||
     typeof r.model !== "string" || r.model.length > 200 || !Array.isArray(r.limitations) || r.limitations.length > 30 || r.limitations.some((v: unknown) => typeof v !== "string" || v.length > 1000))) return json({ error: "Malformed report." }, 400);
   const { db, helper } = ctx;
+  const job = await db.from("agent_runs").select("agent,prompt").eq("id", body.id).eq("helper_id", helper.id).eq("owner_email", helper.owner_email).eq("status", "processing").maybeSingle();
+  if (job.error) throw job.error;
+  if (!job.data) return json({ error: "Run no longer active." }, 409);
+  if (!body.error && job.data.agent === "investment-memo" && job.data.prompt?.includes(MEMO_VERSION) && !parseMemo(r.report)) {
+    body.error = "The memo did not match the 25-slide template. Please generate it again with shorter source text.";
+  }
   const update = await db.from("agent_runs").update({ status: body.error ? "failed" : "completed",
     result: body.error ? null : { report: r.report, limitations: r.limitations }, model: body.error ? null : r.model,
     error: body.error ? String(body.error).slice(0, 500) : null, usage: body.usage && typeof body.usage === "object" ? body.usage : null,

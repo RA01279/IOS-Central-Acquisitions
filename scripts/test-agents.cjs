@@ -8,7 +8,7 @@ function load(path, mocks = {}) {
  vm.runInNewContext(code, { module, exports: module.exports, require: name => mocks[name] || require(name), Date, URL, console });
  return module.exports;
 }
-const catalog = load('lib/agents/catalog.ts');
+const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts') });
 assert.equal(catalog.AGENTS.length, 6);
 assert.equal(catalog.isAgentId('__proto__'), false);
 assert.equal(catalog.isAgentId('comp-analyst'), true);

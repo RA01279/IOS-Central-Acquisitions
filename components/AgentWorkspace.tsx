@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { parseMemo } from "@/lib/agents/memo";
+import MemoPreview from "./MemoPreview";
 import { AGENTS, type AgentId } from "@/lib/agents/catalog";
 type Run = { id: string; agent: string; status: string; created_at: string; error?: string; result?: { report: string; limitations: string[] }; sources?: { label: string; href?: string }[] };
 type Deal = { id: string; properties: { address?: string } | null };
@@ -17,6 +19,7 @@ export default function AgentWorkspace() {
   const [online, setOnline] = useState(false); const [busy, setBusy] = useState(false);
   const [error, setError] = useState(""); const [selected, setSelected] = useState(""); const [report, setReport] = useState<Run | null>(null);
   const definition = AGENTS.find(a => a.id === agent)!;
+  const memo = report?.agent === "investment-memo" && report.result ? parseMemo(report.result.report) : null;
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("run"); if (id) setSelected(id);
     let live = true;
@@ -68,6 +71,7 @@ export default function AgentWorkspace() {
       {AGENTS.map(a => <button key={a.id} type="button" aria-pressed={agent === a.id} onClick={() => setAgent(a.id)} style={{ textAlign: "left", padding: 18, border: agent === a.id ? "2px solid #255a49" : "1px solid #ccc", background: agent === a.id ? "#eff6f2" : "white", color: "#172b24", borderRadius: 8 }}><strong>{a.name}</strong><p style={{ margin: "8px 0 0", fontWeight: 400 }}>{a.description}</p></button>)}
     </div>
     <section style={{ padding: 24, border: "1px solid #ddd", borderRadius: 8 }}><h2>{definition.name}</h2>
+      {agent === "investment-memo" && <p>Creates a 25-slide PowerPoint matching your 12803 O’Connor executive summary. Paste tenant, market, lease and approved-model evidence here. Add maps and model screenshots to the completed report before downloading.</p>}
       <label htmlFor="agent-deal">Deal {definition.needsDeal ? "(required)" : "(optional)"}</label>
       <select id="agent-deal" value={deal} onChange={e => setDeal(e.target.value)} style={{ display: "block", width: "100%", margin: "8px 0 16px", padding: 10 }}><option value="">Select a deal</option>{deals.map(d => <option key={d.id} value={d.id}>{d.properties?.address || d.id}</option>)}</select>
       <label htmlFor="agent-text">Source text and context {agent === "deal-intake" ? "(required)" : "(optional)"}</label>
@@ -76,7 +80,7 @@ export default function AgentWorkspace() {
       <button type="button" onClick={run} disabled={busy || !online || (definition.needsDeal && !deal) || (agent === "deal-intake" && !text.trim())}>{busy ? "Preparing…" : "Generate report"}</button>
     </section>
     {report && <section aria-live="polite" style={{ marginTop: 28 }}><h2>{AGENTS.find(a => a.id === report.agent)?.name} report</h2><p>{report.status} · {new Date(report.created_at).toLocaleString()}</p>{report.error && <p role="alert">{report.error}</p>}
-      {report.result && <><button onClick={download}>Download report</button><div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.65, background: "#fff", padding: 24, marginTop: 12 }}><ReportText text={report.result.report} /></div><h3>Limitations</h3><ul>{report.result.limitations.map((l, i) => <li key={i}>{l}</li>)}</ul><h3>Hopper sources</h3><ul>{report.sources?.map((s, i) => <li key={i}>{s.href?.startsWith("/") && !s.href.startsWith("//") ? <a href={s.href}>{s.label}</a> : s.label}</li>)}</ul></>}
+      {report.result && <>{memo ? <MemoPreview key={report.id} deck={memo} runId={report.id} /> : <><button onClick={download}>Download report</button><div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.65, background: "#fff", padding: 24, marginTop: 12 }}><ReportText text={report.result.report} /></div></>}<h3>Limitations</h3><ul>{report.result.limitations.map((l, i) => <li key={i}>{l}</li>)}</ul><h3>Hopper sources</h3><ul>{report.sources?.map((s, i) => <li key={i}>{s.href?.startsWith("/") && !s.href.startsWith("//") ? <a href={s.href}>{s.label}</a> : s.label}</li>)}</ul></>}
     </section>}
     <section style={{ marginTop: 32 }}><h2>Your recent reports</h2>{!runs.length && <p>No reports yet.</p>}{runs.map(r => <p key={r.id}><button onClick={() => open(r.id)}>{AGENTS.find(a => a.id === r.agent)?.name} · {r.status} · {new Date(r.created_at).toLocaleString()}</button></p>)}</section>
   </>;
