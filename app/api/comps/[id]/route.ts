@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { geocodeAddress } from "@/lib/geocode";
+import { validCoordinates } from "@/lib/location";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +155,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .maybeSingle();
   if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 });
   if (!existing) return NextResponse.json({ error: "Comp not found" }, { status: 404 });
+  if ([['expectedAddress','address'],['expectedCity','city'],['expectedMarket','market']].some(([key,column]) => key in body && body[key] !== existing[column])) return NextResponse.json({ error: "The address changed. Refresh and verify the location again." }, { status: 409 });
 
   const update: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(FIELDS)) {
@@ -167,37 +169,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // matcher now refuses to measure from. Dropping a pin is the only fix, so it
   // has to stick: marked 'manual', and the re-geocode below is skipped
   // entirely, or correcting the address would immediately throw the pin away.
-  const latIn = "latitude" in body ? plain(body.latitude) : undefined;
-  const lngIn = "longitude" in body ? plain(body.longitude) : undefined;
-  const pinned = latIn !== undefined || lngIn !== undefined;
+  const pinned = "latitude" in body || "longitude" in body;
   if (pinned) {
-    const lat = latIn ?? plain(existing.latitude);
-    const lng = lngIn ?? plain(existing.longitude);
-    if (lat === null || lng === null) {
-      // Clearing one of the pair, which means clearing the point.
-      update.latitude = null;
-      update.longitude = null;
-      update.geocode_precision = null;
-    } else {
-      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-        return NextResponse.json(
-          { error: `Those coordinates are off the map (${lat}, ${lng}). Latitude is -90 to 90, longitude -180 to 180.` },
-          { status: 400 }
-        );
-      }
-      // 0,0 passes every range check and is in the Gulf of Guinea. It's what
-      // an empty field coerced to a number looks like, never a yard.
-      if (lat === 0 && lng === 0) {
-        return NextResponse.json(
-          { error: "0, 0 is in the Atlantic. Clear both fields to remove the location instead." },
-          { status: 400 }
-        );
-      }
-      update.latitude = lat;
-      update.longitude = lng;
-      update.geocode_precision = "manual";
-      update.geocoded_at = new Date().toISOString();
+    if (!("latitude" in body) || !("longitude" in body) || !validCoordinates(body)) {
+      return NextResponse.json({ error: "Enter both valid coordinates: latitude -90 to 90 and longitude -180 to 180. Blank values and 0, 0 cannot locate a comp." }, { status: 400 });
     }
+    update.latitude = Number(body.latitude);
+    update.longitude = Number(body.longitude);
+    update.geocode_precision = "manual";
+    update.geocoded_at = new Date().toISOString();
   }
 
   // A commencement date typed by a human is a stated date, not an inference
@@ -252,8 +232,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (addressChanged && !pinned && merged.address) {
     const g = await geocodeAddress(
       [merged.address as string, merged.city as string, merged.market as string],
-      { state: merged.state as string | null }
+      { state: merged.state as string | null, requirePrecise: true }
     );
+    if (!g) return NextResponse.json({ error: "The changed address could not be verified. Enter the actual property's coordinates along with the corrected address." }, { status: 400 });
     update.latitude = g?.lat ?? null;
     update.longitude = g?.lng ?? null;
     update.geocode_precision = g?.precision ?? null;

@@ -27,6 +27,10 @@ results = [{ ...baseline, geometry: { ...baseline.geometry, location_type: "APPR
 assert.equal(await lookup(), null);
 results = [baseline, baseline];
 assert.equal(await lookup(), null);
+results = [{ ...baseline, types: ["premise", "street_address"], geometry: { ...baseline.geometry, location_type: "GEOMETRIC_CENTER" } }];
+assert.ok(await lookup());
+results = [{ ...baseline, types: ["route"], geometry: { ...baseline.geometry, location_type: "GEOMETRIC_CENTER" } }];
+assert.equal(await lookup(), null);
 results = [];
 assert.equal(await lookup(), null);
 console.log("Google-first checks passed: street aliases, wrong street/number, partial/approximate matches, multiple results and no match.");

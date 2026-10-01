@@ -99,7 +99,7 @@ export default async function DealsPage({
   let query = supabase
     .from("deals")
     .select(
-      "id, stage, asset_class, mla_status, created_at, dd_end_on, closing_on, closed_on, properties(address, city, market, latitude, longitude, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)"
+      "id, stage, asset_class, mla_status, created_at, dd_end_on, closing_on, closed_on, properties(address, city, market, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)"
     )
     .eq("deal_type", "acquisition")
     .neq("stage", "archived")
@@ -122,6 +122,7 @@ export default async function DealsPage({
       city: d.properties?.city ?? null,
       market: d.properties?.market ?? null,
       latitude: d.properties?.latitude ?? null,
+      geocode_precision: d.properties?.geocode_precision ?? null,
       longitude: d.properties?.longitude ?? null,
       lot_sf: d.properties?.lot_sf ?? null,
       building_sf: d.properties?.building_sf ?? null,

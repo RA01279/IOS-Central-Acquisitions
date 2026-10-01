@@ -279,6 +279,12 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
       const saleOnly = ["salePrice", "closedOn", "capRate", "noi", "buyer", "seller", "saleBroker", "occupancyAtSale"];
       const keys = [...shared, ...(isLease ? leaseOnly : saleOnly)];
       const payload = Object.fromEntries(keys.map((k) => [k, form[k] ?? ""]));
+      // Unchanged coordinates are not a new manual pin. An address edit must
+      // trigger verification instead of carrying the old site's point along.
+      if (form.latitude === v(comp.latitude) && form.longitude === v(comp.longitude)) {
+        delete payload.latitude;
+        delete payload.longitude;
+      }
 
       const res = await fetch(`/api/comps/${comp.id}`, {
         method: "PATCH",

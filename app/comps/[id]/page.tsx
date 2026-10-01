@@ -293,8 +293,7 @@ export default async function CompDetailPage({ params }: { params: { id: string 
 
         {/* Only for a comp that needs it. Placed above the read-only Location
             map so the banner's link lands somewhere useful. */}
-        {!isUsableForDistance(comp.geocode_precision) && (
-          <div id="place">
+        <div id="place">
             <CompLocationFixer
               compId={comp.id}
               address={comp.address}
@@ -303,7 +302,6 @@ export default async function CompDetailPage({ params }: { params: { id: string 
               currentLng={comp.longitude != null ? Number(comp.longitude) : null}
             />
           </div>
-        )}
 
         {points.length > 0 && (
           <section className="panel">

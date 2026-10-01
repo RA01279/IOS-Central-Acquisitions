@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import LocationPreview, { type LocationPoint } from "./LocationPreview";
 
 export default function DealEditForm({
   dealId,
@@ -40,6 +41,10 @@ export default function DealEditForm({
   acquisitionType: string | null;
 }) {
   const router = useRouter();
+  const [address,setAddress] = useState(property.address ?? "");
+  const [city,setCity] = useState(property.city ?? "");
+  const [market,setMarket] = useState(property.market ?? "");
+  const [location,setLocation] = useState<LocationPoint | null>(null);
   const [open, setOpen] = useState(false);
   const [occupancy, setOccupancy] = useState(property.occupancy_status ?? "");
   const [busy, setBusy] = useState(false);
@@ -56,6 +61,8 @@ export default function DealEditForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "update_details",
+          latitude: location?.latitude,
+          longitude: location?.longitude,
           address: form.get("address"),
           city: form.get("city"),
           market: form.get("market"),
@@ -97,16 +104,17 @@ export default function DealEditForm({
     <form onSubmit={handleSubmit} className="inline-add-form">
       <label>
         Property address *
-        <input name="address" defaultValue={property.address ?? ""} required />
+        <input name="address" value={address} onChange={e => {setAddress(e.target.value);setLocation(null);}} required />
       </label>
+      {(address !== (property.address ?? "") || city !== (property.city ?? "") || market !== (property.market ?? "")) && <LocationPreview key={JSON.stringify([address,city,market])} address={address} city={city} market={market} value={location} onChange={setLocation} />}
       <div className="grid-2">
         <label>
           City
-          <input name="city" defaultValue={property.city ?? ""} />
+          <input name="city" value={city} onChange={e => {setCity(e.target.value);setLocation(null);}} />
         </label>
         <label>
           Market
-          <input name="market" defaultValue={property.market ?? ""} />
+          <input name="market" value={market} onChange={e => {setMarket(e.target.value);setLocation(null);}} />
         </label>
         <label>
           Submarket

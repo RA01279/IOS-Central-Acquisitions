@@ -11,11 +11,17 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import LocationPreview, { type LocationPoint } from "./LocationPreview";
 
 type MlaChoice = "provided" | "requested" | "assumed";
 type Occupancy = "vacant" | "occupied";
 
 export default function DealForm() {
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [market, setMarket] = useState("");
+  const [location, setLocation] = useState<LocationPoint | null>(null);
   const router = useRouter();
   const [mlaChoice, setMlaChoice] = useState<MlaChoice>("requested");
   const [occupancy, setOccupancy] = useState<Occupancy>("vacant");
@@ -28,6 +34,7 @@ export default function DealForm() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!location) { setError("Check the property location with Google or place a pin before creating the deal."); return; }
     setSubmitting(true);
     setError(null);
     setDuplicates([]);
@@ -56,6 +63,10 @@ export default function DealForm() {
 
     const payload = {
       intakeKey: intakeKey.current,
+      latitude: location?.latitude,
+      longitude: location?.longitude,
+      geocodePrecision: location?.geocode_precision,
+      state,
       address: form.get("address"),
       market: form.get("market"),
       city: (form.get("city") as string) || undefined,
@@ -103,17 +114,19 @@ export default function DealForm() {
       <p className="hint">Choose IOS when a warehouse has a substantial, separately usable outdoor storage yard. Ordinary parking or loading areas alone do not establish IOS.</p>
       <label>
         Property address
-        <input name="address" required />
+        <input name="address" required value={address} onChange={e => { setAddress(e.target.value); setLocation(null); }} />
       </label>
 
+      <label>State<input value={state} maxLength={2} placeholder="TX" onChange={e => { setState(e.target.value.toUpperCase()); setLocation(null); }} /></label>
+      <LocationPreview key={JSON.stringify([address,city,state,market])} address={address} city={city} state={state} market={market} value={location} onChange={setLocation} />
       <div className="grid-2">
         <label>
           City
-          <input name="city" />
+          <input name="city" value={city} onChange={e => { setCity(e.target.value); setLocation(null); }} />
         </label>
         <label>
           Market
-          <input name="market" />
+          <input name="market" value={market} onChange={e => { setMarket(e.target.value); setLocation(null); }} />
         </label>
         <label>
           Current owner

@@ -11,6 +11,7 @@ import { fireStageChangeWebhook } from "./webhooks";
 import { geocodeAddress } from "./geocode";
 import { parseMoney } from "./money";
 import { validDate } from "./stage-rules";
+import { validCoordinates } from "./location";
 
 export type MlaStatus = "pending" | "requested" | "provided" | "assumed";
 // 'lease' is legacy: leasing was removed from the UI in Aug 2026 but the rows
@@ -94,6 +95,10 @@ export function isValidAcqStage(stage: string): boolean {
 }
 
 export interface NewDealInput {
+  latitude?: number;
+  longitude?: number;
+  geocodePrecision?: string;
+  state?: string;
   intakeKey?: string;
   substantialYard?: boolean;
   address: string;
@@ -160,7 +165,10 @@ export async function createDeal(input: NewDealInput) {
     if (amount != null && (!Number.isFinite(amount) || amount < 0)) throw new Error("Property sizes and WALT must be nonnegative numbers");
   }
   const supabase = getServiceClient();
-  const location = await geocodeAddress([input.address, input.city, input.market], { requirePrecise: true });
+  const location = validCoordinates(input)
+    ? { lat: Number(input.latitude), lng: Number(input.longitude), precision: ["rooftop","geometric_center"].includes(input.geocodePrecision ?? "") ? input.geocodePrecision! : "manual" }
+    : await geocodeAddress([input.address, input.city, input.market], { state: input.state, requirePrecise: true });
+  if (!location) throw new Error("Verify the property location with Google or place a manual pin before creating the deal.");
   const property = {
       address: input.address,
       latitude: location?.lat ?? null,

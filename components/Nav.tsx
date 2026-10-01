@@ -19,6 +19,7 @@ const LINKS = [
   { href: "/deals", label: "Pipeline", key: "pipeline" },
   { href: "/offers", label: "Offers", key: "offers" },
   { href: "/comps", label: "Comps", key: "comps" },
+  { href: "/locations", label: "Map locations", key: "locations" },
   // What we own, as opposed to what we're looking at. Next to Comps because
   // both are evidence you bring to a deal rather than steps in the pipeline.
   { href: "/assets", label: "Our assets", key: "assets" },

@@ -5,6 +5,8 @@ import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 import { parseMoney } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
+import { geocodeAddress } from "@/lib/geocode";
+import { validCoordinates } from "@/lib/location";
 
 // A price off a form: "4,200,000" / "$4.2M" -> 4200000, or null when there's
 // no usable positive number. The DB has CHECK (> 0) on both price columns, so a
@@ -209,11 +211,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (deal.property_id) {
       const { data: existingProperty } = await supabase.from("properties").select("address,city,market").eq("id", deal.property_id).single();
       const locationChanged = existingProperty && ["address", "city", "market"].some(key => key in body && String(body[key] ?? "").trim() !== String((existingProperty as any)[key] ?? "").trim());
+      let locationUpdate = {};
+      if (locationChanged) {
+        const g = validCoordinates(body) ? { lat: Number(body.latitude), lng: Number(body.longitude), precision: "manual" } : await geocodeAddress([body.address, body.city, body.market], { requirePrecise: true });
+        if (!g) return NextResponse.json({ error: "The changed address needs a verified location. Check Google or place a pin in this form before saving." }, { status: 400 });
+        locationUpdate = { latitude: g.lat, longitude: g.lng, geocode_precision: g.precision, geocoded_at: new Date().toISOString() };
+      }
       const { error: propErr } = await supabase
         .from("properties")
         .update({
           address: body.address,
-          ...(locationChanged ? { latitude: null, longitude: null, geocode_precision: null, geocoded_at: null } : {}),
+          ...locationUpdate,
           city: body.city || null,
           market: body.market || null,
           submarket: body.submarket || null,

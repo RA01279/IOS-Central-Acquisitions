@@ -19,6 +19,7 @@ const db = { from: (table) => ({
 }) };
 const route = load("../app/api/deals/[id]/location/route.ts", {
   "@/lib/comps/mapData": load("../lib/comps/mapData.ts"),
+  "@/lib/location": load("../lib/location.ts"),
   "@/lib/auth": { getCurrentUser: async () => authenticated ? { email: "test@example.com" } : null },
   "@/lib/supabase": { getServiceClient: () => db },
   "next/server": { NextResponse: { json: (body, opts) => ({ body, status: opts?.status ?? 200 }) } },

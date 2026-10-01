@@ -16,6 +16,8 @@
 // beats copying two numbers out of another browser tab, and is the same gesture
 // people already use to read these maps.
 
+import Link from "next/link";
+import { validCoordinates } from "@/lib/location";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import MapView, { type MapPoint } from "./MapView";
@@ -41,6 +43,7 @@ export default function CompLocationFixer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
+  const [saved, setSaved] = useState(false);
 
   const points: MapPoint[] = [];
   if (currentLat != null && currentLng != null) {
@@ -50,7 +53,7 @@ export default function CompLocationFixer({
       lng: currentLng,
       color: CURRENT_COLOR,
       title: `Where it sits now (${precision ?? "no geocode"})`,
-      lines: ["Not precise enough to measure distance from"],
+      lines: ["Saved location"],
     });
   }
   if (pick) {
@@ -74,11 +77,12 @@ export default function CompLocationFixer({
     }
     const lat = Number(m[1]);
     const lng = Number(m[2]);
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    if (!validCoordinates({ latitude: lat, longitude: lng })) {
       setError(`Those are off the map (${lat}, ${lng}). Latitude is -90 to 90, longitude -180 to 180.`);
       return;
     }
     setError(null);
+    setSaved(false);
     setPick({ lat, lng });
   }
 
@@ -94,6 +98,9 @@ export default function CompLocationFixer({
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not save that location");
+      if (!body.comp || Number(body.comp.latitude) !== pick.lat || Number(body.comp.longitude) !== pick.lng) throw new Error("The saved location did not match. Refresh and try again.");
+      setPick(null);
+      setSaved(true);
       router.refresh();
     } catch (e: any) {
       setError(e.message);
@@ -104,33 +111,21 @@ export default function CompLocationFixer({
 
   return (
     <section className="panel">
-      <h2>Place this comp</h2>
+      <h2>{currentLat != null && currentLng != null ? "Edit comp location" : "Add comp location"}</h2>
       <p className="hint">
-        {currentLat != null ? (
-          <>
-            Google could only place <strong>{address}</strong> at a city or ZIP centroid
-            {precision ? ` (${precision.replace(/_/g, " ")})` : ""}, shown in grey. That&apos;s not
-            where the deal is, so it&apos;s left out of distance matching — it still counts on
-            recency, size and coverage.
-          </>
-        ) : (
-          <>
-            <strong>{address}</strong> has no coordinates at all, so it can&apos;t be distance
-            matched. It still counts on recency, size and coverage.
-          </>
-        )}{" "}
-        Addresses like build-to-suits with no street number, or an intersection, will never geocode
-        however they&apos;re written — so point at the spot instead.{" "}
-        <strong>Click the map</strong> where the yard is, then Save. Switch to Satellite (top right)
-        to find it.
+        Place <strong>{address}</strong> by clicking the property on the map or pasting
+        coordinates below. Switch to Satellite to find the site. The grey marker is the
+        saved location; your new pin is a preview until you save.
       </p>
+      {saved && <p role="status">Location saved. <Link href="/comps">View on the comps map</Link>.</p>}
 
       <MapView
         points={points}
         height={420}
         onPick={(lat, lng) => {
           setError(null);
-          setPick({ lat, lng });
+          setSaved(false);
+    setPick({ lat, lng });
         }}
         emptyMessage="Click anywhere on the map to place this comp."
         legend={
@@ -175,6 +170,7 @@ export default function CompLocationFixer({
                 applyTyped();
               }
             }}
+            aria-label="Latitude, longitude"
             placeholder="32.0817, -81.1256"
             style={{ minWidth: 220 }}
           />
@@ -190,8 +186,8 @@ export default function CompLocationFixer({
 
       {error && <p className="error">{error}</p>}
       <p className="hint" style={{ marginTop: 10 }}>
-        Saved coordinates are marked as pinned by hand, count as located, and won&apos;t be
-        re-geocoded over — so correcting the address later can&apos;t throw the pin away.
+        Saved locations are used on the comps map and for distance matching. Changing an
+        address requires a verified location or a replacement pin.
       </p>
     </section>
   );

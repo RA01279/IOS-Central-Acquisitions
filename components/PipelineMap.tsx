@@ -8,9 +8,10 @@
 
 import { useMemo, useState } from "react";
 import MapView, { type MapPoint } from "./MapView";
-import { hasMapCoordinates } from "@/lib/comps/mapData";
+import { locationReady as hasMapCoordinates } from "@/lib/location";
 
 export interface PipelineMapDeal {
+  geocode_precision?: string | null;
   id: string;
   stage: string;
   asset_class: string | null;

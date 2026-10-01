@@ -433,6 +433,7 @@ export default function CompIntakeForm({
           <button type="button" disabled={busy} onClick={() => addManual("lease")}>Add lease comp</button>
           <button type="button" disabled={busy} onClick={() => addManual("sale")}>Add sale comp</button>
         </>}
+        <Link href="/locations">Resolve existing map locations</Link>
       </div>
 
       <details className="comp-rentroll">
