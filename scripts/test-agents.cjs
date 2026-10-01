@@ -8,8 +8,9 @@ function load(path, mocks = {}) {
  vm.runInNewContext(code, { module, exports: module.exports, require: name => mocks[name] || require(name), Date, URL, console });
  return module.exports;
 }
-const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts') });
-assert.equal(catalog.AGENTS.length, 6);
+const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts'), './ic-narrative': load('lib/agents/ic-narrative.ts') });
+assert.equal(catalog.AGENTS.length, 7);
+assert.match(catalog.buildPrompt('ic-narrative', [], '', '2026-10-01'), /ic-narrative-v1/);
 assert.equal(catalog.isAgentId('__proto__'), false);
 assert.equal(catalog.isAgentId('comp-analyst'), true);
 assert.match(catalog.buildPrompt('underwriting-review', [], 'source', '2026-09-29'), /not performed/);
@@ -53,5 +54,5 @@ const req = (origin = 'https://hopper.test', token = '') => ({ headers: { get: n
  const oversized = await route.POST({text:async()=>'x'.repeat(120001)}); assert.equal(oversized.status,413);
  const sql=fs.readFileSync('supabase/migrations/20260929205444_hopper_agents.sql','utf8');
  assert.match(sql,/enable row level security/); assert.match(sql,/revoke all .*anon,authenticated/);
- console.log('Agent checks passed: six roles, origin checks, owner scoping, token expiry, input bounds, and required evidence.');
+ console.log('Agent checks passed: seven roles, origin checks, owner scoping, token expiry, input bounds, and required evidence.');
 })().catch(e=>{console.error(e);process.exitCode=1});

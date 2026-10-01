@@ -15,7 +15,8 @@ On a deal page, **IC Deck — Executive Summary** builds the 23-slide executive 
 | Hopper comps (confirmed, ranked like the deal page: 15 mi, 24 months, top 10) | Lease comps, Sale comps (+ maps) |
 | Hopper owned assets within 50 mi | Portfolio context and summary |
 | Google Static Maps of the recorded pin | Cover, location, aerials, comp and portfolio maps |
-| Not available to Hopper: left as orange `[Analyst: …]` text or grey "Exhibit needed" boxes | Location highlights, zoning, tenant credit, photos, market canvas, DD costs |
+| IC deck narrative agent (optional, below) | Location highlights, zoning, tenant overview, market — tagged "Agent draft — verify", sources in notes |
+| Not available to Hopper: left as orange `[Analyst: …]` text or grey "Exhibit needed" boxes | Anything the agent could not source, tenant credit, photos, market canvas exhibits, DD costs |
 
 Values are found by row label, not cell address, so they survive inserted rows. Nothing is recalculated except labelled display arithmetic (PSF, coverage).
 
@@ -31,6 +32,14 @@ The UW template carries hidden sheets and blocks from earlier deals, and Excel d
 - Model price differing from Hopper's contract price or latest offer (flagged on Pursuit Terms).
 
 Checks also appear in slide 2's speaker notes. Hidden sheets such as Memo Table are never read.
+
+## Agent drafts
+
+**Draft with agent** in the panel queues the *IC deck narrative* agent on your connected computer (the same helper as the other agents; web search enabled). It receives only the address, city, acreage, building SF and tenant names — never price, returns or rent. It must cite a source for every bullet; a result with an unsourced bullet is rejected. Leads it could not confirm go to the notes as "Unverified". Credit always stays an analyst item.
+
+The latest completed run for the deal is included when you build (untick to leave it out). Only your own runs, for that deal, are used.
+
+Install: apply `20261001200000_ic_narrative_agent.sql`, deploy, and restart `npm run outlook:helper` so the helper knows the new agent.
 
 ## Template
 

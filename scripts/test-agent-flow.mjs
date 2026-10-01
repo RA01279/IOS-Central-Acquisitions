@@ -48,6 +48,7 @@ const deps={"node:crypto":crypto,"next/server":{NextResponse:{json:(body,options
 const helper=load("lib/outlook-helper.ts",deps); deps["@/lib/outlook-helper"]=helper;
 const lib=load("lib/agents/server.ts",deps); deps["@/lib/agents/server"]=lib;
 deps["./memo"]=deps["@/lib/agents/memo"]=load("lib/agents/memo.ts",deps);
+deps["./ic-narrative"]=deps["@/lib/agents/ic-narrative"]=load("lib/agents/ic-narrative.ts",deps);
 deps["@/lib/agents/catalog"]=load("lib/agents/catalog.ts",deps);
 deps["@/lib/agents/context"]={loadEvidence:async()=>[{label:"Synthetic test",data:{address:"123 Example Road"}}]};
 const browser=load("app/api/agents/route.ts",deps),worker=load("app/api/agents/worker/route.ts",deps);

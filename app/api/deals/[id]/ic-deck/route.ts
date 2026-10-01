@@ -14,6 +14,8 @@ import { scoreComps, unitValue, isUsableForDistance, haversineMiles, type CompRe
 import { validateModelSummary } from "@/lib/ic-deck/model";
 import { renderIcDeck, type DeckAsset, type DeckComp } from "@/lib/ic-deck/deck";
 import type { Picture } from "@/lib/ic-deck/pptx-kit";
+import { parseNarrative } from "@/lib/agents/ic-narrative";
+import { UUID } from "@/lib/agents/catalog";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -50,13 +52,28 @@ const label = (n: number) => (n <= 9 ? String(n) : String.fromCharCode(55 + n));
 
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  if (!(await getCurrentUser())) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const body = await req.json().catch(() => null);
   let model;
   try { model = validateModelSummary(body?.model); }
   catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
 
   const db = getServiceClient();
+
+  // Optional agent narrative: the requester's own completed run for THIS deal.
+  let narrative: { sections: NonNullable<ReturnType<typeof parseNarrative>>["sections"]; runAt: string } | undefined;
+  if (body?.narrativeRunId != null) {
+    if (typeof body.narrativeRunId !== "string" || !UUID.test(body.narrativeRunId)) return NextResponse.json({ error: "Invalid narrative." }, { status: 400 });
+    const { data: run, error: runErr } = await db.from("agent_runs").select("result,finished_at")
+      .eq("id", body.narrativeRunId).eq("owner_email", user.email.toLowerCase()).eq("deal_id", params.id)
+      .eq("agent", "ic-narrative").eq("status", "completed").maybeSingle();
+    if (runErr) return NextResponse.json({ error: runErr.message }, { status: 500 });
+    const parsed = run?.result?.report ? parseNarrative(run.result.report) : null;
+    if (!parsed) return NextResponse.json({ error: "That narrative isn't available for this deal. Build without it or run the agent again." }, { status: 404 });
+    narrative = { sections: parsed.sections, runAt: String(run!.finished_at ?? "").slice(0, 10) };
+  }
+
   const { data: deal, error } = await db
     .from("deals")
     .select("id, stage, asset_class, acquisition_type, contract_price, dd_end_on, closing_on, loi_terms, properties(address, city, market, submarket, latitude, longitude, geocode_precision, building_sf, lot_sf), offers(price, offered_at)")
@@ -151,7 +168,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       lastOffer: offers[0] ? { price: Number(offers[0].price), date: String(offers[0].offered_at).slice(0, 10) } : null,
       ddEndOn: deal.dd_end_on ?? null, closingOn: deal.closing_on ?? null, loi,
     },
-    leaseComps, saleComps, compRadiusMiles: COMP_RADIUS_MILES, assets, maps, preparedOn: new Date(),
+    leaseComps, saleComps, compRadiusMiles: COMP_RADIUS_MILES, assets, maps, narrative, preparedOn: new Date(),
   });
   const name = `${(prop?.address ?? "Deal").replace(/[^\w .-]+/g, "").trim()} - IC Exec Summary (draft).pptx`;
   return new NextResponse(new Uint8Array(buffer), {

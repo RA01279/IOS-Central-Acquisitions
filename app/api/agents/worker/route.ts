@@ -1,4 +1,5 @@
 import { parseMemo, MEMO_VERSION } from "@/lib/agents/memo";
+import { parseNarrative } from "@/lib/agents/ic-narrative";
 import { NextRequest } from "next/server";
 import { workerContext, json, reap } from "@/lib/agents/server";
 import { UUID } from "@/lib/agents/catalog";
@@ -35,6 +36,9 @@ export async function POST(req: NextRequest) {
   if (!job.data) return json({ error: "Run no longer active." }, 409);
   if (!body.error && job.data.agent === "investment-memo" && job.data.prompt?.includes(MEMO_VERSION) && !parseMemo(r.report)) {
     body.error = "The memo did not match the 25-slide template. Please generate it again with shorter source text.";
+  }
+  if (!body.error && job.data.agent === "ic-narrative" && !parseNarrative(r.report)) {
+    body.error = "The narrative did not match the IC deck format (every bullet needs a source). Please run it again.";
   }
   const update = await db.from("agent_runs").update({ status: body.error ? "failed" : "completed",
     result: body.error ? null : { report: r.report, limitations: r.limitations }, model: body.error ? null : r.model,

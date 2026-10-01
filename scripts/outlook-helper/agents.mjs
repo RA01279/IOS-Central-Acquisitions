@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-const allowed = new Set(["deal-intake", "comp-analyst", "pipeline-follow-up", "site-research", "underwriting-review", "investment-memo"]);
+const allowed = new Set(["deal-intake", "comp-analyst", "pipeline-follow-up", "site-research", "underwriting-review", "investment-memo", "ic-narrative"]);
 const schema = { type: "object", additionalProperties: false, required: ["report", "model", "limitations"], properties: {
   report: { type: "string" }, model: { type: "string" }, limitations: { type: "array", items: { type: "string" } },
 } };
@@ -15,7 +15,7 @@ export async function runAgent(job, launcher) {
   // this report generator separate from the user's coding workspace and inbox.
   const args = ["exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only",
     "--disable", "shell_tool", "--disable", "multi_agent", "--disable", "plugins", "--disable", "apps",
-    "-c", "web_search=" + (job.agent === "site-research" ? '"live"' : '"disabled"'),
+    "-c", "web_search=" + (job.agent === "site-research" || job.agent === "ic-narrative" ? '"live"' : '"disabled"'),
     "--output-schema", schemaPath, "--json", "-"];
   let command = "codex";
   if (process.platform === "win32") {

@@ -13,6 +13,7 @@ import PizZip from "pizzip";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelSummary } from "./model";
+import type { NarrativeKey, NarrativeSection } from "../agents/ic-narrative";
 import { MUTED, NAVY, R_NS, REL_NS, SlideBuilder, type Picture, type Para } from "./pptx-kit";
 
 export interface DeckComp {
@@ -57,6 +58,8 @@ export interface IcDeckInput {
   saleComps: DeckComp[];
   compRadiusMiles: number;
   assets: DeckAsset[];
+  /** Sourced agent drafts for the sections Hopper can't fill. Optional. */
+  narrative?: { sections: Record<NarrativeKey, NarrativeSection>; runAt: string };
   maps: Partial<Record<"coverPhoto" | "coverAerial" | "location" | "aerial" | "aerialClose" | "leaseComps" | "saleComps" | "portfolio", Picture>>;
   preparedOn: Date;
 }
@@ -78,6 +81,7 @@ const monthYear = (d: Date) => `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 const millions = (v: number) => `$${(v / 1e6).toFixed(2)}M`;
 
 const OPEN = (what: string): Para => ({ runs: [{ text: `[Analyst: ${what}]`, color: "B4541A", italic: true }] });
+const DRAFT_TAG = { text: "  Agent draft — verify", color: "B4541A", italic: true, bold: false, size: 7 };
 
 export function renderIcDeck(input: IcDeckInput): Buffer {
   const { model: m, deal } = input;
@@ -92,6 +96,15 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   const source = `Model: ${m.source.fileName}${m.source.modelDate ? ` (as of ${date(m.source.modelDate)})` : ""}`;
   const footer = `DRAFT for IC review · Built by Hopper ${date(input.preparedOn.toISOString())} · ${source}`;
   const slides: SlideBuilder[] = [];
+  // Agent drafts: bullets on the slide, every source and unconfirmed lead in the notes.
+  const narrative = input.narrative;
+  const drafted = (key: NarrativeKey) => (narrative?.sections[key].bullets.length ? narrative.sections[key] : null);
+  const noteDraft = (s: SlideBuilder, key: NarrativeKey, title: string) => {
+    const sec = narrative?.sections[key];
+    if (!sec) return;
+    s.notes.push(`${title} — agent draft (IC deck narrative, ${narrative!.runAt || "date unknown"}). Verify each point against its source before circulating.`);
+    s.notes.push(...sec.sources.map((x) => "Source: " + x), ...sec.unverified.map((x) => "Unverified: " + x));
+  };
   const slide = (title?: string) => {
     const s = new SlideBuilder(slides.length + 1);
     if (title) { s.title(title); s.pageNumber(); s.footer(footer); }
@@ -151,12 +164,12 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       head("Site Overview"),
       body(`${pct(occupied, 0)} leased IOS site in ${cityState} on ${m.property.acres?.toFixed(2) ?? "—"} acres with a ${sf(m.property.buildingSf)} building (${pct(m.property.coverage, 1)} coverage), ${tenantLine}.`),
       body(`Going-in basis of ${usd(m.capitalization[0]?.psf, 2)} PSF (${usd(price)} purchase price); all-in cost of ${usd(m.totalCost.psf, 2)} PSF (${usd(m.totalCost.amount)}).`),
-      head("Location Highlights"),
-      OPEN("highway access, submarket, nearby demand drivers"),
+      drafted("locationHighlights") ? { runs: [{ text: "Location Highlights", bold: true, color: NAVY, size: 10 }, DRAFT_TAG], spaceAfter: 1 } : head("Location Highlights"),
+      ...(drafted("locationHighlights")?.bullets.slice(0, 2).map(body) ?? [OPEN("highway access, submarket, nearby demand drivers")]),
       head("Deal Status"),
       body(status + (terms ? `; ${terms}.` : ".")),
-      head("Zoning"),
-      OPEN("governing jurisdiction, district and outdoor-storage rights (see Site research agent)"),
+      drafted("zoning") ? { runs: [{ text: "Zoning", bold: true, color: NAVY, size: 10 }, DRAFT_TAG], spaceAfter: 1 } : head("Zoning"),
+      ...(drafted("zoning")?.bullets.slice(0, 2).map(body) ?? [OPEN("governing jurisdiction, district and outdoor-storage rights (see Site research agent)")]),
       head("Underwriting Assumptions"),
       body(`${hold ?? "—"}-year hold; ${pct(m.yields.exitCap, 2)} exit cap on a ${pct(m.yields.returnOnCostAtExit, 2)} yield-to-cost; ${usd(fees)} of acquisition, financing and other costs capitalized into the ${usd(m.totalCost.psf, 2)} PSF all-in basis.`),
       body(`Debt: ${pct(m.debt.ltc, 1)} LTC (${usd(m.debt.loan)}), ${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)} spread, ${m.debt.interestOnlyMonths ?? "—"} months interest-only.`),
@@ -174,6 +187,8 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ["Going-in", pct(m.yields.goingIn, 2)], ["Return on Cost at Exit", pct(m.yields.returnOnCostAtExit, 2)], ["Exit Cap", pct(m.yields.exitCap, 2)],
     ], { x: right, y: 5.65 + 0.2 * Math.max(0, m.capitalization.length - 4), w, h: 0.8 }, { size: 8, widths: [2.2, 1], align: ["l", "r"], rowHeight: 0.2 });
     s.notes.push(source + ": ES Summary, Pro Forma returns block, Deal Overview debt terms.", `Hopper deal record: stage ${deal.stageLabel}; LOI terms as last saved.`);
+    noteDraft(s, "locationHighlights", "Location Highlights");
+    noteDraft(s, "zoning", "Zoning");
     if (m.warnings.length) s.notes.push("MODEL CHECKS — resolve before circulating:", ...m.warnings.map((x) => "• " + x));
   }
 
@@ -199,14 +214,17 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   // 7. Tenant overview ---------------------------------------------------
   {
     const s = slide("Tenant Overview");
+    const t = drafted("tenant");
     s.text([
-      OPEN(`${tenants.join(", ") || "tenant"}: business, history, ownership, end markets and use of the site`),
+      ...(t ? [{ runs: [{ text: tenants.join(", ") || "Tenant", bold: true, color: NAVY }, DRAFT_TAG] } as Para, ...t.bullets.map((b): Para => ({ runs: [{ text: b }], bullet: true }))]
+        : [OPEN(`${tenants.join(", ") || "tenant"}: business, history, ownership, end markets and use of the site`)]),
       OPEN("credit: financials reviewed, guaranty, security deposit — do not assert creditworthiness without them"),
-    ], { x: 0.3, y: 1.45, w: 9.4, h: 1.5 }, { size: 11 });
+    ], { x: 0.3, y: 1.45, w: 9.4, h: t ? 3.3 : 1.5 }, { size: t ? 10 : 11 });
     s.table(["Tenant", "SF", "Lease Start", "Expiration", "Remaining (mo.)", "Rent / Yr.", "$ / SF / Yr.", "$ / SF / Mo."],
       m.rentRoll.rows.map((r) => [r.tenant, n0(r.sf), date(r.start), date(r.expiration), n0(r.remainingMonths), usd(r.sbrAnnual), r.sbrAnnual && r.sf ? usd(r.sbrAnnual / r.sf, 2) : "—", r.sbrPsfMonthly == null ? "—" : usd(r.sbrPsfMonthly, 2)]),
-      { x: 0.3, y: 3.1, w: 9.4, h: 1.2 }, { size: 9, widths: [2.2, 0.9, 1, 1, 1, 1.1, 1, 1], align: ["l", "r", "r", "r", "r", "r", "r", "r"] });
+      { x: 0.3, y: t ? 4.1 : 3.1, w: 9.4, h: 1.2 }, { size: 9, widths: [2.2, 0.9, 1, 1, 1, 1.1, 1, 1], align: ["l", "r", "r", "r", "r", "r", "r", "r"] });
     s.notes.push(source + ": Rent Roll.");
+    noteDraft(s, "tenant", "Tenant Overview");
   }
 
   // 8. Model — base case -------------------------------------------------
@@ -295,9 +313,15 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   // 12-15. Market canvas -------------------------------------------------
   {
     const where = deal.submarket || deal.market || cityState;
+    const mk = drafted("market");
     for (const sub of ["", " – Occupancy Breakdown", " – Tenancy Breakdown", " – Ownership Breakdown"]) {
       const s = slide(`${where} IOS Market Canvas${sub}`);
-      s.placeholder(`${where} IOS market canvas${sub.replace(" – ", ": ").toLowerCase()} exhibit, with survey source and date.`, { x: 0.3, y: 1.45, w: 9.4, h: 5.35 });
+      const what = `${where} IOS market canvas${sub.replace(" – ", ": ").toLowerCase()} exhibit, with survey source and date.`;
+      if (sub === "" && mk) {
+        s.text([{ runs: [{ text: "Market", bold: true, color: NAVY }, DRAFT_TAG] }, ...mk.bullets.map((b): Para => ({ runs: [{ text: b }], bullet: true }))], { x: 0.3, y: 1.45, w: 3.6, h: 5.35 }, { size: 9.5 });
+        s.placeholder(what, { x: 4.05, y: 1.45, w: 5.65, h: 5.35 });
+        noteDraft(s, "market", "Market");
+      } else s.placeholder(what, { x: 0.3, y: 1.45, w: 9.4, h: 5.35 });
     }
   }
 

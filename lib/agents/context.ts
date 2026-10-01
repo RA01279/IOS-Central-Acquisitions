@@ -11,8 +11,8 @@ export async function loadEvidence(agent: AgentId, dealId?: string): Promise<Evi
     const { data, error } = await db.from("deals").select("*,properties(*)").eq("id", dealId).maybeSingle();
     if (error || !data) throw new Error("The selected deal could not be loaded.");
     subject = data;
-    // Site research receives only public property location, not deal economics.
-    sources.push({ label: "Subject deal", href: `/deals/${dealId}`, data: agent === "site-research"
+    // Web-searching agents receive only public property location, never deal economics.
+    sources.push({ label: "Subject deal", href: `/deals/${dealId}`, data: agent === "site-research" || agent === "ic-narrative"
       ? { address: data.properties?.address, market: data.properties?.market, latitude: data.properties?.latitude, longitude: data.properties?.longitude }
       : data });
   }
@@ -30,7 +30,7 @@ export async function loadEvidence(agent: AgentId, dealId?: string): Promise<Evi
     if (error) throw new Error("Could not load comp evidence.");
     sources.push({ label: "Comp records", href: "/comps", data: { coverage: `${market ? "Same market" : "All markets"}; latest 100 entered records, not exhaustive`, comps: data?.slice(0, 100).map(c => ({ ...c, href: `/comps/${c.id}` })) } });
   }
-  if (dealId && agent !== "site-research") {
+  if (dealId && agent !== "site-research" && agent !== "ic-narrative") {
     const results = await Promise.all([
       db.from("deal_events").select("event_type,detail,created_at").eq("deal_id", dealId).order("created_at", { ascending: false }).limit(50),
       db.from("uw_versions").select("version_number,returns_summary,created_at").eq("deal_id", dealId).order("version_number", { ascending: false }).limit(3),

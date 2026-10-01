@@ -8,6 +8,15 @@ export async function GET(req: NextRequest) {
   const ctx = await userContext(req); if (ctx.response) return ctx.response;
   const { db, email } = ctx; await reap(db, email);
   const id = req.nextUrl.searchParams.get("id");
+  // Latest run of one agent for one deal (the IC deck builder's narrative).
+  const latest = req.nextUrl.searchParams.get("latest"), dealParam = req.nextUrl.searchParams.get("deal");
+  if (latest) {
+    if (!isAgentId(latest) || !dealParam || !UUID.test(dealParam)) return json({ error: "Invalid request." }, 400);
+    const { data, error } = await db.from("agent_runs").select("id,status,error,created_at,finished_at")
+      .eq("owner_email", email).eq("deal_id", dealParam).eq("agent", latest).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw error;
+    return json({ run: data ?? null });
+  }
   if (id) {
     if (!UUID.test(id)) return json({ error: "Invalid report." }, 400);
     const { data, error } = await db.from("agent_runs").select("id,agent,deal_id,status,sources,result,error,created_at,reviewed_at,model,usage")

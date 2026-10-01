@@ -16,7 +16,7 @@ const cache = new Map();
 function load(path, deps = {}) {
   if (cache.has(path)) return cache.get(path);
   const module = { exports: {} };
-  const source = ts.transpileModule(readFileSync(new URL("../" + path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
+  const source = ts.transpileModule(readFileSync(new URL("../" + path.split("?")[0], import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
   vm.runInNewContext(source, { exports: module.exports, module, require: (n) => deps[n] ?? (n.startsWith("./") ? load("lib/ic-deck/" + n.slice(2) + ".ts", deps) : require(n)), Buffer, process, console, URL });
   cache.set(path, module.exports);
   return module.exports;
@@ -155,6 +155,7 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     "@/lib/supabase": { getServiceClient: () => ({ from: query }) }, "@/lib/deals": { STAGE_LABELS: { offered: "Offered" } },
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck,
+    "@/lib/agents/ic-narrative": load("lib/agents/ic-narrative.ts"), "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
   });
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error("offline"); }; // maps unavailable -> placeholders, not failure
@@ -177,4 +178,58 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     assert.equal((await route.POST(req({ model: m }), props)).status, 401);
   } finally { globalThis.fetch = realFetch; }
   console.log("PASS: route authenticates, rejects bad summaries, ranks comps within radius, lists nearby owned assets, survives map outages.");
+}
+
+// ---- agent narrative ---------------------------------------------------------
+{
+  const nar = load("lib/agents/ic-narrative.ts");
+  const sec = (bullets) => ({ bullets, sources: bullets.length ? ["https://example.gov/zoning (accessed 2026-10-01)"] : [], unverified: [] });
+  const good = { version: nar.NARRATIVE_VERSION, sections: { locationHighlights: sec(["1.1 miles to SH-249 <exit> & ramp."]), zoning: sec(["City has no zoning; deed restrictions govern."]), tenant: sec(["Example Tenant makes widgets."]), market: sec([]) } };
+  assert(nar.parseNarrative(JSON.stringify(good)), "valid narrative parses");
+  assert.equal(nar.parseNarrative(JSON.stringify({ ...good, version: "x" })), null);
+  const unsourced = structuredClone(good); unsourced.sections.tenant.sources = [];
+  assert.equal(nar.parseNarrative(JSON.stringify(unsourced)), null, "a bullet without a source is rejected");
+  const missing = structuredClone(good); delete missing.sections.market;
+  assert.equal(nar.parseNarrative(JSON.stringify(missing)), null, "every section must be present");
+  assert.match(nar.NARRATIVE_INSTRUCTIONS, /Do not use or guess price, returns, rent/);
+
+  const out2 = deck.renderIcDeck({ model: m, deal: { id: "d", address: "100 Example Yard Rd", city: null, state: "TX", market: "Testville", submarket: null, stage: "offered", stageLabel: "Offered", acquisitionType: null, contractPrice: null, lastOffer: null, ddEndOn: null, closingOn: null, loi: {} },
+    leaseComps: [], saleComps: [], compRadiusMiles: 15, assets: [], maps: {}, preparedOn: new Date(), narrative: { sections: nar.parseNarrative(JSON.stringify(good)).sections, runAt: "2026-10-01" } });
+  const z2 = new PizZip(out2);
+  const s2 = z2.file("ppt/slides/slide2.xml").asText();
+  assert(s2.includes("1.1 miles to SH-249 &lt;exit&gt; &amp; ramp.") && s2.includes("Agent draft — verify"), "drafts render escaped and tagged");
+  assert(!s2.includes("[Analyst: highway access"), "drafted section replaces its open item");
+  assert(s2.includes("[Analyst: governing") === false && z2.file("ppt/slides/slide7.xml").asText().includes("Example Tenant makes widgets."));
+  assert(z2.file("ppt/slides/slide7.xml").asText().includes("do not assert creditworthiness"), "credit stays an analyst item");
+  assert(z2.file("ppt/notesSlides/notesSlide2.xml").asText().includes("Source: https://example.gov/zoning"), "draft sources in notes");
+  assert(!z2.file("ppt/slides/slide12.xml").asText().includes("Agent draft"), "empty market section stays a placeholder");
+
+  // Route: the run must be the requester's, for this deal, completed.
+  const filters = [];
+  const runRow = { result: { report: JSON.stringify(good) }, finished_at: "2026-10-01T10:00:00Z" };
+  const q = (table) => {
+    const b = { select: () => b, eq: (k, v) => { if (table === "agent_runs") filters.push([k, v]); return b; }, neq: () => b, not: () => b, order: () => b,
+      limit: async () => ({ data: [], error: null }), range: async () => ({ data: [], error: null }),
+      maybeSingle: async () => ({ data: table === "agent_runs" ? (filters.some(([k, v]) => k === "owner_email" && v === "a@example.com") ? runRow : null)
+        : { id: "d1", stage: "offered", properties: { address: "100 Example Yard Rd", latitude: null, longitude: null }, offers: [] }, error: null }) };
+    return b;
+  };
+  const NR = class { constructor(body, init) { this.body = body; this.status = init?.status ?? 200; } static json(body, init) { return { body, status: init?.status ?? 200 }; } };
+  let who = { email: "A@example.com" };
+  const route2 = load("app/api/deals/[id]/ic-deck/route.ts?narrative", {
+    "next/server": { NextResponse: NR }, "@/lib/auth": { getCurrentUser: async () => who }, "@/lib/supabase": { getServiceClient: () => ({ from: q }) },
+    "@/lib/deals": { STAGE_LABELS: {} }, "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
+    "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck, "@/lib/agents/ic-narrative": nar, "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
+  });
+  const rid = "00000000-0000-4000-8000-000000000009", props2 = { params: Promise.resolve({ id: "d1" }) };
+  const res = await route2.POST({ json: async () => ({ model: JSON.parse(JSON.stringify(m)), narrativeRunId: rid }) }, props2);
+  assert.equal(res.status, 200);
+  for (const want of [["id", rid], ["owner_email", "a@example.com"], ["deal_id", "d1"], ["agent", "ic-narrative"], ["status", "completed"]]) {
+    assert(filters.some(([k, v]) => k === want[0] && v === want[1]), `narrative lookup filters on ${want[0]}`);
+  }
+  assert(new PizZip(res.body).file("ppt/slides/slide7.xml").asText().includes("Example Tenant makes widgets."));
+  who = { email: "someone-else@example.com" }; filters.length = 0;
+  assert.equal((await route2.POST({ json: async () => ({ model: m, narrativeRunId: rid }) }, props2)).status, 404, "another user's run is not usable");
+  assert.equal((await route2.POST({ json: async () => ({ model: m, narrativeRunId: "nope" }) }, props2)).status, 400);
+  console.log("PASS: narrative contract (sources required), tagged and escaped drafts, sources in notes, owner- and deal-scoped narrative lookup.");
 }

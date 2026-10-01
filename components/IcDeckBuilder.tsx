@@ -7,7 +7,7 @@
 // every model check before downloading, because a deck that disagrees with
 // the model is worse than no deck.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { openWorkbook } from "@/lib/ic-deck/xlsx-lite";
 import { extractModel, type ModelSummary } from "@/lib/ic-deck/model";
 
@@ -19,6 +19,47 @@ export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string
   const [reading, setReading] = useState(false);
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [run, setRun] = useState<{ id: string; status: string; error?: string | null; finished_at?: string | null } | null>(null);
+  const [useDraft, setUseDraft] = useState(true);
+  const [starting, setStarting] = useState(false);
+
+  // Latest IC narrative run for this deal; poll while it is queued or running.
+  useEffect(() => {
+    let live = true;
+    async function refresh() {
+      try {
+        const r = await fetch(`/api/agents?latest=ic-narrative&deal=${encodeURIComponent(dealId)}`, { cache: "no-store" });
+        if (r.ok && live) setRun((await r.json()).run);
+      } catch { /* agents unavailable: the deck still builds without a draft */ }
+    }
+    void refresh();
+    const timer = setInterval(() => { if (run && ["queued", "processing"].includes(run.status)) void refresh(); }, 5000);
+    return () => { live = false; clearInterval(timer); };
+  }, [dealId, run?.status]);
+
+  async function startNarrative() {
+    if (!model) return;
+    setStarting(true);
+    setError(null);
+    // Public property facts only: no price, returns or rent go to a web-searching agent.
+    const p = model.property;
+    const text = [
+      `Subject: ${p.address ?? ""}, ${p.cityState ?? ""}.`,
+      p.acres ? `Site: ${p.acres} acres.` : "",
+      p.buildingSf ? `Building: ${Math.round(p.buildingSf).toLocaleString("en-US")} SF.` : "",
+      model.rentRoll.rows.length ? `Tenant(s): ${model.rentRoll.rows.map((r) => r.tenant).join("; ")}.` : "Vacant at closing.",
+    ].filter(Boolean).join(" ");
+    try {
+      const r = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: "ic-narrative", dealId, text }) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Could not start the agent.");
+      setRun({ id: data.id, status: "queued" });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setStarting(false);
+    }
+  }
 
   async function choose(file: File | undefined) {
     setModel(null);
@@ -43,7 +84,7 @@ export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string
       const res = await fetch(`/api/deals/${dealId}/ic-deck`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
+        body: JSON.stringify({ model, narrativeRunId: useDraft && run?.status === "completed" ? run.id : null }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Deck build failed (${res.status}).`);
       const blob = await res.blob();
@@ -99,6 +140,22 @@ export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string
           ) : (
             <p className="hint">Model checks passed.</p>
           )}
+          <div className="panel-inset">
+            <strong>Analyst sections (location, zoning, tenant, market)</strong>
+            {!run && <p className="hint">No agent draft yet. The agent researches public sources on your connected computer and cites each point; it receives the address, size and tenant names only.</p>}
+            {run && ["queued", "processing"].includes(run.status) && <p role="status">Agent is researching ({run.status})… this can take several minutes.</p>}
+            {run?.status === "failed" && <p className="error">Last agent run failed: {run.error ?? "unknown error"}</p>}
+            {run?.status === "completed" && (
+              <label>
+                <input type="checkbox" checked={useDraft} onChange={(e) => setUseDraft(e.target.checked)} /> Include the agent draft from {run.finished_at?.slice(0, 10) ?? "the last run"} (marked “Agent draft — verify”, sources in notes)
+              </label>
+            )}
+            {!(run && ["queued", "processing"].includes(run.status)) && (
+              <button type="button" className="secondary" onClick={startNarrative} disabled={starting}>
+                {starting ? "Starting…" : run ? "Run the agent again" : "Draft with agent"}
+              </button>
+            )}
+          </div>
           <button type="button" onClick={build} disabled={building}>
             {building ? "Building deck…" : "Download IC deck (.pptx)"}
           </button>
