@@ -12,7 +12,8 @@ import { parseReturnsSummary } from "@/lib/excel-parser";
 // on real underwriting models). This route downloads it from storage, reads
 // the "Summary Table" tab, and appends a version row -- never overwrites a
 // prior version.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

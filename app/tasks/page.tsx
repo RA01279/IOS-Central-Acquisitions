@@ -15,10 +15,11 @@ function isOverdue(due: string | null) {
 }
 
 export default async function TasksPage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams: { mine?: string };
+  searchParams: Promise<{ mine?: string }>;
 }) {
+  const searchParams = await searchParamsPromise;
   const user = await getCurrentUser();
   const mineOnly = searchParams.mine === "1";
   const tasks = await listOpenTasks(mineOnly ? user?.email : undefined);

@@ -6,8 +6,9 @@ import { researchZoning, MunicipalResearchError } from "@/lib/zoning/research";
 export const dynamic="force-dynamic";
 export const maxDuration=60;
 const validId=(id:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-export async function POST(req:NextRequest,{params}:{params:{id:string}}) {
-  if(!await getCurrentUser(req)) return NextResponse.json({error:"Not authenticated"},{status:401});
+export async function POST(req:NextRequest, props:{params: Promise<{id:string}>}) {
+  const params = await props.params;
+  if(!(await getCurrentUser(req))) return NextResponse.json({error:"Not authenticated"},{status:401});
   if(!validId(params.id)) return NextResponse.json({error:"Invalid deal"},{status:400});
   let body;
   try{body=await req.json();}catch{return NextResponse.json({error:"Invalid request"},{status:400});}

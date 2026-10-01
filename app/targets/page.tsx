@@ -20,11 +20,12 @@ function stars(score: number | null) {
   return "★".repeat(score) + "☆".repeat(5 - score);
 }
 
-export default async function TargetsPage({
-  searchParams,
-}: {
-  searchParams: { all?: string };
-}) {
+export default async function TargetsPage(
+  props: {
+    searchParams: Promise<{ all?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const showAll = searchParams.all === "1";
   const supabase = getServiceClient();
 

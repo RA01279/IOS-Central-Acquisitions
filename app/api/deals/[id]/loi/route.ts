@@ -49,7 +49,8 @@ const RENT_PHRASES: Record<string, (amt: string) => string> = {
   per_sf_annual: (a) => `a blended base rental rate of $${a} per square foot of building per year`,
 };
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

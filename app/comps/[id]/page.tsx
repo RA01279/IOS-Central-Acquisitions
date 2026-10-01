@@ -76,7 +76,8 @@ function Metric({ label, value, highlight }: { label: string; value: string; hig
   );
 }
 
-export default async function CompDetailPage({ params }: { params: { id: string } }) {
+export default async function CompDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const supabase = getServiceClient();
   const { data: comp } = await supabase.from("comps").select("*").eq("id", params.id).maybeSingle();
   if (!comp) return notFound();

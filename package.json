@@ -16,15 +16,16 @@
     "docxtemplater": "^3.69.3",
     "exceljs": "^4.4.0",
     "leaflet": "^1.9.4",
-    "next": "14.2.35",
+    "next": "15.5.27",
     "pizzip": "^3.2.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.22",
     "@types/node": "^20.14.0",
-    "@types/react": "^18.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "typescript": "^5.5.3"
   }
 }

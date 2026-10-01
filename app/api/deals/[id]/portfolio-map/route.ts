@@ -24,7 +24,8 @@ const MAP_SCALE = 2;
 /** Precisions we're willing to measure a distance from. */
 const LOCATED = new Set(LOCATED_PRECISIONS);
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const includeImage = req.nextUrl.searchParams.get("image") !== "0";

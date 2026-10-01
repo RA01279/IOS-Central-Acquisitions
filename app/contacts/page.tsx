@@ -32,11 +32,12 @@ function PersonLine({ c }: { c: any }) {
   );
 }
 
-export default async function ContactsPage({
-  searchParams,
-}: {
-  searchParams: { q?: string; type?: string };
-}) {
+export default async function ContactsPage(
+  props: {
+    searchParams: Promise<{ q?: string; type?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const q = searchParams.q?.trim()?.toLowerCase() || undefined;
   const typeFilter = searchParams.type || undefined;
   const [contacts, companies] = await Promise.all([listContacts(), listCompanies()]);

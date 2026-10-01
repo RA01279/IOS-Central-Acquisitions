@@ -3,14 +3,16 @@ import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { validAnalysis } from "@/lib/analysis-validation";
 export const dynamic = "force-dynamic";
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!await getCurrentUser(req)) return NextResponse.json({error:"Not authenticated"},{status:401});
   const kind=req.nextUrl.searchParams.get("kind");
   if (kind!=="comps" && kind!=="demand") return NextResponse.json({error:"Invalid analysis type"},{status:400});
   const {data,error}=await getServiceClient().from("deal_analysis_versions").select("version,payload,created_at,created_by").eq("deal_id",params.id).eq("kind",kind).order("version",{ascending:false}).limit(1).maybeSingle();
   return error ? NextResponse.json({error:"Could not load saved analysis"},{status:500}) : NextResponse.json({saved:data});
 }
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user=await getCurrentUser(req);
   if (!user) return NextResponse.json({error:"Not authenticated"},{status:401});
   const text=await req.text();

@@ -7,7 +7,8 @@ import BackButton from "@/components/BackButton";
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
 
-export default async function CompanyDetailPage({ params }: { params: { id: string } }) {
+export default async function CompanyDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   let data;
   try {
     data = await getCompanyWithRelations(params.id);

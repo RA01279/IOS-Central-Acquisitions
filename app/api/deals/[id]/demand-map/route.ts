@@ -188,7 +188,8 @@ async function enrichTenants(tenants: Tenant[]): Promise<Tenant[]> {
 // No lat/lng stored on properties -- the address is geocoded on the fly each
 // call rather than cached, since this is an occasional IC-deck export, not a
 // hot path, and it means a corrected address is always reflected immediately.
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

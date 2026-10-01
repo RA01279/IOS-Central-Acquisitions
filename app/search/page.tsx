@@ -8,11 +8,12 @@ import NavSearch from "@/components/NavSearch";
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
 
-export default async function SearchPage({
-  searchParams,
-}: {
-  searchParams: { q?: string };
-}) {
+export default async function SearchPage(
+  props: {
+    searchParams: Promise<{ q?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const q = searchParams.q?.trim() || "";
 
   let results: any = null;

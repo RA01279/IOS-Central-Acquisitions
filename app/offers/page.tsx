@@ -18,11 +18,12 @@ function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
 }
 
-export default async function OffersPage({
-  searchParams,
-}: {
-  searchParams: { asset?: string; range?: string };
-}) {
+export default async function OffersPage(
+  props: {
+    searchParams: Promise<{ asset?: string; range?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const assetParam = searchParams.asset;
   const asset =
     assetParam && (ASSET_CLASSES as readonly string[]).includes(assetParam) ? assetParam : "all";

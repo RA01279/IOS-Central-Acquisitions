@@ -4,7 +4,8 @@ import { completeTask, reopenTask } from "@/lib/crm";
 import { getCurrentUser } from "@/lib/auth";
 
 // PATCH /api/tasks/[id]  body: { action: "complete" | "reopen" }
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

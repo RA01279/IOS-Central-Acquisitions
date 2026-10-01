@@ -27,7 +27,7 @@ export default function DealForm() {
   const [occupancy, setOccupancy] = useState<Occupancy>("vacant");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const intakeKey = useRef<string>();
+  const intakeKey = useRef<string | undefined>(undefined);
   const [substantialYard,setSubstantialYard] = useState(false);
   const [pipeline,setPipeline] = useState("");
   const [duplicates, setDuplicates] = useState<{id:string;address:string;city:string;stage:string}[]>([]);

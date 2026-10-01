@@ -82,11 +82,12 @@ function Card({ deal, showClass, soonCutoff }: { deal: any; showClass: boolean; 
   );
 }
 
-export default async function DealsPage({
-  searchParams,
-}: {
-  searchParams: { asset?: string };
-}) {
+export default async function DealsPage(
+  props: {
+    searchParams: Promise<{ asset?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   // Two pipelines, toggled -- IOS is the default because it's the bulk of the
   // book. "all" is available for anyone who wants the whole thing at once.
   const assetParam = searchParams.asset;

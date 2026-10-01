@@ -52,7 +52,8 @@ async function advance(
 //   { action: "set_targeting", ... }                        -- archive scoring
 //   { action: "update_details", ... }                       -- edit deal + property
 //   { action: "provide_mla", ...mlaFields }                 -- fills in MLA after a request
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -303,7 +304,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 // tasks) all cascade via FK. The property row is deleted too when no other
 // deal references it, so a duplicate intake leaves nothing behind. Files in
 // storage are left as-is -- harmless orphans, cheap to keep.
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

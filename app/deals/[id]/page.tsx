@@ -40,7 +40,8 @@ function fmtX(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `${v.toFixed(2)}x`;
 }
 
-export default async function DealDetailPage({ params }: { params: { id: string } }) {
+export default async function DealDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const supabase = getServiceClient();
   const user = await getCurrentUser();
 

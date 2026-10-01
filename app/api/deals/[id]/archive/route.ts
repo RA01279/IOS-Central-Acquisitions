@@ -6,7 +6,8 @@ import { getCurrentUser } from "@/lib/auth";
 
 // POST /api/deals/[id]/archive
 // body: { action: "archive", stage: string, reason: string } | { action: "restore" }
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req as any);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 

@@ -60,10 +60,11 @@ function SplitTile({
 }
 
 export default async function HomePage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams: { range?: string };
+  searchParams: Promise<{ range?: string }>;
 }) {
+  const searchParams = await searchParamsPromise;
   const range: RangeKey = isRangeKey(searchParams.range) ? searchParams.range : "7d";
   const s = await buildSummary(range);
 

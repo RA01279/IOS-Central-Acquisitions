@@ -5,8 +5,9 @@ import { hasMapCoordinates } from "@/lib/comps/mapData";
 import { geocodeAddress } from "@/lib/geocode";
 import { locationReady, validCoordinates } from "@/lib/location";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!await getCurrentUser(req)) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  if (!(await getCurrentUser(req))) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const db = getServiceClient();
   const { data: deal, error } = await db.from("deals")
     .select("property_id,properties(address,city,market,latitude,longitude,geocode_precision)").eq("id", params.id).maybeSingle();
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ property: saved, matchedAddress: location.formatted });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const body = await req.json().catch(() => null);

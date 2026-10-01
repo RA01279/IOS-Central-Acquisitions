@@ -23,7 +23,8 @@ const ACTIVITY_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-export default async function ContactDetailPage({ params }: { params: { id: string } }) {
+export default async function ContactDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   let data;
   try {
     data = await getContactWithRelations(params.id);
