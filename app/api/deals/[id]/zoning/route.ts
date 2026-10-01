@@ -23,6 +23,6 @@ export async function POST(req:NextRequest,{params}:{params:{id:string}}) {
     // versions, documents, property locations, or Returns summary.
     return NextResponse.json({report},{headers:{"Cache-Control":"no-store"}});
   } catch(error) {
-    return NextResponse.json({error:error instanceof MunicipalResearchError ? error.message : "Zoning research failed. Please retry."},{status:422});
+    return NextResponse.json({error:error instanceof MunicipalResearchError ? error.message : "Zoning research failed. Please retry.", code:error instanceof MunicipalResearchError ? error.code : "RESEARCH_FAILED"},{status:422});
   }
 }

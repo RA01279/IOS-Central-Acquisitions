@@ -25,19 +25,24 @@ export default function ZoningResearchPanel({dealId}:{dealId:string}) {
   const [report,setReport]=useState<ZoningReport|null>(null);
   const [busy,setBusy]=useState<"lookup"|"neighbors"|null>(null);
   const [error,setError]=useState("");
+  const [unsupported,setUnsupported]=useState(false);
+  const researchHref="/agents?agent=site-research&deal="+encodeURIComponent(dealId)+"&task=zoning-ios&radius="+radius;
   const [neighborsLoaded,setNeighborsLoaded]=useState(false);
   async function request(action:"lookup"|"neighbors") {
     const response=await fetch(`/api/deals/${dealId}/zoning`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,radiusMiles:radius})});
     const data=await response.json().catch(()=>({error:"Research did not finish. Please retry."}));
     if(!response.ok) {
+      if(data.code==="UNSUPPORTED_MUNICIPALITY"){setUnsupported(true);return null;}
       throw new Error(data.error??"Research failed.");
     }
     return data.report as ZoningReport;
   }
   async function generate() {
-    setBusy("lookup");setError("");setNeighborsLoaded(false);setReport(null);
+    setBusy("lookup");setError("");setUnsupported(false);setNeighborsLoaded(false);setReport(null);
     try {
-      setReport(await request("lookup"));
+      const lookup=await request("lookup");
+      if(!lookup)return;
+      setReport(lookup);
       setBusy("neighbors");
       setReport(await request("neighbors"));
       setNeighborsLoaded(true);
@@ -64,7 +69,8 @@ export default function ZoningResearchPanel({dealId}:{dealId:string}) {
       {report && <button type="button" className="secondary" onClick={download}>Download research</button>}
     </div>
     {busy && <p role="status">{busy==="lookup"?"Checking public zoning...":"Zoning is ready. Checking nearby businesses against the municipal zoning map."}</p>}
-    <p><a href={"/agents?agent=site-research&deal="+encodeURIComponent(dealId)+"&task=zoning-ios"}>U.S. zoning and tenant research</a> - Requires the connected Hopper computer helper. Sourced research takes longer than instant lookup.</p>
+    {unsupported && <div role="status" style={{padding:16,marginTop:16,background:"#eff6f2",border:"1px solid #c5d9ce",borderRadius:6}}><strong>This property needs sourced research</strong><p>Its municipality is outside the instant-map coverage. Continue with your connected computer helper to research zoning and nearby IOS operators. Your property and search radius will be selected.</p><a className="button" href={researchHref}>Research this property</a></div>}
+    <p><a href={researchHref}>U.S. zoning and tenant research</a> - Requires the connected Hopper computer helper. Sourced research takes longer than instant lookup.</p>
     {error && <p role="alert" className="error">{error}</p>}
     {report && <div aria-live="polite">
       <h3>{report.address} | {report.municipality}</h3>

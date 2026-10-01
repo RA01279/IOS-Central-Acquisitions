@@ -30,11 +30,11 @@ assert.equal(research.compareZoning(subject,{...subject,district:"LI-1"}),"diffe
 assert.equal(research.compareZoning(subject,null),"outside");
 assert.equal(research.compareZoning(subject,{...subject,status:"unknown"}),"unknown");
 assert.equal(research.zoningAt({lat:0.5,lng:0.5},{...layers,zoning:[...layers.zoning,...layers.zoning]}).status,"ambiguous");
-let authenticated=true, dbReads=0, mode;
+let authenticated=true, dbReads=0, mode, unsupported=false;
 const route=load("app/api/deals/[id]/zoning/route.ts",{require:n=>({
   "@/lib/auth":{getCurrentUser:async()=>authenticated?{email:"test@example.com"}:null},
   "@/lib/supabase":{getServiceClient:()=>({from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>{dbReads++;return {data:{id:"deal",properties:{address:"3104 S Rigsbee",latitude:33.0138832,longitude:-96.6723418,geocode_precision:"rooftop"}}};}})})})})},
-  "@/lib/zoning/research":{MunicipalResearchError:research.MunicipalResearchError,researchZoning:async(input,neighbors)=>{mode=neighbors;return {subject};}},
+  "@/lib/zoning/research":{MunicipalResearchError:research.MunicipalResearchError,researchZoning:async(input,neighbors)=>{if(unsupported)throw new research.MunicipalResearchError("No instant coverage", "UNSUPPORTED_MUNICIPALITY");mode=neighbors;return {subject};}},
   "next/server":{NextResponse:{json:(data,options)=>({data,status:options?.status??200})}},
 }[n])});
 const id="20059b5d-dacc-4bbf-90e6-04c93b96e273";
@@ -43,6 +43,10 @@ assert.equal((await call({action:"lookup",radiusMiles:3})).status,200);assert.eq
 assert.equal((await call({action:"neighbors",radiusMiles:3})).status,200);assert.equal(mode,true);
 assert.equal((await call({action:"lookup",radiusMiles:99})).status,400);
 authenticated=false;assert.equal((await call({action:"lookup",radiusMiles:3})).status,401);assert.equal(dbReads,2);
+authenticated=true;unsupported=true;
+const fallback=await call({action:"lookup",radiusMiles:3});assert.equal(fallback.status,422);assert.equal(fallback.data.code,"UNSUPPORTED_MUNICIPALITY");
+await assert.rejects(()=>research.researchZoning({dealId:id,address:"San Antonio coverage test",point:{lat:29.55,lng:-98.4},precision:"manual",radiusMiles:3},false),e=>e.code==="UNSUPPORTED_MUNICIPALITY");
+console.log("PASS: unsupported municipality offers the sourced-research fallback.");
 console.log("PASS: municipal matching, special-use differences, ambiguity, auth, validation and separate read-only lookup.");
 
 modules.delete("lib/zoning/research.ts");

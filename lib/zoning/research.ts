@@ -29,7 +29,7 @@ async function lookupCity(p:Point):Promise<{subject:Zoning;city:City|null}> {
   if(!Array.isArray(z.features)||z.exceededTransferLimit) throw new MunicipalResearchError("Municipal zoning information is incomplete.");
   return {subject:cityZoning(city,p,z.features,pointSource),city};
  }
- throw new MunicipalResearchError("This municipality is not connected to instant lookup. Use U.S. zoning research below for a sourced report.");
+ throw new MunicipalResearchError("Instant lookup does not cover this municipality. Use sourced research for this property.", "UNSUPPORTED_MUNICIPALITY");
 }
 async function loadCityLayers(city:City,p:Point,radius:number):Promise<Layers> {
  const dy=radius/69+0.01,dx=dy/Math.cos(p.lat*Math.PI/180);
@@ -38,7 +38,9 @@ async function loadCityLayers(city:City,p:Point,radius:number):Promise<Layers> {
  return {zoning,boundary,overlays:[]};
 }
 
-export class MunicipalResearchError extends Error {}
+export class MunicipalResearchError extends Error {
+ constructor(message:string, public code:string="RESEARCH_FAILED") {super(message);}
+}
 const responseCache=new Map<string,{until:number;value:Promise<any>}>();
 const CATEGORIES = [
   ["Equipment rental", "equipment rental"],
