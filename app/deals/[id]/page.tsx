@@ -22,6 +22,7 @@ import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
 import IcDeckPanel from "@/components/IcDeckPanel";
+import IcDeckBuilder from "@/components/IcDeckBuilder";
 import DealCompsPanel from "@/components/DealCompsPanel";
 import AssetProximityPanel, {
   type AssetRow,
@@ -362,6 +363,8 @@ export default async function DealDetailPage(props: { params: Promise<{ id: stri
       </section>
 
       <ZoningResearchPanel dealId={deal.id} />
+
+      <IcDeckBuilder dealId={deal.id} fileNameStem={deal.properties?.address?.replace(/[^a-zA-Z0-9]+/g, "_")} />
 
       <IcDeckPanel
         dealId={deal.id}
