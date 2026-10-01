@@ -21,7 +21,12 @@ export default function AgentWorkspace() {
   const definition = AGENTS.find(a => a.id === agent)!;
   const memo = report?.agent === "investment-memo" && report.result ? parseMemo(report.result.report) : null;
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("run"); if (id) setSelected(id);
+    const params = new URLSearchParams(window.location.search);
+    if(params.get("agent")==="site-research" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.get("deal")??"")) {
+      setAgent("site-research");setDeal(params.get("deal")!);
+      if(params.get("task")==="zoning-ios") setText("Research subject zoning and neighboring IOS operators in the same municipality and zoning. Verify each address and designation with official municipal sources. Identify operator, business category and actual site use with primary business sources. Separate confirmed matches from unverified leads. No Zoneomics API is available.");
+    }
+    const id = params.get("run"); if (id) setSelected(id);
     let live = true;
     async function refresh() {
       try {
