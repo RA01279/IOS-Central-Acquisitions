@@ -17,6 +17,7 @@ const LINKS = [
   { href: "/agents", label: "Agents", key: "agents" },
   { href: "/", label: "Home", key: "home" },
   { href: "/deals", label: "Pipeline", key: "pipeline" },
+  { href: "/sourcing", label: "Sourcing", key: "sourcing" },
   { href: "/offers", label: "Offers", key: "offers" },
   { href: "/comps", label: "Comps", key: "comps" },
   { href: "/locations", label: "Map locations", key: "locations" },

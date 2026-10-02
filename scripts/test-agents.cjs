@@ -8,8 +8,9 @@ function load(path, mocks = {}) {
  vm.runInNewContext(code, { module, exports: module.exports, require: name => mocks[name] || require(name), Date, URL, console });
  return module.exports;
 }
-const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts'), './ic-narrative': load('lib/agents/ic-narrative.ts') });
-assert.equal(catalog.AGENTS.length, 7);
+const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts'), './ic-narrative': load('lib/agents/ic-narrative.ts'), './sourcing': load('lib/agents/sourcing.ts') });
+assert.equal(catalog.AGENTS.length, 8);
+assert.match(catalog.buildPrompt('off-market-sourcing', [], '{}', '2026-10-02'), /sourcing-v1/);
 assert.match(catalog.buildPrompt('ic-narrative', [], '', '2026-10-01'), /ic-narrative-v1/);
 assert.equal(catalog.isAgentId('__proto__'), false);
 assert.equal(catalog.isAgentId('comp-analyst'), true);
@@ -42,7 +43,7 @@ const req = (origin = 'https://hopper.test', token = '') => ({ headers: { get: n
  assert(calls.some(c => c[1]==='gt' && c[2]==='expires_at'));
  const route = load('app/api/agents/route.ts', {
   '@/lib/agents/server': { userContext: async () => ({db,email:owner}),json,reap:async()=>{} },
-  '@/lib/agents/catalog':catalog, '@/lib/agents/context': { loadEvidence:async()=>[] },
+  '@/lib/agents/catalog':catalog, '@/lib/agents/context': { loadEvidence:async()=>[] }, '@/lib/agents/sourcing': load('lib/agents/sourcing.ts'),
  });
  const missing = await route.GET({nextUrl:new URL('https://hopper.test/api/agents?id=00000000-0000-4000-8000-000000000001')});
  assert.equal(missing.status,404);
@@ -54,5 +55,5 @@ const req = (origin = 'https://hopper.test', token = '') => ({ headers: { get: n
  const oversized = await route.POST({text:async()=>'x'.repeat(120001)}); assert.equal(oversized.status,413);
  const sql=fs.readFileSync('supabase/migrations/20260929205444_hopper_agents.sql','utf8');
  assert.match(sql,/enable row level security/); assert.match(sql,/revoke all .*anon,authenticated/);
- console.log('Agent checks passed: seven roles, origin checks, owner scoping, token expiry, input bounds, and required evidence.');
+ console.log('Agent checks passed: eight roles, origin checks, owner scoping, token expiry, input bounds, and required evidence.');
 })().catch(e=>{console.error(e);process.exitCode=1});

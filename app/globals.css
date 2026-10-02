@@ -1254,3 +1254,14 @@ main.wide {
     grid-column: 2;
   }
 }
+
+/* Inline text-style button (show/hide, open, back). */
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}

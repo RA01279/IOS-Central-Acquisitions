@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { userContext, json, reap } from "@/lib/agents/server";
 import { AGENTS, UUID, isAgentId, buildPrompt } from "@/lib/agents/catalog";
 import { loadEvidence } from "@/lib/agents/context";
+import { MAX_SOURCING_SITES } from "@/lib/agents/sourcing";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
  try {
@@ -45,6 +46,10 @@ export async function POST(req: NextRequest) {
   const agent = AGENTS.find(a => a.id === body.agent)!;
   if (agent.needsDeal && !body.dealId) return json({ error: "Select a deal first." }, 400);
   if (body.agent === "deal-intake" && !body.text.trim()) return json({ error: "Paste the broker email or offering text." }, 400);
+  if (body.agent === "off-market-sourcing") {
+    let sweep: any = null; try { sweep = JSON.parse(body.text); } catch {}
+    if (!Array.isArray(sweep?.sites) || !sweep.sites.length || sweep.sites.length > MAX_SOURCING_SITES) return json({ error: `Select 1 to ${MAX_SOURCING_SITES} sites from a sweep.` }, 400);
+  }
   const { data: helper, error: he } = await db.from("outlook_helpers").select("id,agents_last_seen_at").eq("owner_email", email).gt("expires_at", new Date().toISOString()).maybeSingle();
   if (he) throw he;
   if (!helper?.agents_last_seen_at || Date.now() - Date.parse(helper.agents_last_seen_at) > 45000) return json({ error: "Start the updated Hopper helper on your computer." }, 409);

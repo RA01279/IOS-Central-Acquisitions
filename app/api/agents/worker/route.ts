@@ -1,5 +1,6 @@
 import { parseMemo, MEMO_VERSION } from "@/lib/agents/memo";
 import { parseNarrative } from "@/lib/agents/ic-narrative";
+import { parseSourcing } from "@/lib/agents/sourcing";
 import { NextRequest } from "next/server";
 import { workerContext, json, reap } from "@/lib/agents/server";
 import { UUID } from "@/lib/agents/catalog";
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest) {
   }
   if (!body.error && job.data.agent === "ic-narrative" && !parseNarrative(r.report)) {
     body.error = "The narrative did not match the IC deck format (every bullet needs a source). Please run it again.";
+  }
+  if (!body.error && job.data.agent === "off-market-sourcing" && !parseSourcing(r.report)) {
+    body.error = "The sourcing report did not match the expected format (owner and parcel facts need sources). Please run it again.";
   }
   const update = await db.from("agent_runs").update({ status: body.error ? "failed" : "completed",
     result: body.error ? null : { report: r.report, limitations: r.limitations }, model: body.error ? null : r.model,
