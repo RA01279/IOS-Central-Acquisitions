@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   // than taken from the browser; it fills whatever the agent left empty.
   const parcel = await lookupParcel(Number(site.lat), Number(site.lng));
   const owner = sourced.owner ?? parcel?.owner ?? null;
-  const situs = parcel?.situsAddress?.split(",")[0].replace(/s+/g, " ").trim() || null;
+  const situs = parcel?.situsAddress?.split(",")[0].replace(/\s+/g, " ").trim() || null;
 
   // Prefer a verified rooftop for the parcel address; otherwise the operators'
   // Google pin, which the analyst has just looked at on the map.
