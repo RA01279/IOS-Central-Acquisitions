@@ -58,6 +58,7 @@ export interface DealCardData {
   stage: string;
   stageLabel: string;
   days: number;
+  createdAt: string;
   icOn: string | null;
   lat: number | null;
   lng: number | null;
@@ -97,6 +98,7 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
     stage: deal.stage,
     stageLabel: STAGE_LABELS[deal.stage] ?? deal.stage,
     days: daysInStage(deal),
+    createdAt: deal.created_at,
     icOn: deal.ic_on ?? null,
     lat: p.latitude != null ? Number(p.latitude) : null,
     lng: p.longitude != null ? Number(p.longitude) : null,

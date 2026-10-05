@@ -8,9 +8,8 @@ import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import CardDeleteButton from "@/components/CardDeleteButton";
 import DealGrid from "@/components/DealGrid";
-import AutoSubmit from "@/components/AutoSubmit";
+import DealFilters, { type FilterState } from "@/components/DealFilters";
 import { DarkKpi } from "@/components/ui";
-import { Search } from "lucide-react";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -18,23 +17,16 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Deals" };
 
 const SORTS: Record<string, string> = {
+  newest: "Newest added",
+  oldest: "Oldest added",
   score: "Site score",
-  newest: "Newest",
   price: "Price",
   stale: "Days in stage",
 };
 
 type Params = { asset?: string; market?: string; stage?: string; sort?: string; view?: string; q?: string };
 
-// Every filter lives in the URL, so a link reproduces the exact view.
-function href(base: Params, patch: Partial<Params>): string {
-  const merged: Record<string, string | undefined> = { ...base, ...patch };
-  const qs = Object.entries(merged)
-    .filter(([k, v]) => v && !(k === "asset" && v === "ios") && !(k === "view" && v === "cards") && !(k === "sort" && v === "score"))
-    .map(([k, v]) => `${k}=${encodeURIComponent(v!)}`)
-    .join("&");
-  return `/deals${qs ? `?${qs}` : ""}`;
-}
+const list = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 
 export default async function DealsPage(props: { searchParams: Promise<Params> }) {
   const sp = await props.searchParams;
@@ -43,10 +35,12 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   const asset =
     sp.asset === "all" || (ASSET_CLASSES as readonly string[]).includes(sp.asset ?? "") ? (sp.asset as string) : "ios";
   const view = sp.view === "board" ? "board" : "cards";
-  const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "score";
-  const stage = (ACQUISITION_STAGES as readonly string[]).includes(sp.stage ?? "") ? sp.stage! : "";
+  const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "newest";
+  // Markets and stages are multi-select: ?market=Houston,DFW&stage=prospect,uw
+  const stages = list(sp.stage).filter((x) => (ACQUISITION_STAGES as readonly string[]).includes(x));
+  const marketsPicked = list(sp.market);
   const q = (sp.q ?? "").trim();
-  const base: Params = { asset, market: sp.market, stage: stage || undefined, sort, view, q: q || undefined };
+  const state: FilterState = { asset, markets: marketsPicked, stages, sort, view, q };
 
   const supabase = getServiceClient();
   let query = supabase
@@ -71,22 +65,30 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   const weekOut = addDays(today, 7);
   const toIc = active.filter((c) => c.icOn && c.icOn >= today && c.icOn <= weekOut).length;
 
-  // Market chips: the busiest markets first.
+  // Dropdown options with counts. Each count respects the OTHER filters, so
+  // ticking Houston shows how many Houston deals sit in each stage.
+  const needle = q.toLowerCase();
+  const matchQ = (c: DealCardData) => !needle || [c.name, c.city, c.market, c.ref].some((v) => v?.toLowerCase().includes(needle));
+  const matchM = (c: DealCardData) => !marketsPicked.length || marketsPicked.includes(c.market ?? "");
+  const matchS = (c: DealCardData) => !stages.length || stages.includes(c.stage);
   const marketCounts = new Map<string, number>();
-  for (const c of active) if (c.market) marketCounts.set(c.market, (marketCounts.get(c.market) ?? 0) + 1);
-  const markets = [...marketCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m]) => m);
+  for (const c of cards) if (c.market && matchS(c) && matchQ(c)) marketCounts.set(c.market, (marketCounts.get(c.market) ?? 0) + 1);
+  for (const m of marketsPicked) if (!marketCounts.has(m)) marketCounts.set(m, 0);
+  const marketOptions = [...marketCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([m, n]) => ({ value: m, label: m, count: n }));
+  const stageOptions = ACQUISITION_STAGES.map((st) => ({
+    value: st,
+    label: STAGE_LABELS[st],
+    count: cards.filter((c) => c.stage === st && matchM(c) && matchQ(c)).length,
+  }));
 
   // ---- filters
-  const needle = q.toLowerCase();
-  let shown = cards.filter(
-    (c) =>
-      (!sp.market || c.market === sp.market) &&
-      (!stage || c.stage === stage) &&
-      (!needle || [c.name, c.city, c.market, c.ref].some((v) => v?.toLowerCase().includes(needle)))
-  );
+  let shown = cards.filter((c) => matchM(c) && matchS(c) && matchQ(c));
   const by: Record<string, (a: DealCardData, b: DealCardData) => number> = {
     score: (a, b) => (b.score ?? -1) - (a.score ?? -1),
-    newest: () => 0, // query order
+    newest: (a, b) => b.createdAt.localeCompare(a.createdAt),
+    oldest: (a, b) => a.createdAt.localeCompare(b.createdAt),
     price: (a, b) => (b.price ?? 0) - (a.price ?? 0),
     stale: (a, b) => b.days - a.days,
   };
@@ -106,14 +108,6 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
               <h1>Deals</h1>
             </div>
             <div className="ph-actions">
-              {ASSET_CLASSES.map((c) => (
-                <a key={c} href={href(base, { asset: c, market: undefined })} className={asset === c ? "tchip on" : "tchip"} style={asset === c ? { background: "#fff", color: "#0A2540", borderColor: "#fff" } : { background: "transparent", color: "#A9D0EC", borderColor: "rgba(255,255,255,.2)" }}>
-                  {ASSET_CLASS_LABELS[c]}
-                </a>
-              ))}
-              <a href={href(base, { asset: "all", market: undefined })} className="tchip" style={asset === "all" ? { background: "#fff", color: "#0A2540", borderColor: "#fff" } : { background: "transparent", color: "#A9D0EC", borderColor: "rgba(255,255,255,.2)" }}>
-                All
-              </a>
               <a href="/deals/new" className="btn-inverse">New Deal</a>
             </div>
           </div>
@@ -129,43 +123,18 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
           </div>
         </div>
 
-        <form className="toolbar" action="/deals" method="get">
-          {asset !== "ios" && <input type="hidden" name="asset" value={asset} />}
-          {view !== "cards" && <input type="hidden" name="view" value={view} />}
-          {sp.market && <input type="hidden" name="market" value={sp.market} />}
-          <a href={href(base, { market: undefined })} className={!sp.market ? "tchip on" : "tchip"}>
-            All markets
-          </a>
-          {markets.map((m) => (
-            <a key={m} href={href(base, { market: m })} className={sp.market === m ? "tchip on" : "tchip"}>
-              {m}
-            </a>
-          ))}
-          <span className="tdiv" />
-          <AutoSubmit name="stage" value={stage} aria-label="Stage">
-            <option value="">Stage: Any</option>
-            {ACQUISITION_STAGES.map((s) => (
-              <option key={s} value={s}>
-                Stage: {STAGE_LABELS[s]}
-              </option>
-            ))}
-          </AutoSubmit>
-          <AutoSubmit name="sort" value={sort} aria-label="Sort">
-            {Object.entries(SORTS).map(([k, l]) => (
-              <option key={k} value={k}>
-                Sort: {l}
-              </option>
-            ))}
-          </AutoSubmit>
-          <a href={href(base, { view: view === "cards" ? "board" : "cards" })} className="tchip">
-            {view === "cards" ? "Board view" : "Card view"}
-          </a>
-          <span style={{ flex: 1 }} />
-          <label className="tsearch">
-            <Search size={15} color="#9AA8B5" />
-            <input name="q" defaultValue={q} placeholder="Search address, city, D-#" />
-          </label>
-        </form>
+        <DealFilters
+          state={state}
+          pipelines={[
+            ...ASSET_CLASSES.map((c) => ({ value: c, label: ASSET_CLASS_LABELS[c] })),
+            { value: "all", label: "All pipelines" },
+          ]}
+          markets={marketOptions}
+          stages={stageOptions}
+          sorts={Object.entries(SORTS).map(([value, label]) => ({ value, label }))}
+          shown={shown.length}
+          total={cards.length}
+        />
 
         {view === "cards" ? (
           shown.length ? (
@@ -176,7 +145,7 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
         ) : (
           <div style={{ padding: "18px 28px 40px" }}>
             <div className="pipeline-board pipeline-board-6">
-              {ACQUISITION_STAGES.map((s) => {
+              {(stages.length ? ACQUISITION_STAGES.filter((s) => stages.includes(s)) : ACQUISITION_STAGES).map((s) => {
                 const col = shown.filter((c) => c.stage === s);
                 return (
                   <section key={s} className="pipeline-column">
