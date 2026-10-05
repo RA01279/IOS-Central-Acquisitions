@@ -16,6 +16,7 @@
     "docxtemplater": "^3.69.3",
     "exceljs": "^4.4.0",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.52.0",
     "next": "15.5.27",
     "pizzip": "^3.2.0",
     "react": "19.2.0",

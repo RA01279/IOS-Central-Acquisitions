@@ -19,7 +19,7 @@ export type ContactRole =
   | "tenant_broker"
   | "listing_broker"
   | "other";
-export type ActivityType = "call" | "email" | "meeting" | "tour" | "note" | "other";
+export type ActivityType = "call" | "email" | "meeting" | "tour" | "note" | "site_visit" | "other";
 
 // Every role the DB allows. The leasing roles stay here even though leasing
 // left the UI: contacts linked to old lease deals still need a human label.
@@ -249,6 +249,8 @@ export async function logActivity(input: {
   companyId?: string;
   dealId?: string;
   propertyId?: string;
+  /** Storage paths of site-visit photos (documents bucket). */
+  photoPaths?: string[];
   createdBy: string;
 }) {
   const supabase = getServiceClient();
@@ -263,6 +265,7 @@ export async function logActivity(input: {
       company_id: input.companyId ?? null,
       deal_id: input.dealId ?? null,
       property_id: input.propertyId ?? null,
+      photo_paths: input.photoPaths ?? [],
       created_by: input.createdBy,
     })
     .select()

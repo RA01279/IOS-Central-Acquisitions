@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { researchZoning, MunicipalResearchError } from "@/lib/zoning/research";
+import { saveZoningSignal } from "@/lib/site-signals";
 
 export const dynamic="force-dynamic";
 export const maxDuration=60;
@@ -20,8 +21,10 @@ export async function POST(req:NextRequest, props:{params: Promise<{id:string}>}
   if(p?.latitude==null || p?.longitude==null) return NextResponse.json({error:"Set and verify the property map pin first."},{status:422});
   try {
     const report=await researchZoning({dealId:deal.id,address:p.address??"",point:{lat:Number(p.latitude),lng:Number(p.longitude)},precision:p.geocode_precision??"",radiusMiles:body.radiusMiles},body.action==="neighbors");
-    // Deliberately read-only: research cannot mutate stages, underwriting
-    // versions, documents, property locations, or Returns summary.
+    // Read-only for the deal itself: research cannot mutate stages,
+    // underwriting versions, documents, property locations, or Returns
+    // summary. It does refresh the derived Zoning viability flag.
+    await saveZoningSignal(deal.id, report).catch(() => {});
     return NextResponse.json({report},{headers:{"Cache-Control":"no-store"}});
   } catch(error) {
     return NextResponse.json({error:error instanceof MunicipalResearchError ? error.message : "Zoning research failed. Please retry.", code:error instanceof MunicipalResearchError ? error.code : "RESEARCH_FAILED"},{status:422});

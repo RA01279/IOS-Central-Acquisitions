@@ -196,7 +196,7 @@ export function densityByBand(tenants: Tenant[], bands: number[]) {
 // limitation, not a config mistake). The CDN bundle is built specifically
 // to avoid that: it's plain browser JS with zero Node dependencies.
 let pptxScriptPromise: Promise<void> | null = null;
-function loadPptxScript(): Promise<void> {
+export function loadPptxScript(): Promise<void> {
   if (typeof window !== "undefined" && (window as any).PptxGenJS) return Promise.resolve();
   if (pptxScriptPromise) return pptxScriptPromise;
   pptxScriptPromise = new Promise((resolve, reject) => {

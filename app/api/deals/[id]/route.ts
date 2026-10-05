@@ -198,6 +198,46 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
 
   // Edit deal + property details in one shot ("all things editable").
+  // Recorded so /ic can list recently exported decks.
+  if (body.action === "log_ic_export") {
+    const kind = ["summary_slide", "exec_deck", "demand_map"].includes(body.kind) ? body.kind : "summary_slide";
+    await logDealEvent(params.id, "ic_deck_exported", { kind, view: typeof body.view === "string" ? body.view.slice(0, 200) : null }, user.email);
+    return NextResponse.json({ ok: true });
+  }
+
+  // The summary's "Next dates" and the Rent Upside input. Only the keys sent
+  // are written, so the dates card and the rent form can save independently.
+  if (body.action === "update_milestones") {
+    const map: Record<string, string> = {
+      icOn: "ic_on",
+      loiResponseDueOn: "loi_response_due_on",
+      phase1OrderedOn: "phase1_ordered_on",
+    };
+    const update: Record<string, unknown> = {};
+    for (const [k, col] of Object.entries(map)) {
+      if (!(k in body)) continue;
+      if (body[k] && !validDate(body[k])) return NextResponse.json({ error: "Enter a valid calendar date" }, { status: 400 });
+      update[col] = body[k] || null;
+    }
+    if ("inPlaceRent" in body) {
+      const rent = parseMoney(body.inPlaceRent);
+      const basis = body.inPlaceRentBasis ?? null;
+      const BASES = ["per_acre_monthly", "per_sf_bldg_monthly", "per_sf_bldg_annual", "per_sf_land_monthly", "total_monthly"];
+      if (rent !== null && !BASES.includes(basis)) return NextResponse.json({ error: "Pick how the rent is quoted" }, { status: 400 });
+      update.in_place_rent = rent;
+      update.in_place_rent_basis = rent === null ? null : basis;
+    }
+    if ("icRecommendation" in body) {
+      const text = typeof body.icRecommendation === "string" ? body.icRecommendation.trim().slice(0, 1200) : "";
+      update.ic_recommendation = text || null;
+    }
+    if (!Object.keys(update).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+    const { error } = await supabase.from("deals").update(update).eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logDealEvent(params.id, "milestones_edited", update, user.email);
+    return NextResponse.json({ ok: true });
+  }
+
   if (body.action === "update_details") {
     const { data: deal } = await supabase
       .from("deals")

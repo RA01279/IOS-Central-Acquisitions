@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
-import { DEFAULT_CATEGORIES, rejectReason, normalizeName } from "@/lib/sourcing/yard-users";
+import { DEFAULT_CATEGORIES } from "@/lib/sourcing/yard-users";
+import { searchNearby } from "@/lib/demand-search";
 
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_SERVER_KEY;
 
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
   try {
     const center = await geocode(fullAddress);
-    const { tenants: found, screened } = await searchNearby({ ...center, radiusMiles, categories });
+    const { tenants: found, screened } = await searchNearby({ ...center, radiusMiles, categories, perCategoryCap: PER_CATEGORY_CAP, apiKey: GOOGLE_KEY });
     // Basemap and enrichment are independent -- overlap them so the extra
     // Place Details round trips don't simply add to the wall clock.
     const [tenants, { imageBase64, zoom }] = await Promise.all([
@@ -200,91 +201,6 @@ async function geocode(address: string): Promise<{ lat: number; lng: number }> {
 
 const PER_CATEGORY_CAP = 8;
 
-async function searchNearby({
-  lat,
-  lng,
-  radiusMiles,
-  categories,
-}: {
-  lat: number;
-  lng: number;
-  radiusMiles: number;
-  categories: { label: string; keywords: string[] }[];
-}): Promise<{ tenants: Tenant[]; screened: number }> {
-  const radiusMeters = Math.round(radiusMiles * 1609.34);
-  let screened = 0;
-
-  const resultsByCategory = await Promise.all(
-    categories.map(async (cat) => {
-      // Every keyword in the category, merged. Dedupe happens below on
-      // place_id, which is what makes multiple keywords per category safe.
-      const perKeyword = await Promise.all(
-        cat.keywords.map(async (keyword) => {
-          const url = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
-          url.searchParams.set("location", `${lat},${lng}`);
-          url.searchParams.set("radius", String(radiusMeters));
-          url.searchParams.set("keyword", keyword);
-          url.searchParams.set("key", GOOGLE_KEY!);
-
-          const r = await fetch(url.toString());
-          const data = await r.json();
-          if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-            console.error(`Places error for "${cat.label}" / "${keyword}":`, data.status, data.error_message);
-            return [] as Tenant[];
-          }
-          return (data.results || [])
-            .filter((place: any) => {
-              const reason = rejectReason(place, cat.label);
-              if (reason) {
-                screened++;
-                return false;
-              }
-              return true;
-            })
-            .map((place: any) => ({
-              name: place.name,
-              category: cat.label,
-              lat: place.geometry.location.lat,
-              lng: place.geometry.location.lng,
-              placeId: place.place_id,
-              distanceMi: haversineMiles(lat, lng, place.geometry.location.lat, place.geometry.location.lng),
-              website: null,
-              logoBase64: null,
-            })) as Tenant[];
-        })
-      );
-      return perKeyword.flat();
-    })
-  );
-
-  let tenants = resultsByCategory.flat().filter((t) => t.distanceMi <= radiusMiles);
-
-  // De-dupe by placeId (the same business surfaces under several keywords, and
-  // across categories -- Austin Wholesale Landscape Supply answers to both
-  // "stone yard" and "landscape supply yard"). Nearest wins, and the first
-  // category to claim it keeps it. Then cap per category so the map and legend
-  // stay readable.
-  const seen = new Set<string>();
-  const seenNames = new Set<string>();
-  const perCategoryCount: Record<string, number> = {};
-  tenants = tenants
-    .sort((a, b) => a.distanceMi - b.distanceMi)
-    .filter((t) => {
-      if (seen.has(t.placeId)) return false;
-      // Also dedupe on the name: chains and duplicate Google listings share a
-      // name across different place_ids, and four identical pins for the same
-      // operator ("Truck Parking Club") is noise, not demand.
-      const nameKey = normalizeName(t.name);
-      if (seenNames.has(nameKey)) return false;
-      seen.add(t.placeId);
-      seenNames.add(nameKey);
-      perCategoryCount[t.category] = (perCategoryCount[t.category] || 0) + 1;
-      return perCategoryCount[t.category] <= PER_CATEGORY_CAP;
-    });
-
-  return { tenants, screened };
-}
-
 // The Maps Static API caps `size` at 640x640 LOGICAL pixels. A larger request
 // isn't an error -- it's silently clamped -- which is how this ended up asking
 // for 1280x1024 and getting 640x640 back, while the zoom maths and the client's
@@ -326,16 +242,6 @@ async function fetchSatelliteImage({
 
   const buf = Buffer.from(await r.arrayBuffer());
   return { imageBase64: `data:image/jpeg;base64,${buf.toString("base64")}`, zoom };
-}
-
-function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3958.8;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // Closest zoom that still fits the whole requested radius on the image.

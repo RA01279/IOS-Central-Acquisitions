@@ -12,6 +12,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "activityType is required" }, { status: 400 });
   }
 
+  // Photos must be ones this deal's upload route issued -- never an arbitrary
+  // path into the documents bucket.
+  const photoPaths: string[] = Array.isArray(body.photoPaths) ? body.photoPaths.slice(0, 12) : [];
+  if (photoPaths.some((p) => typeof p !== "string" || !body.dealId || !p.startsWith(`deals/${body.dealId}/site-visits/`) || p.includes(".."))) {
+    return NextResponse.json({ error: "Invalid photo" }, { status: 400 });
+  }
+
   try {
     const activity = await logActivity({
       activityType: body.activityType,
@@ -22,6 +29,7 @@ export async function POST(req: NextRequest) {
       companyId: body.companyId,
       dealId: body.dealId,
       propertyId: body.propertyId,
+      photoPaths,
       createdBy: user.email,
     });
     return NextResponse.json({ activity }, { status: 201 });

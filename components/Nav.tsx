@@ -1,8 +1,9 @@
 // components/Nav.tsx
 //
-// Shared top nav across the app's main sections. Server component -- it just
-// renders links plus the (client) sign-out button. Pass `active` so the
-// current section can be highlighted.
+// The app shell: navy left sidebar on desktop, a top bar + bottom tab bar on
+// phones. Every page already renders <Nav active="..."/>, so the shell lives
+// here and pages don't change. The sidebar is position:fixed and body gets
+// its left padding from CSS (body:has(.hs)) -- see app/hopper.css.
 //
 // Plain <a> tags on purpose, not next/link: tab clicks do a full page load,
 // which guarantees boards and the dashboard always show live data. Next's
@@ -10,47 +11,61 @@
 // confused users into thinking archives/creates hadn't worked (and led to
 // duplicate deal entry). An internal tracker takes the tiny speed hit.
 
-import SignOutButton from "./SignOutButton";
 import NavSearch from "./NavSearch";
+import { getCurrentUser } from "@/lib/auth";
+import { NAV_GROUPS } from "./nav-links";
+import { ResumeList, SyncStatus, MobileTabs, SignOutLink } from "./ShellClient";
 
-const LINKS = [
-  { href: "/agents", label: "Agents", key: "agents" },
-  { href: "/", label: "Home", key: "home" },
-  { href: "/deals", label: "Pipeline", key: "pipeline" },
-  { href: "/sourcing", label: "Sourcing", key: "sourcing" },
-  { href: "/offers", label: "Offers", key: "offers" },
-  { href: "/comps", label: "Comps", key: "comps" },
-  { href: "/locations", label: "Map locations", key: "locations" },
-  // What we own, as opposed to what we're looking at. Next to Comps because
-  // both are evidence you bring to a deal rather than steps in the pipeline.
-  { href: "/assets", label: "Our assets", key: "assets" },
-  { href: "/targets", label: "Targets", key: "targets" },
-  { href: "/contacts", label: "Contacts", key: "contacts" },
-  { href: "/tasks", label: "Tasks", key: "tasks" },
-  { href: "/dashboard", label: "Dashboard", key: "dashboard" },
-];
+// Older pages pass the keys of the old top nav.
+const ALIASES: Record<string, string> = { pipeline: "deals" };
 
-export default function Nav({ active }: { active?: string }) {
+export default async function Nav({ active }: { active?: string }) {
+  const user = await getCurrentUser().catch(() => null);
+  const on = ALIASES[active ?? ""] ?? active ?? "";
+  const email = user?.email ?? "";
+  const handle = email.split("@")[0] ?? "";
+  const initials = (handle.replace(/[^a-z]/gi, "").slice(0, 2) || "?").toUpperCase();
+
   return (
-    <nav className="app-nav">
-      <div className="app-nav-brand">
-        <a href="/">Central Acquisitions</a>
-      </div>
-      <div className="app-nav-links">
-        {LINKS.map((l) => (
-          <a
-            key={l.key}
-            href={l.href}
-            className={active === l.key ? "nav-link active" : "nav-link"}
-          >
-            {l.label}
-          </a>
+    <>
+      <aside className="hs" aria-label="Hopper navigation">
+        <a href="/deals" className="hs-brand">
+          <img src="/logo-white.svg" alt="Dalfen" />
+          <span className="eyebrow">Hopper · Acquisitions</span>
+        </a>
+        <div className="hs-search">
+          <NavSearch />
+        </div>
+        {NAV_GROUPS.map((g, i) => (
+          <nav key={i} className="hs-group" aria-label={g.label ?? "Main"}>
+            {g.label && <span className="hs-group-label">{g.label}</span>}
+            {g.links.map((l) => (
+              <a key={l.key} href={l.href} className={on === l.key ? "hs-link on" : "hs-link"}>
+                <l.icon size={17} strokeWidth={1.75} />
+                {l.label}
+              </a>
+            ))}
+          </nav>
         ))}
-      </div>
-      <div className="app-nav-actions">
-        <NavSearch />
-        <SignOutButton />
-      </div>
-    </nav>
+        <ResumeList />
+        <div className="hs-spacer" />
+        <SyncStatus />
+        <div className="hs-user">
+          <span className="avatar">{initials}</span>
+          <span className="who">
+            <span title={email}>{handle || "Signed in"}</span>
+            <SignOutLink />
+          </span>
+        </div>
+      </aside>
+
+      <header className="hm-top">
+        <a href="/deals">
+          <img src="/logo-white.svg" alt="Dalfen" />
+        </a>
+        <span className="eyebrow">Hopper</span>
+      </header>
+      <MobileTabs active={on} />
+    </>
   );
 }

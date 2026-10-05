@@ -1,16 +1,52 @@
-/* app/globals.css -- deliberately plain. This is a tracker, not a product. */
+/* app/globals.css -- base element styles. The Dalfen Industrial tokens live
+   here; the app shell and the redesign's components are in app/hopper.css.
+   The legacy names (--ink, --accent ...) are kept and pointed at the Dalfen
+   palette so every older page restyles without touching its markup. */
 
 :root {
-  --ink: #1f2937;
-  --muted: #6b7280;
-  --border: #e2e5e9;
-  --bg: #f7f8fa;
+  /* Dalfen Industrial tokens (see lib/hopper-tokens.ts for the TS copy) */
+  --navy: #0a2540;
+  --brand: #0e5aa7;
+  --brand-strong: #0b4884;
+  --sky: #4e9fd6;
+  --sky-light: #a9d0ec;
+  --blue-200: #9ec3e5;
+  --blue-50: #eaf2fa;
+  --steel: #5e7a93;
+  --canvas: #f6f8fa;
+  --n100: #edf1f5;
+  --n200: #dde4eb;
+  --n300: #c4cfd9;
+  --n400: #9aa8b5;
+  --n500: #6b7a88;
+  --n600: #4c5966;
+  --n700: #364049;
+  --n800: #232b33;
+  --n900: #111820;
+  --strong: #2e7d5b;
+  --strong-bg: #e4f1ea;
+  --watch: #c9862b;
+  --watch-bg: #fbf0dc;
+  --weak: #c0392b;
+  --weak-bg: #f8e4e1;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --shadow-xs: 0 1px 2px rgba(10, 37, 64, 0.06);
+  --shadow-md: 0 4px 12px rgba(10, 37, 64, 0.1);
+  --shadow-lg: 0 12px 28px rgba(10, 37, 64, 0.3);
+
+  /* Legacy names, remapped */
+  --ink: var(--n800);
+  --muted: var(--n500);
+  --border: var(--n200);
+  --bg: var(--canvas);
   --panel: #ffffff;
-  --accent: #1f3b4d;
-  --accent-2: #2e6e62;
-  --warn-bg: #fbf0dd;
-  --warn-text: #9c6b10;
-  --error: #b3261e;
+  --accent: var(--navy);
+  --accent-2: var(--brand);
+  --warn-bg: var(--watch-bg);
+  --warn-text: #8a5a14;
+  --error: var(--weak);
 }
 
 * {
@@ -19,9 +55,10 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
 }
 
 main {
@@ -31,16 +68,26 @@ main {
 }
 
 h1 {
-  font-size: 26px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--navy);
+  font-size: 28px;
   margin: 0;
 }
 h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--navy);
   font-size: 17px;
   margin: 0 0 12px;
 }
 
 a {
-  color: var(--accent-2);
+  color: var(--brand);
+}
+a:hover {
+  color: var(--brand-strong);
 }
 
 .muted {
@@ -79,11 +126,18 @@ form label {
 }
 form input,
 form select {
+  font: inherit;
   font-size: 14px;
   padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--n300);
+  border-radius: 3px;
   color: var(--ink);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--brand) !important;
 }
 .grid-2 {
   display: grid;
@@ -91,31 +145,49 @@ form select {
   gap: 0 16px;
 }
 button {
-  background: var(--accent);
+  background: var(--brand);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 9px 16px;
-  font-size: 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+button:hover:not(:disabled) {
+  background: var(--brand-strong);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 button.secondary {
-  background: transparent;
-  color: var(--ink);
-  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--n700);
+  border: 1px solid var(--n300);
+}
+button.secondary:hover:not(:disabled) {
+  background: var(--canvas);
+  border-color: var(--brand);
 }
 .button-link {
   display: inline-block;
-  background: var(--accent);
+  background: var(--brand);
   color: white;
   padding: 9px 16px;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-weight: 600;
   text-decoration: none;
+}
+.button-link:hover {
+  background: var(--brand-strong);
+  color: #fff;
 }
 fieldset {
   border: 1px solid var(--border);
@@ -970,7 +1042,8 @@ form textarea {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-xs);
   padding: 20px;
   margin-bottom: 16px;
 }
@@ -985,12 +1058,18 @@ form textarea {
   flex-direction: column;
 }
 .metrics-grid .label {
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--muted);
+  margin-bottom: 4px;
 }
 .metrics-grid .value {
-  font-size: 18px;
+  font-family: var(--font-mono);
+  font-size: 17px;
   font-weight: 500;
+  color: var(--navy);
 }
 .metrics-grid .value.highlight {
   color: var(--accent-2);

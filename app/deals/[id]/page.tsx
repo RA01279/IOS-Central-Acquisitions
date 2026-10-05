@@ -1,229 +1,66 @@
-import { getServiceClient } from "@/lib/supabase";
+// app/deals/[id]/page.tsx -- Summary tab: the verdict first, readable in five
+// seconds (score, price, basis, yield, demand), then the six viability flags,
+// tenant demand and next dates. Stage moves sit up top because they're the
+// most common action; property details, contacts and delete come last.
+
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
-import { ACQUISITION_ROLES, getDealContacts, listContacts, ROLE_LABELS } from "@/lib/crm";
-import { notFound } from "next/navigation";
-import Link from "next/link";
+import { ACQUISITION_ROLES, getDealContacts, listContacts, listOpenTasksForDeal, ROLE_LABELS } from "@/lib/crm";
+import { ACQUISITION_STAGES, STAGE_LABELS } from "@/lib/deals";
+import { ctToday } from "@/lib/summary";
+import { dealKpis, getDeal, getSiteView } from "@/lib/deal-workspace";
+import { scoreSummary } from "@/lib/site-score";
+import { hex, scoreState, signal } from "@/lib/hopper-tokens";
 import StageActions from "@/components/StageActions";
-import MlaProvideForm from "@/components/MlaProvideForm";
-import ExcelUploadForm from "@/components/ExcelUploadForm";
-import ZoningResearchPanel from "@/components/ZoningResearchPanel";
-import DealContactsPanel from "@/components/DealContactsPanel";
 import DealEditForm from "@/components/DealEditForm";
-import DealLocationEditor from "@/components/DealLocationEditor";
-import DealCrmPanels from "@/components/DealCrmPanels";
-import OffersPanel from "@/components/OffersPanel";
-import LoiPanel from "@/components/LoiPanel";
+import DealContactsPanel from "@/components/DealContactsPanel";
 import TargetingPanel from "@/components/TargetingPanel";
 import RestoreDealButton from "@/components/RestoreDealButton";
-import TruncatedList from "@/components/TruncatedList";
-import { ACQUISITION_STAGES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
-import { dealValue, VALUE_BASIS_LABELS } from "@/lib/summary";
-import Nav from "@/components/Nav";
-import BackButton from "@/components/BackButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
-import IcDeckPanel from "@/components/IcDeckPanel";
-import IcDeckBuilder from "@/components/IcDeckBuilder";
-import DealCompsPanel from "@/components/DealCompsPanel";
-import AssetProximityPanel, {
-  type AssetRow,
-  type NearbyComp,
-} from "@/components/AssetProximityPanel";
-import type { CompRecord, Subject } from "@/lib/comps/match";
-import { LOCATED_PRECISIONS } from "@/lib/ic-deck/geo";
+import SignalsPanel from "@/components/SignalsPanel";
+import NextDates, { type DateRow } from "@/components/NextDates";
+import { DemandBars, KpiCard } from "@/components/ui";
 
-function fmtPct(v: number | null | undefined) {
-  return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
-}
 function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
 }
-function fmtX(v: number | null | undefined) {
-  return v === null || v === undefined ? "—" : `${v.toFixed(2)}x`;
-}
 
-export default async function DealDetailPage(props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const supabase = getServiceClient();
-  const user = await getCurrentUser();
-
-  const { data: deal } = await supabase
-    .from("deals")
-    .select(
-      "*, properties(*), mla_data(*), uw_versions(*), documents(*), deal_events(*), offers(*)"
-    )
-    .eq("id", params.id)
-    .single();
-
-  if (!deal) return notFound();
-
-  const [dealContacts, allContacts] = await Promise.all([
+export default async function DealSummaryPage(props: { params: Promise<{ id: string }> }) {
+  const { id } = await props.params;
+  const [deal, site, user] = await Promise.all([getDeal(id), getSiteView(id), getCurrentUser()]);
+  const [dealContacts, allContacts, tasks] = await Promise.all([
     getDealContacts(deal.id),
     listContacts(),
+    listOpenTasksForDeal(deal.id),
   ]);
 
-  const latestVersion = [...(deal.uw_versions ?? [])].sort(
-    (a: any, b: any) => b.version_number - a.version_number
-  )[0];
-  const returns = latestVersion?.returns_summary ?? null;
-
-  const versionsDesc = [...(deal.uw_versions ?? [])].sort(
-    (a: any, b: any) => b.version_number - a.version_number
-  );
-  const eventsDesc = [...(deal.deal_events ?? [])].sort(
-    (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
-
-  const userCanConfirmPsa = user ? canConfirmPsa(user.email) : false;
+  const k = dealKpis(deal, site.snapshot, 3);
+  const st = signal[site.score.state];
+  const basisFlag = site.flags.find((f) => f.key === "basis");
+  const basisSub = basisFlag && basisFlag.state !== "unknown" ? /\(([^)]+)\)/.exec(basisFlag.note)?.[1] : null;
+  const refreshedAt = site.flags.map((f) => f.at).filter(Boolean).sort().pop() ?? null;
 
   const stageIdx = (ACQUISITION_STAGES as readonly string[]).indexOf(deal.stage);
   const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : null;
+  const userCanConfirmPsa = user ? canConfirmPsa(user.email) : false;
+  const p = deal.properties ?? {};
 
-  // The figure this deal contributes to the home screen and export, and why.
-  const reportedValue = dealValue(deal);
-
-  // Comps for the MLA panel. Confirmed and locatable only -- a draft or an
-  // ungeocoded comp has no business influencing an underwriting assumption.
-  // Fetched for the whole repository rather than pre-filtered by market: the
-  // panel's radius filter is the real constraint, and market labels are too
-  // inconsistent to trust as a gate (Houston and Conroe both appear as
-  // "market" across the data).
-  const { data: compRows } = await supabase
-    .from("comps")
-    .select(
-      // yard_acres is needed to show a per-acre rate (it's the acreage a yard
-      // deal is actually priced on); suite, cam_psf_annual and date_estimated
-      // are all displayed in the panel and were silently undefined without it.
-      "id, comp_type, address, project_name, suite, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision"
-    )
-    .eq("status", "confirmed")
-    .not("latitude", "is", null)
-    .limit(1000);
-
-  // The portfolio, for judging this prospect against what we already hold.
-  // Sold assets come through too -- the panel holds them behind a toggle,
-  // because "have we been in this submarket" is a different question from
-  // "what do we own today" and both get asked.
-  const { data: assetRows } = await supabase
-    .from("assets")
-    .select("id, address, city, state, market, submarket, status, occupancy, site_acres, building_sf, latitude, longitude")
-    .neq("status", "under_contract")
-    .in("geocode_precision", LOCATED_PRECISIONS)
-    .not("latitude", "is", null)
-    .limit(1000);
-
-  // Other live deals, for the pipeline layer on the proximity map. Archiving
-  // is a stage here, and an archived deal isn't current context.
-  const { data: pipelineRows } = await supabase
-    .from("deals")
-    .select("id, stage, asset_class, properties!inner(address, city, market, latitude, longitude)")
-    .neq("stage", "archived")
-    .neq("stage", "closed")
-    .not("properties.latitude", "is", null)
-    .limit(1000);
-
-  const subject: Subject = {
-    lat: deal.properties?.latitude != null ? Number(deal.properties.latitude) : null,
-    lng: deal.properties?.longitude != null ? Number(deal.properties.longitude) : null,
-    buildingSf: deal.properties?.building_sf != null ? Number(deal.properties.building_sf) : null,
-    lotSf: deal.properties?.lot_sf != null ? Number(deal.properties.lot_sf) : null,
-    // Coverage isn't stored on a property, but it's derivable and it's the
-    // factor that separates a yard from a warehouse.
-    coveragePct:
-      deal.properties?.building_sf && deal.properties?.lot_sf
-        ? Number(deal.properties.building_sf) / Number(deal.properties.lot_sf)
-        : null,
-    assetClass: deal.asset_class ?? null,
-    market: deal.properties?.market ?? null,
-    submarket: deal.properties?.submarket ?? null,
-  };
-
-  // LOI prefill priority: LIVE DEAL DATA WINS for everything Hopper owns
-  // (latest offer price, property facts, linked contacts) -- update the deal
-  // and the next LOI follows. Saved terms from a prior LOI only fill fields
-  // Hopper has no source for (deposit, periods, rate...). Date always today.
-  const saved = (deal.loi_terms ?? {}) as Record<string, string>;
-  const latestOffer = [...(deal.offers ?? [])].sort((a: any, b: any) =>
-    (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
-  )[0];
-  const brokerLink: any = (dealContacts as any[]).find((l) => l.role === "seller_broker")?.contacts;
-  const sellerLink: any = (dealContacts as any[]).find((l) => l.role === "seller")?.contacts;
-  const brokerFirm = brokerLink?.companies?.name;
-  const loiDefaults = {
-    date: new Date().toISOString().slice(0, 10),
-    tel: saved.tel ?? "(912) 508-4170",
-    attn:
-      (brokerLink ? `${brokerLink.name}${brokerFirm ? `, ${brokerFirm}` : ""}` : null) ??
-      saved.attn ??
-      "",
-    sellerClause: sellerLink?.name ?? saved.sellerClause ?? "its current ownership",
-    propertyDescription:
-      [deal.properties?.address, deal.properties?.city].filter(Boolean).join(", ") ||
-      (saved.propertyDescription ?? ""),
-    price:
-      (latestOffer?.price ? Math.round(latestOffer.price).toLocaleString("en-US") : null) ??
-      saved.price ??
-      "",
-    depositWords: saved.depositWords ?? "",
-    depositAmount: saved.depositAmount ?? "",
-    ddDays: saved.ddDays ?? "Sixty (60)",
-    closingDays: saved.closingDays ?? "Thirty (30)",
-    brokerClauseName:
-      (brokerLink ? `${brokerLink.name}${brokerFirm ? ` of ${brokerFirm}` : ""}` : null) ??
-      saved.brokerClauseName ??
-      "",
-    commissionPayer: saved.commissionPayer ?? "Seller",
-    signer1Name: saved.signer1Name ?? "John Lettieri",
-    signer1Title: saved.signer1Title ?? "Market Officer | Central",
-    signer2Name: saved.signer2Name ?? "Rhett Anderson",
-    signer2Title: saved.signer2Title ?? "IOS Market Lead | Central",
-    // SLB variant fields. LOI type follows the deal's acquisition_type.
-    loiType: saved.loiType ?? (deal.acquisition_type === "slb" ? "slb" : "standard"),
-    senderEmail: saved.senderEmail ?? "randerson@dalfen.com",
-    expiryDate:
-      saved.expiryDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-    sellerName: sellerLink?.name ?? saved.sellerName ?? "",
-    brokerFirm: brokerFirm ?? saved.brokerFirm ?? "",
-    brokerAddress1: brokerLink?.address ?? saved.brokerAddress1 ?? "",
-    brokerAddress2: saved.brokerAddress2 ?? "",
-    priceWords: saved.priceWords ?? "",
-    buildingSf:
-      (deal.properties?.building_sf
-        ? Math.round(deal.properties.building_sf).toLocaleString("en-US")
-        : null) ??
-      saved.buildingSf ??
-      "",
-    acres:
-      (deal.properties?.lot_sf ? (deal.properties.lot_sf / 43560).toFixed(2) : null) ??
-      saved.acres ??
-      "",
-    leaseTermYears: saved.leaseTermYears ?? "3",
-    rentAmount: saved.rentAmount ?? "",
-    rentBasis: saved.rentBasis ?? "total_monthly",
-    escalations: saved.escalations ?? "3.5",
-  };
+  const today = ctToday();
+  const dateRows: DateRow[] = [
+    { label: "LOI response due", date: deal.loi_response_due_on ?? null },
+    { label: "IC presentation", date: deal.ic_on ?? null },
+    { label: "Phase I ordered", date: deal.phase1_ordered_on ?? null, empty: "Pending", event: true },
+    ...(deal.dd_end_on && deal.stage !== "closed" ? [{ label: "DD expires", date: deal.dd_end_on }] : []),
+    ...(deal.closing_on && deal.stage !== "closed" ? [{ label: "Target closing", date: deal.closing_on }] : []),
+    ...(tasks as any[])
+      .filter((t) => t.due_date)
+      .slice(0, 3)
+      .map((t) => ({ label: t.title, date: t.due_date as string })),
+  ];
 
   return (
-    <>
-    <Nav active="pipeline" />
-    <main className="deal-detail">
-      <BackButton />
-
-      <div className="deal-header">
-        <div>
-          <h1>{deal.properties?.address}</h1>
-          <p className="muted">
-            {deal.properties?.market ?? "—"} ·{" "}
-            <Link href={`/deals?asset=${deal.asset_class}`}>
-              {ASSET_CLASS_LABELS[deal.asset_class] ?? deal.asset_class}
-            </Link>{" "}
-            pipeline · asset type {deal.properties?.asset_type ?? "—"}
-          </p>
-        </div>
-        <span className={`stage-badge stage-${deal.stage}`}>{STAGE_LABELS[deal.stage] ?? deal.stage}</span>
-      </div>
-
+    <div className="ws-body">
       {deal.stage === "archived" && (
-        <div className="archived-banner">
+        <div className="archived-banner" style={{ marginBottom: 0 }}>
           Archived at <strong>{STAGE_LABELS[deal.death_stage] ?? deal.death_stage}</strong>
           {deal.death_reason ? ` — ${deal.death_reason}` : ""}
           <RestoreDealButton dealId={deal.id} />
@@ -250,307 +87,140 @@ export default async function DealDetailPage(props: { params: Promise<{ id: stri
         />
       )}
 
+      <div className="kpi-row">
+        <div className="kpi kpi-hero" style={{ background: hex(st.bg), borderColor: hex(st.fg) }}>
+          <span className="k-big" style={{ color: hex(st.fg) }}>
+            {site.score.score ?? "—"}
+          </span>
+          <span style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span className="k-label" style={{ color: hex(st.fg) }}>
+              Site score · {site.score.score == null ? "Incomplete" : st.label}
+            </span>
+            <span style={{ font: "400 12px/1.4 var(--font-body)", color: "#232B33" }}>{scoreSummary(site.score)}</span>
+          </span>
+        </div>
+        <KpiCard label="Price" value={k.priceLabel} sub={k.priceBasis} />
+        <KpiCard
+          label="Basis"
+          value={k.basisLabel}
+          unit={k.basis != null ? k.basisUnit : undefined}
+          sub={basisSub ?? (basisFlag?.state === "unknown" ? "No comp read yet" : undefined)}
+          subTone={basisFlag?.state}
+        />
+        <KpiCard label="Yr-1 yield" value={k.yieldLabel} sub={k.stabilizedLabel} />
+        <KpiCard
+          label="Demand index"
+          value={k.demand.index ?? "—"}
+          sub={k.demand.index == null ? "Not searched yet" : "3 mi radius"}
+          subTone={k.demand.index == null ? undefined : scoreState(k.demand.index)}
+        />
+      </div>
+
+      <div className="sum-split">
+        <SignalsPanel dealId={deal.id} flags={site.flags} refreshedAt={refreshedAt} />
+        <div className="stack">
+          <div className="card" style={{ gap: 10 }}>
+            <div className="card-head">
+              <span className="overline">Tenant demand</span>
+              <a href={`/deals/${deal.id}/demand-map`} className="link-caps">
+                Open map
+              </a>
+            </div>
+            {site.snapshot ? (
+              <DemandBars rows={k.demand.rows} limit={6} />
+            ) : (
+              <p className="hint" style={{ margin: 0 }}>
+                No demand search yet. Score this site, or run one from the map.
+              </p>
+            )}
+          </div>
+          <NextDates
+            dealId={deal.id}
+            today={today}
+            rows={dateRows}
+            editable={{
+              icOn: deal.ic_on ?? null,
+              loiResponseDueOn: deal.loi_response_due_on ?? null,
+              phase1OrderedOn: deal.phase1_ordered_on ?? null,
+            }}
+          />
+          <a href={`/deals/${deal.id}/notes?new=site_visit`} className="btn btn-primary btn-block mobile-only">
+            Add Site-Visit Note
+          </a>
+        </div>
+      </div>
+
       <section className="panel">
         <h2>Property</h2>
         {deal.classification_basis && <p className="hint">Classification: {deal.classification_basis}</p>}
         <div className="metrics-grid">
-          <div>
-            <span className="label">City / Submarket</span>
-            <span className="value">
-              {[deal.properties?.city, deal.properties?.submarket].filter(Boolean).join(" / ") || "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Acres</span>
-            <span className="value">
-              {deal.properties?.lot_sf ? (deal.properties.lot_sf / 43560).toFixed(2) : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Lot SF</span>
-            <span className="value">
-              {deal.properties?.lot_sf ? Math.round(deal.properties.lot_sf).toLocaleString() : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Building SF</span>
-            <span className="value">
-              {deal.properties?.building_sf ? Math.round(deal.properties.building_sf).toLocaleString() : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Occupancy</span>
-            <span className="value">
-              {deal.properties?.occupancy_status === "occupied"
-                ? `Occupied${deal.properties?.walt_years ? ` · ${deal.properties.walt_years} yr WALT` : ""}`
-                : deal.properties?.occupancy_status === "vacant"
+          <Metric label="City / Submarket" value={[p.city, p.submarket].filter(Boolean).join(" / ") || "—"} />
+          <Metric label="Acres" value={p.lot_sf ? (p.lot_sf / 43560).toFixed(2) : "—"} />
+          <Metric label="Building SF" value={p.building_sf ? Math.round(p.building_sf).toLocaleString() : "—"} />
+          <Metric
+            label="Occupancy"
+            value={
+              p.occupancy_status === "occupied"
+                ? `Occupied${p.walt_years ? ` · ${p.walt_years} yr WALT` : ""}`
+                : p.occupancy_status === "vacant"
                   ? "Vacant"
-                  : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Tenancy</span>
-            <span className="value">
-              {deal.properties?.tenancy === "single_tenant"
-                ? "Single-tenant"
-                : deal.properties?.tenancy === "multi_tenant"
-                  ? "Multi-tenant"
-                  : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Source</span>
-            <span className="value">
-              {deal.marketing_status === "marketed"
-                ? "Marketed"
-                : deal.marketing_status === "off_market"
-                  ? "Off-Market"
-                  : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Type</span>
-            <span className="value">
-              {deal.acquisition_type === "slb"
+                  : "—"
+            }
+          />
+          <Metric
+            label="Tenancy"
+            value={p.tenancy === "single_tenant" ? "Single-tenant" : p.tenancy === "multi_tenant" ? "Multi-tenant" : "—"}
+          />
+          <Metric
+            label="Source"
+            value={deal.marketing_status === "marketed" ? "Marketed" : deal.marketing_status === "off_market" ? "Off-Market" : "—"}
+          />
+          <Metric
+            label="Type"
+            value={
+              deal.acquisition_type === "slb"
                 ? "Sale-leaseback"
                 : deal.acquisition_type === "unsolicited"
                   ? "Unsolicited"
                   : deal.acquisition_type === "standard"
                     ? "Standard"
-                    : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">DD expires</span>
-            <span className="value">{deal.dd_end_on ?? "—"}</span>
-          </div>
-          <div>
-            <span className="label">{deal.stage === "closed" ? "Closed" : "Target closing"}</span>
-            <span className="value">
-              {deal.stage === "closed" ? deal.closed_on ?? "—" : deal.closing_on ?? "—"}
-            </span>
-          </div>
-          <div>
-            <span className="label">Contract price</span>
-            <span className="value">{fmtUsd(deal.contract_price)}</span>
-          </div>
-          <div>
-            <span className="label">Final closing price</span>
-            <span className={deal.closed_price ? "value highlight" : "value"}>
-              {fmtUsd(deal.closed_price)}
-            </span>
-          </div>
-        </div>
-        {/* Which price the roll-ups will use for this deal, stated plainly so
-            nobody has to reverse-engineer it from the home screen. */}
-        <p className="hint">
-          Reported value: <strong>{fmtUsd(reportedValue.amount)}</strong> (
-          {VALUE_BASIS_LABELS[reportedValue.basis]})
-        </p>
-        <div style={{ marginTop: 12 }}>
-          <DealEditForm
-            dealId={deal.id}
-            property={deal.properties}
-            assetClass={deal.asset_class}
-            marketingStatus={deal.marketing_status ?? null}
-            acquisitionType={deal.acquisition_type ?? null}
-            ddEndOn={deal.dd_end_on ?? null}
-            closingOn={deal.closing_on ?? null}
-            contractPrice={deal.contract_price ?? null}
-            closedPrice={deal.closed_price ?? null}
+                    : "—"
+            }
           />
+          <Metric label="Contract price" value={fmtUsd(deal.contract_price)} />
+          <Metric label="Final closing price" value={fmtUsd(deal.closed_price)} />
         </div>
-      </section>
-
-      <ZoningResearchPanel dealId={deal.id} />
-
-      <IcDeckBuilder dealId={deal.id} fileNameStem={deal.properties?.address?.replace(/[^a-zA-Z0-9]+/g, "_")} />
-
-      <IcDeckPanel
-        dealId={deal.id}
-        addressForSubtitle={[deal.properties?.address, deal.properties?.city].filter(Boolean).join(", ")}
-        fileNameStem={deal.properties?.address?.replace(/[^a-zA-Z0-9]+/g, "_")}
-      />
-
-      <OffersPanel
-        dealId={deal.id}
-        offers={deal.offers ?? []}
-        lotSf={deal.properties?.lot_sf ?? null}
-      />
-
-      {["uw", "offered", "moving_to_psa", "due_diligence"].includes(deal.stage) && (
-        <LoiPanel dealId={deal.id} defaults={loiDefaults} />
-      )}
-
-      <section className="panel">
-        <h2>Returns summary</h2>
-        {!returns ? (
-          <p className="muted">No underwriting uploaded yet.</p>
-        ) : (
-          <div className="metrics-grid">
-            <div>
-              <span className="label">Purchase price</span>
-              <span className="value">{fmtUsd(returns.purchasePrice)}</span>
-            </div>
-            <div>
-              <span className="label">All-in cost</span>
-              <span className="value">{fmtUsd(returns.allInCost)}</span>
-            </div>
-            <div>
-              <span className="label">Going-in yield</span>
-              <span className="value">{fmtPct(returns.goingInYieldPct)}</span>
-            </div>
-            <div>
-              <span className="label">Stabilized return on cost</span>
-              <span className="value">{fmtPct(returns.stabilizedReturnOnCostPct)}</span>
-            </div>
-            <div>
-              <span className="label">Exit cap</span>
-              <span className="value">{fmtPct(returns.exitCapPct)}</span>
-            </div>
-            <div>
-              <span className="label">Hold period</span>
-              <span className="value">{returns.holdPeriodYears ?? "—"} yrs</span>
-            </div>
-            <div>
-              <span className="label">IRR</span>
-              <span className="value highlight">{fmtPct(returns.irrPct)}</span>
-            </div>
-            <div>
-              <span className="label">Equity multiple</span>
-              <span className="value highlight">{fmtX(returns.equityMultiple)}</span>
-            </div>
-            <div>
-              <span className="label">Stabilized cash-on-cash</span>
-              <span className="value">{fmtPct(returns.stabilizedCashOnCashPct)}</span>
-            </div>
-          </div>
-        )}
-        {latestVersion?.returns_summary?.warnings?.length > 0 && (
-          <div className="warning">
-            <p>Parser flagged on this version:</p>
-            <ul>
-              {latestVersion.returns_summary.warnings.map((w: string, i: number) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <ExcelUploadForm dealId={deal.id} />
-      </section>
-
-      {/* Where this sits against what we already own. Above the comps, because
-          "have we been here before" is the question that gets asked first --
-          and the answer changes how the comps below are read. */}
-      <DealLocationEditor dealId={deal.id} address={deal.properties?.address ?? "This property"}
-        latitude={subject.lat} longitude={subject.lng} />
-      <AssetProximityPanel
-        dealId={deal.id}
-        assets={(assetRows ?? []) as AssetRow[]}
-        comps={(compRows ?? []) as NearbyComp[]}
-        pipeline={(pipelineRows ?? []).map((d: any) => {
-          const dp = Array.isArray(d.properties) ? d.properties[0] : d.properties;
-          return {
-            id: d.id,
-            stage: d.stage,
-            asset_class: d.asset_class,
-            address: dp?.address ?? "(no address)",
-            city: dp?.city ?? null,
-            market: dp?.market ?? null,
-            latitude: dp?.latitude != null ? Number(dp.latitude) : null,
-            longitude: dp?.longitude != null ? Number(dp.longitude) : null,
-          };
-        })}
-        subjectLat={subject.lat}
-        subjectLng={subject.lng}
-        subjectAddress={deal.properties?.address ?? "This deal"}
-      />
-
-      {/* Market evidence sits immediately above the MLA, because the
-          assumptions below are meant to follow from it. */}
-      <DealCompsPanel
-        dealId={deal.id}
-        comps={(compRows ?? []) as CompRecord[]}
-        subject={subject}
-        subjectAddress={deal.properties?.address ?? "This deal"}
-      />
-
-      <section className="panel">
-        <h2>MLA</h2>
-        <p className="muted">Status: {deal.mla_status}</p>
-        {deal.mla_status === "requested" && <MlaProvideForm dealId={deal.id} />}
-        {deal.mla_data?.length > 0 && (
-          <div className="metrics-grid">
-            {deal.mla_data.map((m: any) => (
-              <div key={m.id}>
-                <span className="label">Market base rent</span>
-                <span className="value">{m.market_base_rent ?? m.asking_rent ?? "—"}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <DealEditForm
+          dealId={deal.id}
+          property={deal.properties}
+          assetClass={deal.asset_class}
+          marketingStatus={deal.marketing_status ?? null}
+          acquisitionType={deal.acquisition_type ?? null}
+          ddEndOn={deal.dd_end_on ?? null}
+          closingOn={deal.closing_on ?? null}
+          contractPrice={deal.contract_price ?? null}
+          closedPrice={deal.closed_price ?? null}
+        />
       </section>
 
       <DealContactsPanel
         dealId={deal.id}
         links={dealContacts as any}
-        contacts={allContacts.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          company: c.companies?.name ?? null,
-        }))}
+        contacts={allContacts.map((c: any) => ({ id: c.id, name: c.name, company: c.companies?.name ?? null }))}
         roleOptions={ACQUISITION_ROLES}
         roleLabels={ROLE_LABELS}
       />
 
-      <section className="panel">
-        <h2>Version history</h2>
-        {versionsDesc.length === 0 ? (
-          <p className="muted">No versions yet.</p>
-        ) : (
-          <ul className="version-list">
-            {versionsDesc.map((v: any) => (
-              <li key={v.id}>
-                <strong>v{v.version_number}</strong> — IRR {fmtPct(v.returns_summary?.irrPct)}, {fmtX(v.returns_summary?.equityMultiple)}
-                <span className="muted"> · {v.created_by} · {new Date(v.created_at).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2>Documents</h2>
-        {deal.documents?.length ? (
-          <ul className="doc-list">
-            {deal.documents.map((d: any) => (
-              <li key={d.id}>
-                <span className="doc-type">{d.doc_type.toUpperCase()}</span> {d.storage_path.split("/").pop()}
-                <span className="muted"> · {d.uploaded_by}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">No documents yet.</p>
-        )}
-      </section>
-
-      <DealCrmPanels dealId={deal.id} />
-
-      <section className="panel">
-        <h2>Activity</h2>
-        <TruncatedList
-          className="event-list"
-          items={eventsDesc.map((e: any) => (
-            <li key={e.id}>
-              <span className="muted">{new Date(e.created_at).toLocaleString()}</span> — {e.event_type} ({e.actor})
-            </li>
-          ))}
-        />
-      </section>
-
       <DeleteDealButton dealId={deal.id} redirectTo="/deals" />
-    </main>
-    </>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <span className="value">{value}</span>
+    </div>
   );
 }

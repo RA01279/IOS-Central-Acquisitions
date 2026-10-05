@@ -1,231 +1,217 @@
-import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
-import {
-  ACQUISITION_STAGES,
-  ASSET_CLASSES,
-  ASSET_CLASS_LABELS,
-  STAGE_COLORS,
-  STAGE_LABELS,
-} from "@/lib/deals";
+import { ACQUISITION_STAGES, ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
 import { ctToday, addDays } from "@/lib/summary";
+import { DEAL_CARD_SELECT, toDealCard, type DealCardData } from "@/lib/deal-view";
+import { loadSignals } from "@/lib/site-signals";
+import { fmtMoney } from "@/lib/format";
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import CardDeleteButton from "@/components/CardDeleteButton";
-import PipelineMap, { type PipelineMapDeal } from "@/components/PipelineMap";
+import DealGrid from "@/components/DealGrid";
+import AutoSubmit from "@/components/AutoSubmit";
+import { DarkKpi } from "@/components/ui";
+import { Search } from "lucide-react";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Deals" };
 
-const STAGES = ACQUISITION_STAGES;
-const CARDS_SHOWN = 10;
-const DAY_MS = 24 * 60 * 60 * 1000;
+const SORTS: Record<string, string> = {
+  score: "Site score",
+  newest: "Newest",
+  price: "Price",
+  stale: "Days in stage",
+};
 
-// Event types that mark a stage transition -- the newest one tells us when
-// the deal entered its current stage.
-const STAGE_EVENTS = new Set([
-  "deal_created",
-  "advanced_to_uw",
-  "marked_offered",
-  "confirmed_psa",
-  "entered_due_diligence",
-  "marked_closed",
-  "stage_corrected",
-  "restored",
-]);
+type Params = { asset?: string; market?: string; stage?: string; sort?: string; view?: string; q?: string };
 
-function daysInStage(deal: any): number {
-  const stamps = (deal.deal_events ?? [])
-    .filter((e: any) => STAGE_EVENTS.has(e.event_type))
-    .map((e: any) => e.created_at)
-    .sort();
-  const entered = stamps.pop() ?? deal.created_at;
-  return Math.max(0, Math.floor((Date.now() - new Date(entered).getTime()) / DAY_MS));
+// Every filter lives in the URL, so a link reproduces the exact view.
+function href(base: Params, patch: Partial<Params>): string {
+  const merged: Record<string, string | undefined> = { ...base, ...patch };
+  const qs = Object.entries(merged)
+    .filter(([k, v]) => v && !(k === "asset" && v === "ios") && !(k === "view" && v === "cards") && !(k === "sort" && v === "score"))
+    .map(([k, v]) => `${k}=${encodeURIComponent(v!)}`)
+    .join("&");
+  return `/deals${qs ? `?${qs}` : ""}`;
 }
 
-function Card({ deal, showClass, soonCutoff }: { deal: any; showClass: boolean; soonCutoff: string }) {
-  const days = daysInStage(deal);
-  // A DD expiry or closing inside the next 7 days is the single most
-  // time-critical fact about a deal, so it rides on the card itself.
-  const dd = deal.dd_end_on as string | null;
-  const closing = deal.closing_on as string | null;
-  const ddSoon = !!dd && dd <= soonCutoff;
-  const closingSoon = !!closing && closing <= soonCutoff;
-
-  return (
-    <div className="pipeline-card-wrap">
-      <Link href={`/deals/${deal.id}`} className="pipeline-card">
-        <span className="address">{deal.properties?.address ?? "Untitled deal"}</span>
-        <span className="market muted">
-          {showClass ? `${ASSET_CLASS_LABELS[deal.asset_class] ?? ""} · ` : ""}
-          {deal.properties?.market ?? ""}
-        </span>
-        {deal.stage === "closed" ? (
-          <span className="stage-age">{deal.closed_on ? `closed ${deal.closed_on}` : "closed"}</span>
-        ) : (
-          <span className={days >= 14 ? "stage-age stage-age-old" : "stage-age"}>
-            {days === 0 ? "today" : `${days}d in stage`}
-          </span>
-        )}
-        {dd && deal.stage !== "closed" && (
-          <span className={ddSoon ? "stage-age stage-age-old" : "stage-age"}>DD to {dd}</span>
-        )}
-        {closing && deal.stage !== "closed" && (
-          <span className={closingSoon ? "stage-age stage-age-old" : "stage-age"}>
-            closes {closing}
-          </span>
-        )}
-        {deal.mla_status === "requested" && <span className="badge">awaiting MLA</span>}
-      </Link>
-      <CardDeleteButton dealId={deal.id} />
-    </div>
-  );
-}
-
-export default async function DealsPage(
-  props: {
-    searchParams: Promise<{ asset?: string }>;
-  }
-) {
-  const searchParams = await props.searchParams;
+export default async function DealsPage(props: { searchParams: Promise<Params> }) {
+  const sp = await props.searchParams;
   // Two pipelines, toggled -- IOS is the default because it's the bulk of the
   // book. "all" is available for anyone who wants the whole thing at once.
-  const assetParam = searchParams.asset;
   const asset =
-    assetParam === "all" || (ASSET_CLASSES as readonly string[]).includes(assetParam ?? "")
-      ? (assetParam as string)
-      : "ios";
+    sp.asset === "all" || (ASSET_CLASSES as readonly string[]).includes(sp.asset ?? "") ? (sp.asset as string) : "ios";
+  const view = sp.view === "board" ? "board" : "cards";
+  const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "score";
+  const stage = (ACQUISITION_STAGES as readonly string[]).includes(sp.stage ?? "") ? sp.stage! : "";
+  const q = (sp.q ?? "").trim();
+  const base: Params = { asset, market: sp.market, stage: stage || undefined, sort, view, q: q || undefined };
 
   const supabase = getServiceClient();
   let query = supabase
     .from("deals")
-    .select(
-      "id, stage, asset_class, mla_status, created_at, dd_end_on, closing_on, closed_on, properties(address, city, market, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)"
-    )
+    .select(DEAL_CARD_SELECT)
     .eq("deal_type", "acquisition")
     .neq("stage", "archived")
     .order("created_at", { ascending: false });
   if (asset !== "all") query = query.eq("asset_class", asset);
-  const { data: deals } = await query;
+  const { data: rows } = await query;
+  const deals = rows ?? [];
+  const signals = await loadSignals(deals.map((d: any) => d.id));
+  const cards: DealCardData[] = deals.map((d: any) => toDealCard(d, signals.get(d.id)));
 
-  // Flattened for the map: coordinates live on the property, and the popup
-  // wants the latest offer rather than the whole offer history. The map shows
-  // every stage EXCEPT archived, which the query above already excludes.
-  const mapDeals: PipelineMapDeal[] = (deals ?? []).map((d: any) => {
-    const latest = [...(d.offers ?? [])].sort((a: any, b: any) =>
-      (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
-    )[0];
-    return {
-      id: d.id,
-      stage: d.stage,
-      asset_class: d.asset_class ?? null,
-      address: d.properties?.address ?? null,
-      city: d.properties?.city ?? null,
-      market: d.properties?.market ?? null,
-      latitude: d.properties?.latitude ?? null,
-      geocode_precision: d.properties?.geocode_precision ?? null,
-      longitude: d.properties?.longitude ?? null,
-      lot_sf: d.properties?.lot_sf ?? null,
-      building_sf: d.properties?.building_sf ?? null,
-      dd_end_on: d.dd_end_on ?? null,
-      closing_on: d.closing_on ?? null,
-      closed_on: d.closed_on ?? null,
-      last_offer_price: latest?.price ?? null,
-    };
-  });
+  // ---- header KPIs (whole pipeline for this asset class, ignoring filters)
+  const active = cards.filter((c) => c.stage !== "closed");
+  const value = active.reduce((a, c) => a + (c.price ?? 0), 0);
+  const priced = active.filter((c) => c.price).length;
+  const scored = active.filter((c) => c.score != null);
+  const avgScore = scored.length ? Math.round(scored.reduce((a, c) => a + c.score!, 0) / scored.length) : null;
+  const today = ctToday();
+  const weekOut = addDays(today, 7);
+  const toIc = active.filter((c) => c.icOn && c.icOn >= today && c.icOn <= weekOut).length;
 
-  const soonCutoff = addDays(ctToday(), 7);
+  // Market chips: the busiest markets first.
+  const marketCounts = new Map<string, number>();
+  for (const c of active) if (c.market) marketCounts.set(c.market, (marketCounts.get(c.market) ?? 0) + 1);
+  const markets = [...marketCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m]) => m);
 
-  const byStage = STAGES.reduce<Record<string, any[]>>((acc, s) => {
-    acc[s] = (deals ?? []).filter((d: any) => d.stage === s);
-    return acc;
-  }, {});
+  // ---- filters
+  const needle = q.toLowerCase();
+  let shown = cards.filter(
+    (c) =>
+      (!sp.market || c.market === sp.market) &&
+      (!stage || c.stage === stage) &&
+      (!needle || [c.name, c.city, c.market, c.ref].some((v) => v?.toLowerCase().includes(needle)))
+  );
+  const by: Record<string, (a: DealCardData, b: DealCardData) => number> = {
+    score: (a, b) => (b.score ?? -1) - (a.score ?? -1),
+    newest: () => 0, // query order
+    price: (a, b) => (b.price ?? 0) - (a.price ?? 0),
+    stale: (a, b) => b.days - a.days,
+  };
+  shown = [...shown].sort(by[sort]);
+
+  const soonCutoff = addDays(today, 7);
 
   return (
     <>
-      <Nav active="pipeline" />
+      <Nav active="deals" />
       <AutoRefresh />
-      <main className="wide">
-        <div className="page-header">
-          <div>
-            <h1>Pipeline</h1>
-            <p className="muted" style={{ margin: "4px 0 0" }}>
-              {asset === "all"
-                ? `All acquisitions · ${(deals??[]).filter(d=>d.stage!=="closed").length} active`
-                : `${ASSET_CLASS_LABELS[asset]} acquisitions · ${(deals??[]).filter(d=>d.stage!=="closed").length} active`}
-            </p>
+      <main className="bleed">
+        <div className="ph">
+          <div className="ph-row">
+            <div className="ph-title">
+              <span className="eyebrow">{asset === "all" ? "All" : ASSET_CLASS_LABELS[asset]} Acquisitions Pipeline</span>
+              <h1>Deals</h1>
+            </div>
+            <div className="ph-actions">
+              {ASSET_CLASSES.map((c) => (
+                <a key={c} href={href(base, { asset: c, market: undefined })} className={asset === c ? "tchip on" : "tchip"} style={asset === c ? { background: "#fff", color: "#0A2540", borderColor: "#fff" } : { background: "transparent", color: "#A9D0EC", borderColor: "rgba(255,255,255,.2)" }}>
+                  {ASSET_CLASS_LABELS[c]}
+                </a>
+              ))}
+              <a href={href(base, { asset: "all", market: undefined })} className="tchip" style={asset === "all" ? { background: "#fff", color: "#0A2540", borderColor: "#fff" } : { background: "transparent", color: "#A9D0EC", borderColor: "rgba(255,255,255,.2)" }}>
+                All
+              </a>
+              <a href="/deals/new" className="btn-inverse">New Deal</a>
+            </div>
           </div>
-          <div className="header-actions">
-            <Link href="/deals/new" className="button-link">
-              + New deal
-            </Link>
+          <div className="ph-kpis">
+            <DarkKpi label="Active deals" value={active.length} />
+            <DarkKpi
+              label="Pipeline value"
+              value={fmtMoney(value)}
+              sub={priced < active.length ? `${active.length - priced} unpriced` : undefined}
+            />
+            <DarkKpi label="Avg site score" value={avgScore ?? "—"} sub={`${scored.length} of ${active.length} scored`} />
+            <DarkKpi label="To IC this week" value={toIc} />
           </div>
         </div>
 
-        <div className="filter-chips">
-          {ASSET_CLASSES.map((c) => (
-            <Link
-              key={c}
-              href={c === "ios" ? "/deals" : `/deals?asset=${c}`}
-              className={asset === c ? "chip chip-active" : "chip"}
-            >
-              {ASSET_CLASS_LABELS[c]}
-            </Link>
+        <form className="toolbar" action="/deals" method="get">
+          {asset !== "ios" && <input type="hidden" name="asset" value={asset} />}
+          {view !== "cards" && <input type="hidden" name="view" value={view} />}
+          {sp.market && <input type="hidden" name="market" value={sp.market} />}
+          <a href={href(base, { market: undefined })} className={!sp.market ? "tchip on" : "tchip"}>
+            All markets
+          </a>
+          {markets.map((m) => (
+            <a key={m} href={href(base, { market: m })} className={sp.market === m ? "tchip on" : "tchip"}>
+              {m}
+            </a>
           ))}
-          <Link href="/deals?asset=all" className={asset === "all" ? "chip chip-active" : "chip"}>
-            All
-          </Link>
-        </div>
+          <span className="tdiv" />
+          <AutoSubmit name="stage" value={stage} aria-label="Stage">
+            <option value="">Stage: Any</option>
+            {ACQUISITION_STAGES.map((s) => (
+              <option key={s} value={s}>
+                Stage: {STAGE_LABELS[s]}
+              </option>
+            ))}
+          </AutoSubmit>
+          <AutoSubmit name="sort" value={sort} aria-label="Sort">
+            {Object.entries(SORTS).map(([k, l]) => (
+              <option key={k} value={k}>
+                Sort: {l}
+              </option>
+            ))}
+          </AutoSubmit>
+          <a href={href(base, { view: view === "cards" ? "board" : "cards" })} className="tchip">
+            {view === "cards" ? "Board view" : "Card view"}
+          </a>
+          <span style={{ flex: 1 }} />
+          <label className="tsearch">
+            <Search size={15} color="#9AA8B5" />
+            <input name="q" defaultValue={q} placeholder="Search address, city, D-#" />
+          </label>
+        </form>
 
-        <PipelineMap
-          deals={mapDeals.filter((d) => d.stage !== "closed")}
-          stages={STAGES.filter((stage) => stage !== "closed")}
-          stageLabels={STAGE_LABELS}
-          stageColors={STAGE_COLORS}
-          assetClassLabels={ASSET_CLASS_LABELS}
-        />
-
-        <div className="pipeline-board pipeline-board-6">
-          {STAGES.map((stage) => {
-            const cards = byStage[stage];
-            const visible = cards.slice(0, CARDS_SHOWN);
-            const hidden = cards.slice(CARDS_SHOWN);
-            return (
-              <section key={stage} className="pipeline-column">
-                <h2>
-                  {STAGE_LABELS[stage]}
-                  <span className="count">{cards.length}</span>
-                </h2>
-                <div className="pipeline-cards">
-                  {visible.map((deal: any) => (
-                    <Card
-                      key={deal.id}
-                      deal={deal}
-                      showClass={asset === "all"}
-                      soonCutoff={soonCutoff}
-                    />
-                  ))}
-                  {hidden.length > 0 && (
-                    <details className="pipeline-more">
-                      <summary>Show {hidden.length} more</summary>
-                      <div className="pipeline-cards">
-                        {hidden.map((deal: any) => (
-                          <Card
-                            key={deal.id}
-                            deal={deal}
-                            showClass={asset === "all"}
-                            soonCutoff={soonCutoff}
-                          />
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                  {cards.length === 0 && <p className="empty">Nothing here</p>}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        {view === "cards" ? (
+          shown.length ? (
+            <DealGrid cards={shown} />
+          ) : (
+            <p className="empty-state">No deals match these filters.</p>
+          )
+        ) : (
+          <div style={{ padding: "18px 28px 40px" }}>
+            <div className="pipeline-board pipeline-board-6">
+              {ACQUISITION_STAGES.map((s) => {
+                const col = shown.filter((c) => c.stage === s);
+                return (
+                  <section key={s} className="pipeline-column">
+                    <h2>
+                      {STAGE_LABELS[s]}
+                      <span className="count">{col.length}</span>
+                    </h2>
+                    <div className="pipeline-cards">
+                      {col.map((c) => {
+                        const deal = deals.find((d: any) => d.id === c.id) as any;
+                        const dd = deal?.dd_end_on as string | null;
+                        return (
+                          <div key={c.id} className="pipeline-card-wrap">
+                            <a href={`/deals/${c.id}`} className="pipeline-card">
+                              <span className="address">{c.name}</span>
+                              <span className="market muted">{c.market ?? ""}</span>
+                              <span className={c.days >= 14 ? "stage-age stage-age-old" : "stage-age"}>
+                                {s === "closed" ? `closed ${deal?.closed_on ?? ""}` : c.days === 0 ? "today" : `${c.days}d in stage`}
+                              </span>
+                              {dd && s !== "closed" && (
+                                <span className={dd <= soonCutoff ? "stage-age stage-age-old" : "stage-age"}>DD to {dd}</span>
+                              )}
+                            </a>
+                            <CardDeleteButton dealId={c.id} />
+                          </div>
+                        );
+                      })}
+                      {col.length === 0 && <p className="empty">Nothing here</p>}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </main>
     </>
   );
