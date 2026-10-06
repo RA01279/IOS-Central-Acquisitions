@@ -80,23 +80,34 @@ export default function DemandMapView({
       if (cancelled || mapRef.current || !mapEl.current) return;
       LRef.current = L;
       const map = L.map(mapEl.current, { zoomControl: true, attributionControl: true });
-      const light = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 20,
-        subdomains: "abcd",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; CARTO',
+      // Satellite by default -- yards read from imagery. Keyless sources only
+      // (the same ones components/MapView uses): CARTO's tiles started
+      // demanding an API key and rendered a grey "API key required" map.
+      // maxNativeZoom lets Leaflet upscale past the deepest real tile instead
+      // of painting blanks.
+      const imagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 21,
+        maxNativeZoom: 21,
+        attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics",
       });
-      const sat = L.layerGroup([
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-          maxZoom: 20,
-          attribution: "Tiles &copy; Esri",
-        }),
-        L.tileLayer(
-          "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
-          { maxZoom: 20 }
-        ),
-      ]);
-      light.addTo(map);
-      L.control.layers({ Map: light, Satellite: sat }, undefined, { position: "topright" }).addTo(map);
+      const roads = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 21, maxNativeZoom: 21 }
+      );
+      const places = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 21, maxNativeZoom: 21 }
+      );
+      const sat = L.layerGroup([imagery, roads, places]);
+      const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 21,
+        maxNativeZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      });
+      sat.addTo(map);
+      L.control
+        .layers({ Satellite: sat, "Satellite (no labels)": imagery, Street: street }, undefined, { position: "topright" })
+        .addTo(map);
       map.setView([pt.lat, pt.lng], 12);
       mapRef.current = map;
       layerRef.current = L.layerGroup().addTo(map);
