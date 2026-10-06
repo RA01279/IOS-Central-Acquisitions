@@ -40,11 +40,14 @@ export default async function DealLayout(props: { children: React.ReactNode; par
   }
   if (!UUID.test(id)) return notFound();
 
-  const { data: deal } = await supabase
+  const { data: deal, error } = await supabase
     .from("deals")
-    .select("id, ref, stage, asset_class, deal_type, properties(address, city, state, market, submarket, lot_sf, building_sf, asset_type)")
+    .select("id, ref, stage, asset_class, deal_type, properties(address, city, market, submarket, lot_sf, building_sf, asset_type)")
     .eq("id", id)
     .maybeSingle();
+  // A broken query must surface as an error, not masquerade as a missing deal
+  // (a select of a nonexistent column once 404'd every deal page).
+  if (error) throw new Error(`Loading deal: ${error.message}`);
   if (!deal) return notFound();
 
   const p: any = deal.properties ?? {};
@@ -54,7 +57,7 @@ export default async function DealLayout(props: { children: React.ReactNode; par
   const facts = [
     ios ? "IOS yard" : "Industrial",
     ios ? (p.lot_sf ? fmtAcres(p.lot_sf).replace(" ac", " acres") : null) : p.building_sf ? fmtSf(p.building_sf) : null,
-    [p.city, p.state].filter(Boolean).join(", ") || p.market,
+    p.city || p.market,
     broker ? `Broker: ${broker.companies?.name ? `${broker.companies.name} (${broker.name})` : broker.name}` : null,
   ].filter(Boolean);
   const site = await getSiteView(deal.id);

@@ -25,7 +25,7 @@ export default async function IcDeckPage(props: {
   const k = dealKpis(deal, site.snapshot, view.radius, view.cats);
   const p = deal.properties ?? {};
   const ref = dealRef(deal.ref);
-  const where = [p.city, p.state].filter(Boolean).join(" ");
+  const where = p.city ?? "";
   const map = slideMap(
     site.snapshot?.center ?? (p.latitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : null),
     site.snapshot?.tenants ?? [],
