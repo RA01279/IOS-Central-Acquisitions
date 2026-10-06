@@ -34,7 +34,8 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   // book. "all" is available for anyone who wants the whole thing at once.
   const asset =
     sp.asset === "all" || (ASSET_CLASSES as readonly string[]).includes(sp.asset ?? "") ? (sp.asset as string) : "ios";
-  const view = sp.view === "board" ? "board" : "cards";
+  // Board (kanban by stage) is the default; ?view=cards shows the scored cards.
+  const view = sp.view === "cards" ? "cards" : "board";
   const sort = SORTS[sp.sort ?? ""] ? sp.sort! : "newest";
   // Markets and stages are multi-select: ?market=Houston,DFW&stage=prospect,uw
   const stages = list(sp.stage).filter((x) => (ACQUISITION_STAGES as readonly string[]).includes(x));

@@ -22,7 +22,7 @@ export interface FilterState {
   q: string;
 }
 
-export const DEFAULTS = { asset: "ios", sort: "newest", view: "cards" };
+export const DEFAULTS = { asset: "ios", sort: "newest", view: "board" };
 
 export function filterHref(s: FilterState): string {
   const p = new URLSearchParams();
