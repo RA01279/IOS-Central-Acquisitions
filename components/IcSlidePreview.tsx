@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { CircleCheck, CircleAlert } from "lucide-react";
 import { hex, signal } from "@/lib/hopper-tokens";
-import { MAP_H, MAP_W, toPptx, type SummarySlideModel } from "@/lib/ic-deck/summary-slide";
+import { MAP_H, MAP_W, RING_OFF, RING_ON, toPptx, type SummarySlideModel } from "@/lib/ic-deck/summary-slide";
 
 export default function IcSlidePreview({
   dealId,
@@ -153,21 +153,28 @@ export default function IcSlidePreview({
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 <div className="slide-map">
-                  <svg width={MAP_W} height={MAP_H} viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ display: "block" }}>
+                  {model.mapImages && (
+                    <>
+                      <img src={model.mapImages.imagery} alt="Satellite view of the site" style={{ position: "absolute", inset: 0 }} />
+                      <img src={model.mapImages.roads} alt="" style={{ position: "absolute", inset: 0 }} />
+                    </>
+                  )}
+                  <svg width={MAP_W} height={MAP_H} viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ display: "block", position: "relative" }}>
                     <defs>
                       <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
                         <path d="M30 0H0V30" fill="none" stroke="rgba(10,37,64,.05)" />
                       </pattern>
                     </defs>
-                    <rect width={MAP_W} height={MAP_H} fill="url(#grid)" />
+                    {!model.mapImages && <rect width={MAP_W} height={MAP_H} fill="url(#grid)" />}
                     {model.rings.map((r) => (
                       <circle
                         key={r.miles}
                         cx={MAP_W / 2}
                         cy={MAP_H / 2}
                         r={r.r}
-                        fill={r.on ? "rgba(14,90,167,.06)" : "none"}
-                        stroke={r.on ? "#0E5AA7" : "#9AA8B5"}
+                        fill={r.on ? "rgba(78,159,214,.12)" : "none"}
+                        stroke={hex(r.on ? RING_ON : RING_OFF)}
+                        strokeOpacity={r.on ? 1 : 0.7}
                         strokeWidth={r.on ? 2 : 1}
                         strokeDasharray={r.on ? undefined : "3 3"}
                       />

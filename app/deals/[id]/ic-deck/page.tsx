@@ -7,7 +7,7 @@ import { parseMapView } from "@/lib/site-score";
 import { DEMAND_CATEGORIES, scoreState } from "@/lib/hopper-tokens";
 import { ASSET_CLASS_LABELS } from "@/lib/deals";
 import { dealRef, fmtShortDate } from "@/lib/format";
-import { slideMap, type SummarySlideModel } from "@/lib/ic-deck/summary-slide";
+import { slideMap, slideMapImages, type SummarySlideModel } from "@/lib/ic-deck/summary-slide";
 import IcSlidePreview from "@/components/IcSlidePreview";
 import IcDeckBuilder from "@/components/IcDeckBuilder";
 import IcDeckPanel from "@/components/IcDeckPanel";
@@ -26,8 +26,9 @@ export default async function IcDeckPage(props: {
   const p = deal.properties ?? {};
   const ref = dealRef(deal.ref);
   const where = p.city ?? "";
+  const mapCenter = site.snapshot?.center ?? (p.latitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : null);
   const map = slideMap(
-    site.snapshot?.center ?? (p.latitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : null),
+    mapCenter,
     site.snapshot?.tenants ?? [],
     view.radius,
     (label) => {
@@ -53,6 +54,7 @@ export default async function IcDeckPage(props: {
     activeCats: active,
     pins: map.pins,
     rings: map.rings,
+    mapImages: slideMapImages(mapCenter),
     footerLeft: "Dalfen Industrial · Confidential · For Investment Committee use only",
     footerRight: `Source: Hopper ${ref} · Places Nearby, ${view.radius} mi`,
     fileName: `IC Summary - ${(p.address ?? "Deal").replace(/[^a-zA-Z0-9 ]+/g, "")}.pptx`,

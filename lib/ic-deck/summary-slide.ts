@@ -7,7 +7,8 @@
 // pptx coordinate is simply px / 90 and the two can't drift apart.
 //
 // The map is a static snapshot drawn from the same radius and categories
-// (?r= & cats=) as the Demand Map tab -- rings and pins, no basemap tiles.
+// (?r= & cats=) as the Demand Map tab: Esri satellite imagery with a road
+// overlay (keyless, same source as the app's maps), then rings and pins.
 
 import { color, signal, type SignalState } from "../hopper-tokens";
 import type { CategoryRow, DemandHit, Flag } from "../site-score";
@@ -37,6 +38,8 @@ export interface SummarySlideModel {
   activeCats: string[];
   pins: SlidePin[];
   rings: Array<{ miles: number; r: number; on: boolean }>;
+  /** Esri export URLs covering exactly the 300x220 map; null without a pin. */
+  mapImages: { imagery: string; roads: string } | null;
   footerLeft: string;
   footerRight: string;
   fileName: string;
@@ -45,6 +48,33 @@ export interface SummarySlideModel {
 export const MAP_W = 300;
 export const MAP_H = 220;
 const PX_PER_MILE = 20; // fits the 5 mi ring in the 220 px map height
+
+// Ring styling on top of satellite imagery (navy/grey vanish on dark photos).
+export const RING_ON = "4E9FD6";
+export const RING_OFF = "FFFFFF";
+
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
+const EARTH_R = 6378137;
+
+/**
+ * Esri MapServer export URLs for exactly the slide map's extent, at 2x for
+ * sharpness. Web Mercator bbox, so the image matches the pin projection below
+ * (locally linear, 20 px per ground mile in both axes).
+ */
+export function slideMapImages(center: { lat: number; lng: number } | null) {
+  if (!center) return null;
+  const rad = Math.PI / 180;
+  const x = EARTH_R * center.lng * rad;
+  const y = EARTH_R * Math.log(Math.tan(Math.PI / 4 + (center.lat * rad) / 2));
+  const k = 1609.34 / Math.cos(center.lat * rad); // mercator metres per ground mile
+  const hw = (MAP_W / 2 / PX_PER_MILE) * k;
+  const hh = (MAP_H / 2 / PX_PER_MILE) * k;
+  const q = `bbox=${Math.round(x - hw)},${Math.round(y - hh)},${Math.round(x + hw)},${Math.round(y + hh)}&bboxSR=3857&imageSR=3857&size=${MAP_W * 2},${MAP_H * 2}&f=image`;
+  return {
+    imagery: `${ESRI}/World_Imagery/MapServer/export?${q}&format=jpg`,
+    roads: `${ESRI}/Reference/World_Transportation/MapServer/export?${q}&format=png32&transparent=true`,
+  };
+}
 
 /** Project tenants onto the 300x220 slide map, centred on the subject. */
 export function slideMap(center: { lat: number; lng: number } | null, tenants: DemandHit[], radius: number, catColor: (label: string) => string | null) {
@@ -67,6 +97,22 @@ export function slideMap(center: { lat: number; lng: number } | null, tenants: D
 // ---- pptx --------------------------------------------------------------------
 
 const IN = (px: number) => px / 90;
+
+async function dataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
 
 export async function toPptx(m: SummarySlideModel) {
   await loadPptxScript();
@@ -131,14 +177,21 @@ export async function toPptx(m: SummarySlideModel) {
   const mx = 900 - 28 - MAP_W;
   const my = 88;
   rect(mx, my, MAP_W, MAP_H, "E6ECF1", undefined, 3);
+  // Embedded, not linked, so the deck opens offline and never changes later.
+  if (m.mapImages) {
+    const [imagery, roads] = await Promise.all([dataUrl(m.mapImages.imagery), dataUrl(m.mapImages.roads)]);
+    for (const data of [imagery, roads]) {
+      if (data) s.addImage({ data, x: IN(mx), y: IN(my), w: IN(MAP_W), h: IN(MAP_H) });
+    }
+  }
   for (const r of m.rings) {
     s.addShape("ellipse", {
       x: IN(mx + MAP_W / 2 - r.r),
       y: IN(my + MAP_H / 2 - r.r),
       w: IN(r.r * 2),
       h: IN(r.r * 2),
-      fill: r.on ? { color: color.brand, transparency: 94 } : { type: "none" },
-      line: { color: r.on ? color.brand : color.n400, width: r.on ? 1.5 : 0.75, dashType: r.on ? "solid" : "dash" },
+      fill: r.on ? { color: RING_ON, transparency: 88 } : { type: "none" },
+      line: { color: r.on ? RING_ON : RING_OFF, width: r.on ? 2 : 0.75, dashType: r.on ? "solid" : "dash", transparency: r.on ? 0 : 30 },
     });
   }
   for (const p of m.pins) {
