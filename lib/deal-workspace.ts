@@ -108,14 +108,21 @@ export function dealKpis(deal: any, snapshot: DemandSnapshot | null, radius = 3,
   const value = dealValue(deal);
   const ac = acres(p.lot_sf);
   const bsf = p.building_sf ? Number(p.building_sf) : null;
-  const basis = value.amount ? (ios ? (ac ? value.amount / ac : null) : bsf ? value.amount / bsf : null) : null;
+  const ask = deal.asking_price != null ? Number(deal.asking_price) : null;
+  const shown = value.amount ?? ask;
+  const basis = shown ? (ios ? (ac ? shown / ac : null) : bsf ? shown / bsf : null) : null;
   const r = latestReturns(deal);
   const demand = demandBreakdown(snapshot, radius, cats);
   return {
     ios,
-    price: value.amount,
-    priceLabel: fmtMoney(value.amount),
-    priceBasis: value.basis === "none" ? "No price yet" : VALUE_BASIS_LABELS[value.basis].replace(/^./, (c) => c.toUpperCase()),
+    price: shown,
+    priceLabel: fmtMoney(shown),
+    priceBasis:
+      value.amount == null && ask
+        ? "Asking price"
+        : value.basis === "none"
+          ? "No price yet"
+          : VALUE_BASIS_LABELS[value.basis].replace(/^./, (c) => c.toUpperCase()) + (ask ? ` · ask ${fmtMoney(ask)}` : ""),
     basis,
     basisLabel: basis == null ? "—" : ios ? fmtMoney(basis) : `$${Math.round(basis)}`,
     basisUnit: ios ? "/ac" : "/SF",

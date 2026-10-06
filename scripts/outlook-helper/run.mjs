@@ -1,5 +1,6 @@
 import { startAgentLoop } from "./agents.mjs";
 import { OutlookConnection, searchResult, emailResult } from "./codex.mjs";
+import { fetchOm } from "./om.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -68,6 +69,15 @@ try {
             result = searchResult(await connection.call("search_messages", { query: job.input.query, from_index: job.input.fromIndex, size: 20 }));
           } else if (job.kind === "fetch" && typeof job.input?.messageId === "string" && job.input.messageId.length <= 4096) {
             result = emailResult(await connection.call("fetch_message", { message_id: job.input.messageId }));
+          } else if (job.kind === "fetch_om" && typeof job.input?.messageId === "string" && job.input.messageId.length <= 4096) {
+            result = await fetchOm(connection, job, async (jobId) => {
+              const r = await fetch(new URL("/api/outlook-helper/upload", base), { method: "POST", redirect: "error",
+                headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId }), signal: AbortSignal.timeout(20000) });
+              const slot = await r.json();
+              if (!r.ok) throw new Error(slot.error || "Hopper refused the upload.");
+              return slot;
+            });
           } else throw new Error("Unsupported email request.");
         } catch (e) { error = e.message; }
         await request("POST", { id: job.id, result, error });

@@ -1,6 +1,7 @@
 import { parseMemo, MEMO_VERSION } from "@/lib/agents/memo";
 import { parseNarrative } from "@/lib/agents/ic-narrative";
 import { parseSourcing } from "@/lib/agents/sourcing";
+import { parseDealImport } from "@/lib/agents/deal-import";
 import { NextRequest } from "next/server";
 import { workerContext, json, reap } from "@/lib/agents/server";
 import { UUID } from "@/lib/agents/catalog";
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest) {
   }
   if (!body.error && job.data.agent === "off-market-sourcing" && !parseSourcing(r.report)) {
     body.error = "The sourcing report did not match the expected format (owner and parcel facts need sources). Please run it again.";
+  }
+  if (!body.error && job.data.agent === "deal-import" && !parseDealImport(r.report)) {
+    body.error = "Could not read a property address from that document. Check it is an OM or broker email, then try again.";
   }
   const update = await db.from("agent_runs").update({ status: body.error ? "failed" : "completed",
     result: body.error ? null : { report: r.report, limitations: r.limitations }, model: body.error ? null : r.model,

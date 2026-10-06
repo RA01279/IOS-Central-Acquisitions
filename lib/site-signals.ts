@@ -331,9 +331,13 @@ function nearbyComps(comps: CompRow[], point: { lat: number; lng: number }, type
 }
 
 export function computeBasis(deal: any, comps: CompRow[], point: { lat: number; lng: number }): Auto {
-  const price = dealValue(deal).amount;
+  // Our number (close > contract > last offer) when there is one; before
+  // that, the seller's ask from the OM, said so in the note.
+  const ours = dealValue(deal).amount;
+  const price = ours ?? (deal.asking_price != null ? Number(deal.asking_price) : null);
+  const askNote = ours == null && price ? " ask" : "";
   const source = `Confirmed sale comps, ${COMP_RADIUS_MI} mi / ${COMP_MAX_AGE_MONTHS} mo`;
-  if (!price) return { state: "unknown", note: "No price yet (offer, contract or close)", source };
+  if (!price) return { state: "unknown", note: "No price yet (ask, offer, contract or close)", source };
   const ios = deal.asset_class !== "industrial";
   const subjDen = ios ? Number(deal.properties?.lot_sf) / SQFT_PER_ACRE : Number(deal.properties?.building_sf);
   if (!(subjDen > 0)) return { state: "unknown", note: ios ? "Lot size missing" : "Building SF missing", source };
@@ -349,14 +353,14 @@ export function computeBasis(deal: any, comps: CompRow[], point: { lat: number; 
   const fmtRate = (v: number) => (ios ? fmtMoney(v) : `$${Math.round(v)}`) + unit;
   const subject = price / subjDen;
   if (rates.length < MIN_COMPS) {
-    return { state: "unknown", note: `${fmtRate(subject)}; only ${rates.length} sale comp${rates.length === 1 ? "" : "s"} nearby`, source };
+    return { state: "unknown", note: `${fmtRate(subject)}${askNote}; only ${rates.length} sale comp${rates.length === 1 ? "" : "s"} nearby`, source };
   }
   const med = median(rates);
   const ratio = subject / med;
   const pct = Math.round(Math.abs(1 - ratio) * 100);
   return {
     state: ratio <= 0.95 ? "strong" : ratio <= 1.1 ? "watch" : "weak",
-    note: `${fmtRate(subject)} vs ${fmtRate(med)} median of ${rates.length} sales (${pct}% ${ratio <= 1 ? "below" : "above"})`,
+    note: `${fmtRate(subject)}${askNote} vs ${fmtRate(med)} median of ${rates.length} sales (${pct}% ${ratio <= 1 ? "below" : "above"})`,
     source,
   };
 }
@@ -415,7 +419,7 @@ export async function refreshSignals(
   const supabase = getServiceClient();
   const { data: deal, error } = await supabase
     .from("deals")
-    .select("id, asset_class, closed_price, contract_price, in_place_rent, in_place_rent_basis, offers(price, offered_at), mla_data(market_base_rent), properties(address, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status)")
+    .select("id, asset_class, closed_price, contract_price, asking_price, in_place_rent, in_place_rent_basis, offers(price, offered_at), mla_data(market_base_rent), properties(address, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status)")
     .eq("id", dealId)
     .single();
   if (error || !deal) throw new Error("Deal not found");

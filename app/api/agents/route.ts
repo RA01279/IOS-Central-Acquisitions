@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       (body.dealId && (typeof body.dealId !== "string" || !UUID.test(body.dealId)))) return json({ error: "Check the agent, deal and source text." }, 400);
   const agent = AGENTS.find(a => a.id === body.agent)!;
   if (agent.needsDeal && !body.dealId) return json({ error: "Select a deal first." }, 400);
-  if (body.agent === "deal-intake" && !body.text.trim()) return json({ error: "Paste the broker email or offering text." }, 400);
+  if ((body.agent === "deal-intake" || body.agent === "deal-import") && !body.text.trim()) return json({ error: "Paste the broker email or offering text." }, 400);
   if (body.agent === "off-market-sourcing") {
     let sweep: any = null; try { sweep = JSON.parse(body.text); } catch {}
     if (!Array.isArray(sweep?.sites) || !sweep.sites.length || sweep.sites.length > MAX_SOURCING_SITES) return json({ error: `Select 1 to ${MAX_SOURCING_SITES} sites from a sweep.` }, 400);

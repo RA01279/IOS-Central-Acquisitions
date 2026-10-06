@@ -39,6 +39,7 @@ export class OutlookConnection {
     this.threadId = thread.id;
     const inventory = await this.rpc("mcpServerStatus/list", { threadId: this.threadId, detail: "toolsAndAuthOnly" });
     const server = inventory.data.find(s => s.name === "codex_apps");
+    this.tools = server?.tools ?? {};
     this.mailbox = server?.tools?.["microsoft_outlook_email.search_messages"]?._meta?.link_owner_profile?.email?.toLowerCase();
     for (const name of ["search_messages", "fetch_message"]) {
       const tool = server?.tools?.["microsoft_outlook_email." + name];
@@ -58,7 +59,12 @@ export class OutlookConnection {
     });
   }
   async call(name, args) {
-    if (!["search_messages", "fetch_message"].includes(name)) throw new Error("Unsupported email operation");
+    // Read-only operations only. The attachment tools are optional (older
+    // connector versions lack them) and re-checked as read-only before use.
+    if (!["search_messages", "fetch_message", "list_attachments", "fetch_attachment"].includes(name)) throw new Error("Unsupported email operation");
+    const tool = this.tools?.["microsoft_outlook_email." + name];
+    if (!tool || tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true)
+      throw new Error(name.includes("attachment") ? "Your Outlook connector can't read attachments. Update Outlook Email in Codex." : "Unsupported email operation");
     const result = await this.rpc("mcpServer/tool/call", { threadId: this.threadId, server: "codex_apps",
       tool: "microsoft_outlook_email." + name, arguments: args });
     if (result.isError) throw new Error("Outlook could not read this email. Check the connection in Codex and try again.");

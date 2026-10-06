@@ -1,15 +1,17 @@
-import DealForm from "@/components/DealForm";
+import NewDealClient from "@/components/NewDealClient";
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
+
+export const metadata = { title: "New Deal" };
 
 export default function NewDealPage() {
   return (
     <>
-      <Nav active="pipeline" />
+      <Nav active="new" />
       <main>
         <BackButton />
-        <h1>New deal</h1>
-        <DealForm />
+        <h1 style={{ marginBottom: 16 }}>New deal</h1>
+        <NewDealClient />
       </main>
     </>
   );

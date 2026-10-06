@@ -51,5 +51,5 @@ export const config = {
   // logic still runs).
   // The PWA files (manifest, service worker, icons) and the logos must load
   // before sign-in, or the install prompt and the login page break.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/health|api/cron|api/export|api/digest|manifest.webmanifest|sw.js|pwa-icon|logo-white.svg|logo-navy.svg|offline).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/health|api/cron|api/export|api/digest|manifest.webmanifest|sw.js|pwa-icon|logo-white.svg|logo-navy.svg|pdf.worker.min.mjs|offline).*)"],
 };

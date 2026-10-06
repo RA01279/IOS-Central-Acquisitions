@@ -12,24 +12,30 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import LocationPreview, { type LocationPoint } from "./LocationPreview";
+import type { DealImport } from "@/lib/agents/deal-import";
+import type { ImportedFile } from "./DealImport";
 
 type MlaChoice = "provided" | "requested" | "assumed";
 type Occupancy = "vacant" | "occupied";
 
-export default function DealForm() {
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [market, setMarket] = useState("");
+// `prefill` comes from New Deal > Import (an OM or broker email). The parent
+// remounts this form with a new key when an import lands, so the uncontrolled
+// fields pick up their new defaultValues.
+export default function DealForm({ prefill, importedFile }: { prefill?: DealImport["fields"] | null; importedFile?: ImportedFile | null } = {}) {
+  const f = prefill ?? null;
+  const [address, setAddress] = useState(f?.address ?? "");
+  const [city, setCity] = useState(f?.city ?? "");
+  const [state, setState] = useState(f?.state ?? "");
+  const [market, setMarket] = useState(f?.market ?? f?.city ?? "");
   const [location, setLocation] = useState<LocationPoint | null>(null);
   const router = useRouter();
   const [mlaChoice, setMlaChoice] = useState<MlaChoice>("requested");
-  const [occupancy, setOccupancy] = useState<Occupancy>("vacant");
+  const [occupancy, setOccupancy] = useState<Occupancy>(f?.occupancy ?? "vacant");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const intakeKey = useRef<string | undefined>(undefined);
   const [substantialYard,setSubstantialYard] = useState(false);
-  const [pipeline,setPipeline] = useState("");
+  const [pipeline,setPipeline] = useState<string>(f?.assetClass ?? "");
   const [duplicates, setDuplicates] = useState<{id:string;address:string;city:string;stage:string}[]>([]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -75,6 +81,7 @@ export default function DealForm() {
       substantialYard,
       acres: form.get("acres") ? Number(form.get("acres")) : undefined,
       buildingSf: form.get("buildingSf") ? Number(form.get("buildingSf")) : undefined,
+      askingPrice: (form.get("askingPrice") as string) || undefined,
       marketingStatus: (form.get("marketingStatus") as string) || undefined,
       acquisitionType: (form.get("acquisitionType") as string) || undefined,
       occupancyStatus: occupancy,
@@ -100,6 +107,15 @@ export default function DealForm() {
         throw new Error(body.error ?? "Failed to create deal");
       }
       const { deal } = await res.json();
+      // File the imported OM to the new deal. A failure here must not lose
+      // the deal that was just created -- it can be re-uploaded from Notes.
+      if (importedFile) {
+        await fetch(`/api/deals/${deal.id}/documents`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ importPath: importedFile.path, fileName: importedFile.name }),
+        }).catch(() => {});
+      }
       router.push(`/deals/${deal.id}`);
     } catch (err: any) {
       setError(err.message);
@@ -130,18 +146,18 @@ export default function DealForm() {
         </label>
         <label>
           Current owner
-          <input name="currentOwnerName" placeholder="Seller — created as a contact automatically" />
+          <input name="currentOwnerName" defaultValue={f?.currentOwner ?? ""} placeholder="Seller — created as a contact automatically" />
         </label>
         <label>
           Source
-          <select name="marketingStatus" defaultValue="off_market">
+          <select name="marketingStatus" defaultValue={f?.marketingStatus ?? "off_market"}>
             <option value="off_market">Off-Market</option>
             <option value="marketed">Marketed</option>
           </select>
         </label>
         <label>
           Acquisition type
-          <select name="acquisitionType" defaultValue="standard">
+          <select name="acquisitionType" defaultValue={f?.acquisitionType ?? "standard"}>
             <option value="standard">Standard</option>
             <option value="slb">Sale-leaseback (SLB)</option>
             <option value="unsolicited">Unsolicited</option>
@@ -156,7 +172,7 @@ export default function DealForm() {
         </label>
         <label>
           Sales broker
-          <input name="sellerBrokerName" placeholder="Broker repping the seller" />
+          <input name="sellerBrokerName" defaultValue={f?.sellerBroker ?? ""} placeholder="Broker repping the seller" />
         </label>
       </div>
 
@@ -171,7 +187,7 @@ export default function DealForm() {
         </label>
         <label>
           Asset type
-          <select name="assetType" defaultValue="ios">
+          <select name="assetType" defaultValue={f?.assetClass === "industrial" ? "industrial" : "ios"}>
             <option value="ios">IOS</option>
             <option value="industrial">Industrial</option>
             <option value="flex">Flex</option>
@@ -185,11 +201,15 @@ export default function DealForm() {
       <div className="grid-2">
         <label>
           Acres
-          <input name="acres" type="number" step="0.01" placeholder="converts to lot SF" />
+          <input name="acres" type="number" step="0.01" placeholder="converts to lot SF" defaultValue={f?.acres != null ? Math.round(f.acres * 100) / 100 : ""} />
         </label>
         <label>
           Building SF
-          <input name="buildingSf" type="number" />
+          <input name="buildingSf" type="number" defaultValue={f?.buildingSf ?? ""} />
+        </label>
+        <label>
+          Asking price
+          <input name="askingPrice" placeholder="Seller's ask, e.g. 8.4M (optional)" defaultValue={f?.askingPrice != null ? Math.round(f.askingPrice).toLocaleString("en-US") : ""} />
         </label>
       </div>
 
@@ -207,7 +227,7 @@ export default function DealForm() {
         </label>
         <label>
           Tenancy
-          <select name="tenancy" defaultValue="">
+          <select name="tenancy" defaultValue={f?.tenancy ?? ""}>
             <option value="">—</option>
             <option value="single_tenant">Single-tenant</option>
             <option value="multi_tenant">Multi-tenant</option>
@@ -216,7 +236,7 @@ export default function DealForm() {
         {occupancy === "occupied" && (
           <label>
             WALT (years)
-            <input name="waltYears" type="number" step="0.1" min="0" />
+            <input name="waltYears" type="number" step="0.1" min="0" defaultValue={f?.waltYears ?? ""} />
           </label>
         )}
       </div>

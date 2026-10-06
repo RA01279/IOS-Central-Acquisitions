@@ -11,7 +11,7 @@ import { resolveFlags, siteScore, type Flag, type SignalRow } from "./site-score
 import { acres, dealRef, fmtAcres, fmtMoney, fmtSf } from "./format";
 
 export const DEAL_CARD_SELECT =
-  "id, ref, stage, asset_class, created_at, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)";
+  "id, ref, stage, asset_class, created_at, asking_price, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)";
 
 const DAY_MS = 86400000;
 
@@ -74,7 +74,11 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
   const ac = acres(p.lot_sf);
   const bsf = p.building_sf ? Number(p.building_sf) : null;
   // IOS is land, priced per acre; industrial is priced per building SF.
-  const basisValue = value.amount ? (ios ? (ac ? value.amount / ac : null) : bsf ? value.amount / bsf : null) : null;
+  // Before any offer, the seller's ask (from the OM) is the best figure to
+  // show -- labelled as such, and never counted in pipeline value (`price`).
+  const ask = deal.asking_price != null ? Number(deal.asking_price) : null;
+  const shown = value.amount ?? ask;
+  const basisValue = shown ? (ios ? (ac ? shown / ac : null) : bsf ? shown / bsf : null) : null;
   const flags = resolveFlags(signals);
   const s = siteScore(flags);
   return {
@@ -87,8 +91,8 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
     typeLabel: ASSET_CLASS_LABELS[deal.asset_class] ?? "IOS",
     sizeLabel: ios ? fmtAcres(p.lot_sf) : fmtSf(bsf),
     price: value.amount,
-    priceLabel: fmtMoney(value.amount),
-    priceBasis: VALUE_BASIS_LABELS[value.basis],
+    priceLabel: fmtMoney(shown),
+    priceBasis: value.amount == null && ask ? "asking price" : VALUE_BASIS_LABELS[value.basis],
     basisValue,
     basisLabel: basisValue == null ? "—" : ios ? fmtMoney(basisValue) : `$${Math.round(basisValue)}`,
     basisUnit: ios ? "/ac" : "/SF",

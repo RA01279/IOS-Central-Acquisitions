@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
   if (helperError) throw helperError;
   if (!helper?.last_seen_at || Date.now() - Date.parse(helper.last_seen_at) > 30000)
     return helperJson({ error: "Your Outlook helper is offline. Start it on your computer and try again." }, 409);
-  if (body.kind === "fetch") {
+  if (body.kind === "fetch" || body.kind === "fetch_om") {
     const { data: search } = await db.from("outlook_helper_jobs").select("result").eq("id", body.input.searchJobId)
       .eq("owner_email", email).eq("helper_id", helper.id).eq("kind", "search").eq("status", "completed").maybeSingle();
     if (!search?.result?.messages?.some((m: any) => m.id === body.input.messageId))

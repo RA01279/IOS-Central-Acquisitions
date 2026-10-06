@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-const allowed = new Set(["deal-intake", "comp-analyst", "pipeline-follow-up", "site-research", "underwriting-review", "investment-memo", "ic-narrative", "off-market-sourcing"]);
+const allowed = new Set(["deal-intake", "comp-analyst", "pipeline-follow-up", "site-research", "underwriting-review", "investment-memo", "ic-narrative", "off-market-sourcing", "deal-import"]);
 const schema = { type: "object", additionalProperties: false, required: ["report", "model", "limitations"], properties: {
   report: { type: "string" }, model: { type: "string" }, limitations: { type: "array", items: { type: "string" } },
 } };

@@ -1956,3 +1956,28 @@ main.bleed {
     min-width: 0;
   }
 }
+
+/* New Deal > Import drop zone */
+.om-drop {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 12px !important;
+  padding: 18px;
+  margin: 0 !important;
+  border: 1.5px dashed var(--n300);
+  border-radius: 6px;
+  background: var(--canvas);
+  color: var(--n700) !important;
+  font: 400 13px/1.4 var(--font-body) !important;
+  cursor: pointer;
+}
+.om-drop:hover,
+.om-drop[data-drag] {
+  border-color: var(--brand);
+  background: var(--blue-50);
+}
+.om-drop[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}

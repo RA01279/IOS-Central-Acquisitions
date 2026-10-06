@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { cleanupHelperJobs, helperJson, helperTokenHash, safeResult } from "@/lib/outlook-helper";
+import { cleanupHelperJobs, helperJson, helperTokenHash, importOwnerDir, safeResult } from "@/lib/outlook-helper";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -49,7 +49,17 @@ export async function POST(req: NextRequest) {
   if (error || !job) return helperJson({ error: "Job expired or unavailable" }, 404);
   if (job.status !== "processing") return helperJson({ error: "Job is no longer active" }, 409);
   let result = null; let failure: string | null = null;
-  try { if (body.error) failure = String(body.error).slice(0, 500); else result = safeResult(job.kind, body.result); }
+  try {
+    if (body.error) failure = String(body.error).slice(0, 500);
+    else {
+      result = safeResult(job.kind, body.result);
+      // Only files in this owner's own import folder may be referenced.
+      if (result && "attachments" in result) {
+        const dir = importOwnerDir(helper.owner_email) + "/";
+        result.attachments = (result.attachments as any[]).filter((a) => a.path.startsWith(dir));
+      }
+    }
+  }
   catch (e) { failure = e instanceof Error ? e.message : "Invalid result"; }
   const updated = await db.from("outlook_helper_jobs").update({ status: failure ? "failed" : "completed", result, error: failure })
     .eq("id", job.id).eq("helper_id", helper.id).eq("status", "processing");
