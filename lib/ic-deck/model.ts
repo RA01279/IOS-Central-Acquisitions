@@ -95,8 +95,8 @@ function right(sheet: Sheet | null, label: RegExp, offset: number, opts: { after
   const hit = find(sheet, label, { col: 2, ...opts });
   return hit && sheet ? sheet.at(hit.row, hit.col + offset) : null;
 }
-const pct = (v: number | null, d = 1) => (v === null ? "—" : `${(v * 100).toFixed(d)}%`);
-const fmtRet = (r: Ret) => (r.irr === null || r.multiple === null ? null : `${(r.irr * 100).toFixed(1)}% / ${r.multiple.toFixed(1)}x`);
+const pct = (v: number | null, d = 2) => (v === null ? "—" : `${(v * 100).toFixed(d)}%`);
+const fmtRet = (r: Ret) => (r.irr === null || r.multiple === null ? null : `${(r.irr * 100).toFixed(2)}% / ${r.multiple.toFixed(1)}x`);
 
 export function extractModel(book: Workbook, fileName: string): ModelSummary {
   const warnings: string[] = [];

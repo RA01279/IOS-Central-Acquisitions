@@ -339,7 +339,7 @@ export default function DealCompsPanel({
                 <td>{s.comp.building_sf ? Math.round(Number(s.comp.building_sf)).toLocaleString() : "—"}</td>
                 <td>
                   {s.comp.coverage_pct != null
-                    ? `${(Number(s.comp.coverage_pct) * 100).toFixed(1)}%`
+                    ? `${(Number(s.comp.coverage_pct) * 100).toFixed(2)}%`
                     : "—"}
                 </td>
                 <td>{s.score.toFixed(2)}</td>

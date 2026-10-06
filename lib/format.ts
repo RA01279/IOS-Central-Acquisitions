@@ -26,7 +26,7 @@ export function fmtSf(sf: number | null | undefined): string {
   return sf >= 1000 ? `${(Number(sf) / 1000).toFixed(1).replace(/\.0$/, "")}K SF` : `${Math.round(sf)} SF`;
 }
 
-export function fmtPct(v: number | null | undefined, digits = 1): string {
+export function fmtPct(v: number | null | undefined, digits = 2): string {
   return v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
 

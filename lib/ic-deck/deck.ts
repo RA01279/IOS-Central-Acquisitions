@@ -68,7 +68,7 @@ export interface IcDeckInput {
 const usd = (v: number | null | undefined, d = 0) => (v == null ? "—" : `${v < 0 ? "(" : ""}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}${v < 0 ? ")" : ""}`);
 const n0 = (v: number | null | undefined) => (v == null ? "—" : `${v < 0 ? "(" : ""}${Math.abs(Math.round(v)).toLocaleString("en-US")}${v < 0 ? ")" : ""}`);
 const sf = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v).toLocaleString("en-US")} SF`);
-const pct = (v: number | null | undefined, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
+const pct = (v: number | null | undefined, d = 2) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
 const ac = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(2)} AC`);
 const mult = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(2)}x`);
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -92,7 +92,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   const occupied = m.rentRoll.totalSf && m.property.buildingSf ? m.rentRoll.rows.reduce((s, r) => s + (r.sf ?? 0), 0) / m.property.buildingSf : null;
   const price = m.capitalization.find((c) => /price/i.test(c.label))?.amount ?? null;
   const hold = m.returns.holdYears;
-  const holdTag = `${hold ?? "?"}-Yr Hold; ${pct(m.yields.exitCap, 1)} exit`;
+  const holdTag = `${hold ?? "?"}-Yr Hold; ${pct(m.yields.exitCap, 2)} exit`;
   const source = `Model: ${m.source.fileName}${m.source.modelDate ? ` (as of ${date(m.source.modelDate)})` : ""}`;
   const footer = `DRAFT for IC review · Built by Hopper ${date(input.preparedOn.toISOString())} · ${source}`;
   const slides: SlideBuilder[] = [];
@@ -162,7 +162,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     const tenantLine = tenants.length ? `leased to ${tenants.join(", ").replace(/\.$/, "")}` : "currently vacant";
     s.text([
       head("Site Overview"),
-      body(`${pct(occupied, 0)} leased IOS site in ${cityState} on ${m.property.acres?.toFixed(2) ?? "—"} acres with a ${sf(m.property.buildingSf)} building (${pct(m.property.coverage, 1)} coverage), ${tenantLine}.`),
+      body(`${pct(occupied, 2)} leased IOS site in ${cityState} on ${m.property.acres?.toFixed(2) ?? "—"} acres with a ${sf(m.property.buildingSf)} building (${pct(m.property.coverage, 2)} coverage), ${tenantLine}.`),
       body(`Going-in basis of ${usd(m.capitalization[0]?.psf, 2)} PSF (${usd(price)} purchase price); all-in cost of ${usd(m.totalCost.psf, 2)} PSF (${usd(m.totalCost.amount)}).`),
       drafted("locationHighlights") ? { runs: [{ text: "Location Highlights", bold: true, color: NAVY, size: 10 }, DRAFT_TAG], spaceAfter: 1 } : head("Location Highlights"),
       ...(drafted("locationHighlights")?.bullets.slice(0, 2).map(body) ?? [OPEN("highway access, submarket, nearby demand drivers")]),
@@ -172,12 +172,12 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ...(drafted("zoning")?.bullets.slice(0, 2).map(body) ?? [OPEN("governing jurisdiction, district and outdoor-storage rights (see Site research agent)")]),
       head("Underwriting Assumptions"),
       body(`${hold ?? "—"}-year hold; ${pct(m.yields.exitCap, 2)} exit cap on a ${pct(m.yields.returnOnCostAtExit, 2)} yield-to-cost; ${usd(fees)} of acquisition, financing and other costs capitalized into the ${usd(m.totalCost.psf, 2)} PSF all-in basis.`),
-      body(`Debt: ${pct(m.debt.ltc, 1)} LTC (${usd(m.debt.loan)}), ${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)} spread, ${m.debt.interestOnlyMonths ?? "—"} months interest-only.`),
+      body(`Debt: ${pct(m.debt.ltc, 2)} LTC (${usd(m.debt.loan)}), ${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)} spread, ${m.debt.interestOnlyMonths ?? "—"} months interest-only.`),
     ], { x: 0.2, y: 2.2, w: 5.45, h: 4.72 }, { size: 9 });
     const right = 5.8, w = 3.98;
     s.table(["Site", ""], [
       ["Address", property], ["City, State", cityState], ["Tenant", tenants.join(", ") || "Vacant"],
-      ["Site AC", m.property.acres?.toFixed(2) ?? "—"], ["Site SF", n0(m.property.siteSf)], ["Building SF", n0(m.property.buildingSf)], ["Coverage %", pct(m.property.coverage, 1)],
+      ["Site AC", m.property.acres?.toFixed(2) ?? "—"], ["Site SF", n0(m.property.siteSf)], ["Building SF", n0(m.property.buildingSf)], ["Coverage %", pct(m.property.coverage, 2)],
     ], { x: right, y: 2.2, w, h: 1.9 }, { size: 8, widths: [1.1, 1.9], align: ["l", "r"], rowHeight: 0.22 });
     s.table(["Capitalization", "$ Amount", "$ PSF"], [
       ...m.capitalization.map((c) => [c.label, usd(c.amount), usd(c.psf, 2)]),
@@ -247,7 +247,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ["Profit", usd(m.returns.profit)],
     ], { x: 5.15, y: returnsBottom + 0.25, w: 4.55, h: 2.1 }, { size: 9, widths: [2.4, 1.8], align: ["l", "r"], rowHeight: 0.26 });
     s.table(["Debt", "Terms"], [
-      ["Loan to purchase price", pct(m.debt.ltpp, 1)], ["Loan to cost", pct(m.debt.ltc, 1)],
+      ["Loan to purchase price", pct(m.debt.ltpp, 2)], ["Loan to cost", pct(m.debt.ltc, 2)],
       ["Rate", `${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)}`],
       ["Interest-only / amortization", `${m.debt.interestOnlyMonths ?? "—"} / ${m.debt.amortizationMonths ?? "—"} months`],
     ], { x: 0.3, y: leftBottom + 0.25, w: 4.55, h: 1.3 }, { size: 9, widths: [2, 2.1], align: ["l", "r"], rowHeight: 0.26 });
@@ -258,7 +258,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   {
     const s = slide("Market Leasing Assumptions – Base Case");
     s.table(["Tenant", "Suite", "SF", "% of SF", "Start", "Expiration", "Rem. (mo.)", "MLA", "Renewal", "Downtime"],
-      [...m.rentRoll.rows.map((r) => [r.tenant, r.suite ?? "—", n0(r.sf), pct(r.pctSf, 1), date(r.start), date(r.expiration), n0(r.remainingMonths), r.mla ?? "—", pct(r.renewalPct, 0), r.downtimeMonths == null ? "—" : `${r.downtimeMonths} mo.`]),
+      [...m.rentRoll.rows.map((r) => [r.tenant, r.suite ?? "—", n0(r.sf), pct(r.pctSf, 2), date(r.start), date(r.expiration), n0(r.remainingMonths), r.mla ?? "—", pct(r.renewalPct, 2), r.downtimeMonths == null ? "—" : `${r.downtimeMonths} mo.`]),
         ["Total", "", n0(m.rentRoll.totalSf), "", "", "", m.rentRoll.waltYears == null ? "" : `${m.rentRoll.waltYears.toFixed(2)} yr WALT`, "", "", ""]],
       { x: 0.3, y: 1.45, w: 9.4, h: 1.0 }, { size: 8, widths: [1.9, 0.6, 0.8, 0.7, 0.85, 0.85, 1.05, 1.5, 0.7, 0.75], align: ["l", "l", "r", "r", "r", "r", "r", "l", "r", "r"], emphasis: [m.rentRoll.rows.length], rowHeight: 0.24 });
     const y2 = 1.45 + 0.24 * (m.rentRoll.rows.length + 2) + 0.25;
@@ -275,7 +275,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   // 10. Cash flow --------------------------------------------------------
   {
     const s = slide("Cash Flow – Base Case");
-    const rows = m.cashFlow.rows.map((r) => [r.label, ...r.values.map((v) => (v === null ? "—" : r.format === "pct" ? pct(v, 1) : n0(v)))]);
+    const rows = m.cashFlow.rows.map((r) => [r.label, ...r.values.map((v) => (v === null ? "—" : r.format === "pct" ? pct(v, 2) : n0(v)))]);
     const rh = Math.min(0.235, 5.3 / (rows.length + 1));
     s.table(["Annual Cash Flow ($)", ...m.cashFlow.years], rows, { x: 0.3, y: 1.42, w: 9.4, h: 5.3 },
       { size: rows.length > 18 ? 7.5 : 8, widths: [2.6, ...m.cashFlow.years.map(() => 1)], align: ["l", ...m.cashFlow.years.map(() => "r" as const)], emphasis: m.cashFlow.rows.flatMap((r, i) => (r.emphasis ? [i] : [])), rowHeight: rh });

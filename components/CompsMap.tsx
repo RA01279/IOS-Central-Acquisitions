@@ -160,7 +160,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
             [
               c.building_sf ? `${Math.round(c.building_sf).toLocaleString()} SF` : null,
               acres ? `${acres} ac` : null,
-              c.coverage_pct != null ? `${(c.coverage_pct * 100).toFixed(1)}% cov` : null,
+              c.coverage_pct != null ? `${(c.coverage_pct * 100).toFixed(2)}% cov` : null,
             ]
               .filter(Boolean)
               .join(" · "),

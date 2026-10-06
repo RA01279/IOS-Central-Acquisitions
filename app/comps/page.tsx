@@ -227,7 +227,7 @@ export default async function CompsPage() {
                         <td>
                           {c.coverage_pct === null || c.coverage_pct === undefined
                             ? "—"
-                            : `${(c.coverage_pct * 100).toFixed(1)}%`}
+                            : `${(c.coverage_pct * 100).toFixed(2)}%`}
                         </td>
                         <td>{c.clear_height_ft ? `${c.clear_height_ft}'` : "—"}</td>
                         <td>

@@ -54,8 +54,8 @@ export default function AssetTransactionEditor({ asset, recordSale, onCancel, on
             <label>Selling costs ($)<input inputMode="decimal" placeholder="Enter total costs, or 0" value={form.sellingCosts} onChange={e => setForm(f => ({ ...f, sellingCosts: e.target.value }))} /></label>
           </>}
         </div>
-        {comparison && <div role="status"><p>Price-only change: <strong>{comparison.change < 0 ? "−" : "+"}${Math.abs(comparison.change).toLocaleString()} ({comparison.percent.toFixed(1)}%)</strong></p>
-          {comparison.netChange !== null && <p>Change after costs: <strong>{comparison.netChange < 0 ? "−" : "+"}${Math.abs(comparison.netChange).toLocaleString()} ({comparison.netPercent?.toFixed(1)}%)</strong><br />Acquisition basis: ${comparison.basis?.toLocaleString()} · Net sale proceeds: ${comparison.proceeds?.toLocaleString()}</p>}</div>}
+        {comparison && <div role="status"><p>Price-only change: <strong>{comparison.change < 0 ? "−" : "+"}${Math.abs(comparison.change).toLocaleString()} ({comparison.percent.toFixed(2)}%)</strong></p>
+          {comparison.netChange !== null && <p>Change after costs: <strong>{comparison.netChange < 0 ? "−" : "+"}${Math.abs(comparison.netChange).toLocaleString()} ({comparison.netPercent?.toFixed(2)}%)</strong><br />Acquisition basis: ${comparison.basis?.toLocaleString()} · Net sale proceeds: ${comparison.proceeds?.toLocaleString()}</p>}</div>}
         <p className="hint">Acquisition basis = purchase price + acquisition costs. Net sale proceeds = sale price − selling costs. Change after costs = net proceeds − acquisition basis; percentage uses acquisition basis. This excludes debt, operating income and capital improvements. Enter both costs, using 0 if none, to calculate the net change. Sold assets remain in history.</p>
         {asset.status === "sold" && form.status === "owned" && <p className="hint">Saving as owned clears the sale date, price and selling costs to correct the sale record.</p>}
         {error && <p role="alert" className="error">{error}</p>}

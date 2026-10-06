@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { openWorkbook } from "@/lib/ic-deck/xlsx-lite";
 import { extractModel, type ModelSummary } from "@/lib/ic-deck/model";
 
-const pct = (v: number | null, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
+const pct = (v: number | null, d = 2) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
 const usd = (v: number | null) => (v == null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
 
 export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string; fileNameStem?: string | null }) {

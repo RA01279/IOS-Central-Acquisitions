@@ -20,7 +20,7 @@ const LEASE_COLOR = "2E6DA4";
 function usd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(Number(v)).toLocaleString()}`;
 }
-function pct(v: number | null | undefined, dp = 1) {
+function pct(v: number | null | undefined, dp = 2) {
   return v === null || v === undefined ? "—" : `${(Number(v) * 100).toFixed(dp)}%`;
 }
 function num(v: number | null | undefined) {

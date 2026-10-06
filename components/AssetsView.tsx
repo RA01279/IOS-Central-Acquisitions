@@ -340,6 +340,6 @@ function assetMoney(value: number | null) { return value == null ? "—" : `$${N
 function comparisonLabel(asset: AssetDetail) {
   const comparison = saleComparison(asset);
   if (!comparison) return asset.status === "sold" ? "Add purchase and sale prices" : "—";
-  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(1)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(1)}%)</div></>;
+  return <>{comparison.netChange !== null ? <>{comparison.netChange < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.netChange))}<div className="muted">{comparison.netPercent! >= 0 ? "+" : ""}{comparison.netPercent!.toFixed(2)}% after costs</div></> : <div className="muted">Add both costs for net change</div>}<div className="muted">Price only: {comparison.change < 0 ? "−" : "+"}{assetMoney(Math.abs(comparison.change))} ({comparison.percent.toFixed(2)}%)</div></>;
 }
 

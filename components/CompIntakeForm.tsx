@@ -947,7 +947,7 @@ export default function CompIntakeForm({
                           style={{ width: 66 }}
                         />
                       </td>
-                      <td>{d.coveragePct === null ? "—" : `${(d.coveragePct * 100).toFixed(1)}%`}</td>
+                      <td>{d.coveragePct === null ? "—" : `${(d.coveragePct * 100).toFixed(2)}%`}</td>
                       <td>{fmtNum(d.yearBuilt) || "—"}</td>
                       {/* Which tab it came from: a workbook's tabs are often
                           different datasets, so this is how you spot the one

@@ -357,7 +357,7 @@ export function computeBasis(deal: any, comps: CompRow[], point: { lat: number; 
   }
   const med = median(rates);
   const ratio = subject / med;
-  const pct = Math.round(Math.abs(1 - ratio) * 100);
+  const pct = (Math.abs(1 - ratio) * 100).toFixed(2);
   return {
     state: ratio <= 0.95 ? "strong" : ratio <= 1.1 ? "watch" : "weak",
     note: `${fmtRate(subject)}${askNote} vs ${fmtRate(med)} median of ${rates.length} sales (${pct}% ${ratio <= 1 ? "below" : "above"})`,
@@ -401,7 +401,7 @@ export function computeRent(deal: any, comps: CompRow[], point: { lat: number; l
   const upside = market / inPlace - 1;
   return {
     state: upside >= 0.1 ? "strong" : upside >= -0.05 ? "watch" : "weak",
-    note: `In-place ${fmt(inPlace)} vs market ${fmt(market)} (${upside >= 0 ? "+" : ""}${Math.round(upside * 100)}%)`,
+    note: `In-place ${fmt(inPlace)} vs market ${fmt(market)} (${upside >= 0 ? "+" : ""}${(upside * 100).toFixed(2)}%)`,
     source,
   };
 }
