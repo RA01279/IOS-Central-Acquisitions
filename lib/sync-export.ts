@@ -247,6 +247,85 @@ export function shapeActivity(a: any): SyncActivity {
   };
 }
 
+// Sale and lease comps, the whole repository. Prospector copies them into its
+// own comps table keyed on `id` (added Oct 2026, additive: a consumer that
+// ignores the key is unaffected, so no schemaVersion bump).
+export interface SyncComp {
+  id: string;
+  compType: string;
+  address: string | null;
+  projectName: string | null;
+  suite: string | null;
+  city: string | null;
+  state: string | null;
+  market: string | null;
+  submarket: string | null;
+  assetClass: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  geocodePrecision: string | null;
+  buildingSf: number | null;
+  lotSf: number | null;
+  yardAcres: number | null;
+  coveragePct: number | null;
+  yearBuilt: number | null;
+  clearHeightFt: number | null;
+  rent: number | null;
+  rentBasis: string | null;
+  leaseType: string | null;
+  camPsfAnnual: number | null;
+  dateCommenced: string | null;
+  dateEstimated: boolean;
+  tenantName: string | null;
+  salePrice: number | null;
+  closedOn: string | null;
+  capRate: number | null;
+  buyer: string | null;
+  status: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export function shapeComp(c: any): SyncComp {
+  return {
+    id: c.id,
+    compType: String(c.comp_type ?? "lease"),
+    address: str(c.address),
+    projectName: str(c.project_name),
+    suite: str(c.suite),
+    city: str(c.city),
+    state: str(c.state),
+    market: str(c.market),
+    submarket: str(c.submarket),
+    assetClass: str(c.asset_class),
+    latitude: num(c.latitude),
+    longitude: num(c.longitude),
+    geocodePrecision: str(c.geocode_precision),
+    buildingSf: num(c.building_sf),
+    lotSf: num(c.lot_sf),
+    yardAcres: num(c.yard_acres),
+    coveragePct: num(c.coverage_pct),
+    yearBuilt: num(c.year_built),
+    clearHeightFt: num(c.clear_height_ft),
+    rent: num(c.rent),
+    rentBasis: str(c.rent_basis),
+    leaseType: str(c.lease_type),
+    camPsfAnnual: num(c.cam_psf_annual),
+    dateCommenced: str(c.date_commenced),
+    dateEstimated: c.date_estimated === true,
+    tenantName: str(c.tenant_name),
+    salePrice: num(c.sale_price),
+    closedOn: str(c.closed_on),
+    capRate: num(c.cap_rate),
+    buyer: str(c.buyer),
+    status: str(c.status),
+    createdBy: str(c.created_by),
+    createdAt: str(c.created_at),
+    updatedAt: str(c.updated_at),
+  };
+}
+
 export interface SyncPayload {
   source: "hopper";
   schemaVersion: 2;
@@ -259,6 +338,7 @@ export interface SyncPayload {
   contacts: SyncContact[];
   dealContacts: SyncDealContact[];
   activities: SyncActivity[];
+  comps: SyncComp[];
 }
 
 // The feed's key travels as "Authorization: Bearer <key>". Compared without
@@ -288,6 +368,7 @@ export function buildSyncPayload(
     contacts: any[];
     dealContacts: any[];
     activities: any[];
+    comps?: any[];
   },
   opts: { now: Date; asOfDate: string }
 ): SyncPayload {
@@ -324,5 +405,6 @@ export function buildSyncPayload(
     contacts,
     dealContacts,
     activities,
+    comps: (raw.comps ?? []).map(shapeComp),
   };
 }

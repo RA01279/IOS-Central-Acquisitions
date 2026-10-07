@@ -2,6 +2,7 @@
 // Read-only mirror feed for Prospector (Dalfen's sourcing app), which pulls
 // it every few minutes and keeps its own copy of our deals, offers, tasks and
 // contact book so the two teams see one pipeline while both apps are in use.
+// Comps (sale and lease) travel too, so Prospector holds the same repository.
 //
 // Its own key, not /api/export's: the caller sends
 // "Authorization: Bearer <PROSPECTOR_SYNC_TOKEN>". This feed carries emails
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const supabase = getServiceClient();
-    const [deals, offers, tasks, companies, contacts, dealContacts, activities] = await Promise.all([
+    const [deals, offers, tasks, companies, contacts, dealContacts, activities, comps] = await Promise.all([
       fetchAll((from, to) =>
         supabase
           .from("deals")
@@ -104,10 +105,20 @@ export async function GET(req: NextRequest) {
           .order("id", { ascending: true })
           .range(from, to)
       ),
+      fetchAll((from, to) =>
+        supabase
+          .from("comps")
+          .select(
+            "id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, geocode_precision, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, tenant_name, sale_price, closed_on, cap_rate, buyer, status, created_by, created_at, updated_at"
+          )
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
     ]);
     return NextResponse.json(
       buildSyncPayload(
-        { deals, offers, tasks, companies, contacts, dealContacts, activities },
+        { deals, offers, tasks, companies, contacts, dealContacts, activities, comps },
         { now: new Date(), asOfDate: ctToday() }
       )
     );

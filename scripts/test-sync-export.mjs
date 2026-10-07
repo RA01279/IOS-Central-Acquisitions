@@ -16,7 +16,7 @@ function load(path) {
   return exports;
 }
 
-const { buildSyncPayload, shapeDeal, bearerMatches } = load("../lib/sync-export.ts");
+const { buildSyncPayload, shapeDeal, shapeComp, bearerMatches } = load("../lib/sync-export.ts");
 const now = new Date("2026-09-23T15:00:00Z");
 
 const acq = {
@@ -154,5 +154,27 @@ assert.equal(shapeDeal({ id: "x", properties: { lot_sf: "" , address: "" } }).lo
 assert.equal(shapeDeal({ id: "x", properties: { address: "" } }).address, null);
 // (0, 0) is not a location.
 assert.equal(shapeDeal({ id: "x", properties: { latitude: 0, longitude: 0, geocode_precision: "manual" } }).latitude, null);
+
+// Comps: every row, both kinds, numbers as numbers; absent -> empty list.
+const leaseComp = shapeComp({ id: "c1", comp_type: "lease", address: "5 Yard Rd", latitude: "29.77", longitude: "-95.37",
+  rent: "4500", rent_basis: "per_acre_monthly", date_commenced: "2026-05-01", date_estimated: false, tenant_name: "Acme" });
+assert.equal(leaseComp.compType, "lease");
+assert.equal(leaseComp.rent, 4500);
+assert.equal(leaseComp.latitude, 29.77);
+assert.equal(leaseComp.rentBasis, "per_acre_monthly");
+assert.equal(leaseComp.dateEstimated, false);
+const sale = shapeComp({ id: "c2", comp_type: "sale", address: "9 Sold Ln", sale_price: "2400000", closed_on: "2026-03-15", date_estimated: true });
+assert.equal(sale.salePrice, 2400000);
+assert.equal(sale.closedOn, "2026-03-15");
+assert.equal(sale.rent, null);
+assert.equal(sale.dateEstimated, true);
+const withComps = buildSyncPayload(
+  { deals: [], offers: [], tasks: [], companies: [], contacts: [], dealContacts: [], activities: [],
+    comps: [{ id: "c1", comp_type: "lease", address: "5 Yard Rd" }, { id: "c2", comp_type: "sale", address: "9 Sold Ln" }] },
+  { now, asOfDate: "2026-09-23" });
+assert.equal(JSON.stringify(withComps.comps.map((c) => [c.id, c.compType])), JSON.stringify([["c1", "lease"], ["c2", "sale"]]));
+assert.equal(buildSyncPayload(
+  { deals: [], offers: [], tasks: [], companies: [], contacts: [], dealContacts: [], activities: [] },
+  { now, asOfDate: "2026-09-23" }).comps.length, 0);
 
 console.log("sync-export: ok");
