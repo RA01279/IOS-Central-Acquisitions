@@ -57,8 +57,12 @@ export interface CapexItem {
   units: number | { tenantAcres: number };
   /** Col E, year incurred (1-10). */
   year: number;
-  /** Cols G:I. */
-  include: ByScenario<number>;
+  /**
+   * Cols G:I. Either fixed per-scenario flags, or derived from RentRoll: the
+   * MAX of the listed tenants' include % for the scenario. Lease-up paving is
+   * only built when the tenants it serves are in the scenario (Phase 1b fix).
+   */
+  include: ByScenario<number> | { tenantIncl: number[] };
 }
 
 export interface UwInputs {
@@ -93,6 +97,7 @@ export interface UwInputs {
 
   LevOn: 0 | 1;
   LoanLTV: number;
+  /** >= 0. At 0 the loan amortises straight-line (loan / AmortYrs per year after IO). */
   LoanRate: number;
   /** Integer years. */
   AmortYrs: number;
@@ -173,6 +178,7 @@ export interface Returns {
   leveredIrr: number | null;
   leveredMultiple: number | null;
   goingInCap: number;
+  /** NOI in year MIN(2, Hold) / (price x (1 + CloseCost) + capex scheduled inside the hold). */
   yieldOnCost: number | null;
   equityAtClose: number;
   avgCashOnCash: number;
@@ -187,6 +193,11 @@ export interface Returns {
   solvedPricePerAcre: number;
   priceVsSolved: number;
   reassessedYear1Tax: number;
+  /**
+   * Scenario capex for items booked after the exit year. A warning only: these
+   * costs are not charged to the hold cash flows.
+   */
+  capexAfterExit: number;
 }
 
 /** Sens tab: rows are rent-growth shifts, columns exit caps. Center = headline. */

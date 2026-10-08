@@ -60,14 +60,42 @@ export const rendon: UwInputs = {
     { name: "Large tenant (~5.75 ac, in county)", status: "Pipeline", acres: 5.75, rent: 20_000, rentPeriod: "Monthly", bump: null, startMonth: 6, leaseEndMonth: 18, retention: 0.7, include: [0, 1, 0] },
   ],
 
-  // Capex!A6:I9
+  // Capex!A6:I9. Lease-up paving (rows 1-2) takes its include % from the
+  // tenants it serves; site work (rows 3-4) keeps fixed 1/0 flags.
   capex: [
-    // Capex!D6 = RentRoll!E15 (the large tenant's acres, index 9 above).
-    { name: "Gravel/paving & grading: large tenant lot", unitCost: 35_000, units: { tenantAcres: 9 }, year: 1, include: [0, 1, 0] },
-    { name: "Gravel/paving: Prime +1 ac & Straight 6 spots", unitCost: 35_000, units: 1.5, year: 1, include: [1, 1, 0] },
+    // Capex!D6 = RentRoll!E15 (the large tenant's acres, index 9 above); included as that tenant is.
+    { name: "Gravel/paving & grading: large tenant lot", unitCost: 35_000, units: { tenantAcres: 9 }, year: 1, include: { tenantIncl: [9] } },
+    // MAX of the Prime expansion (index 7) and Straight 6 expansion (index 8).
+    { name: "Gravel/paving: Prime +1 ac & Straight 6 spots", unitCost: 35_000, units: 1.5, year: 1, include: { tenantIncl: [7, 8] } },
     { name: "Perimeter fencing & gates", unitCost: 60_000, units: 1, year: 1, include: [1, 1, 1] },
     { name: "Site lighting", unitCost: 45_000, units: 1, year: 2, include: [1, 1, 1] },
   ],
+};
+
+const LARGE_TENANT = 9;
+const LIGHTING = 3;
+
+/** The golden-test cases: each is the fixture with one documented edit. */
+export const RENDON_CASES: Record<string, UwInputs> = {
+  Base: rendon,
+  Upside: { ...rendon, scenario: "Upside" },
+  Downside: { ...rendon, scenario: "Downside" },
+  "Hold 5": { ...rendon, Hold: 5 },
+  "Hold 10": { ...rendon, Hold: 10 },
+  // Base with property tax reassessed at the input price.
+  Reassessed: { ...rendon, TaxSwitch: 1 },
+  // Phase 1b. Base with the large tenant at 100%, which now also builds its paving.
+  LargeInBase: {
+    ...rendon,
+    rentRoll: rendon.rentRoll.map((t, i) => (i === LARGE_TENANT ? { ...t, include: [1, t.include[1], t.include[2]] as const } : t)),
+  },
+  Rate0: { ...rendon, LoanRate: 0 },
+  Hold1: { ...rendon, Hold: 1 },
+  // Lighting moved to year 9, after a 7-year exit.
+  CapexAfterExit: {
+    ...rendon,
+    capex: rendon.capex.map((c, i) => (i === LIGHTING ? { ...c, year: 9 } : c)),
+  },
 };
 
 /** CashFlow rows checked year by year against the workbook's cached Base values. */

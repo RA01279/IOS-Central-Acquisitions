@@ -6,7 +6,10 @@
 // Each function is named for the workbook row or cell it reproduces, and keeps
 // the workbook's defined names (Hold, ExitCap, RentGrowth, TaxSwitch...), so a
 // number can be traced from here to the cell it came from. Where the workbook
-// does something questionable it is reproduced, not fixed, and noted.
+// does something questionable it is reproduced, not fixed, and noted -- except
+// the four Phase 1b corrections (capex include from tenants, straight-line
+// principal at a 0% rate, yield on cost in year MIN(2, Hold), capexAfterExit),
+// which follow the corrected workbook.
 //
 // Years run 0..11 (CashFlow!C:N). Year 0 is closing; year 11 exists only to
 // supply forward NOI for a year-10 exit.
@@ -116,11 +119,26 @@ export function capexUnits(item: CapexItem, rentRoll: readonly Tenant[]): number
   return tenant.acres ?? 0;
 }
 
-/** Capex!K = F * J * (1 + CapexOverrun), with F = C * D and J = INDEX(G:I, ScenIdx). */
+/**
+ * Capex!J, the item's include % in the active scenario. Fixed flags for site
+ * work (fencing, lighting); for lease-up paving, the MAX of the include % of
+ * the tenants it serves (row 1: the large tenant; row 2: the Prime and
+ * Straight 6 expansions).
+ */
+export function capexIncl(item: CapexItem, inputs: UwInputs): number {
+  if (!("tenantIncl" in item.include)) return item.include[ScenIdx(inputs.scenario) - 1];
+  const tenants = item.include.tenantIncl.map((i) => {
+    const tenant = inputs.rentRoll[i];
+    if (!tenant) throw new Error(`Capex "${item.name}" links to a tenant that doesn't exist`);
+    return activeIncl(tenant, inputs.scenario);
+  });
+  return tenants.length ? Math.max(...tenants) : 0;
+}
+
+/** Capex!K = F * J * (1 + CapexOverrun), with F = C * D. */
 export function capexScenarioCost(item: CapexItem, inputs: UwInputs, CapexOverrun: number): number {
   const gross = item.unitCost * capexUnits(item, inputs.rentRoll);
-  const J = item.include[ScenIdx(inputs.scenario) - 1];
-  return gross * J * (1 + CapexOverrun);
+  return gross * capexIncl(item, inputs) * (1 + CapexOverrun);
 }
 
 // --- Debt -------------------------------------------------------------------
@@ -162,22 +180,24 @@ export function cumulativeInterestPrincipal(
 /**
  * CashFlow!D51 / D52 for one year, as negative cash flows:
  *
- *   IF(OR(loan<=0, LoanRate<=0), 0,
- *     IF(t<=IOYrs, loan*LoanRate (interest only),
- *       IF(t-IOYrs>AmortYrs, 0, CUMIPMT/CUMPRINC over that year's 12 months)))
+ *   loan <= 0           -> 0
+ *   t <= IOYrs          -> interest only, loan * LoanRate
+ *   t - IOYrs > AmortYrs -> 0 (fully repaid)
+ *   LoanRate = 0        -> no interest; principal straight-line, loan / AmortYrs
+ *   otherwise           -> CUMIPMT / CUMPRINC over that year's 12 months
  *
- * Note the workbook's zero-rate guard zeroes PRINCIPAL too, so a 0% loan is
- * never repaid in the hold and is all paid off at exit. Reproduced as-is.
+ * Negative rates are rejected in validate().
  */
 export function debtForYear(
   year: number,
   loan: number,
   d: Pick<UwInputs, "LoanRate" | "IOYrs" | "AmortYrs">
 ): { interest: number; principal: number } {
-  if (year < 1 || loan <= 0 || d.LoanRate <= 0) return { interest: 0, principal: 0 };
+  if (year < 1 || loan <= 0) return { interest: 0, principal: 0 };
   if (year <= d.IOYrs) return { interest: -loan * d.LoanRate, principal: 0 };
   const amortYear = year - d.IOYrs;
   if (amortYear > d.AmortYrs) return { interest: 0, principal: 0 };
+  if (d.LoanRate === 0) return { interest: 0, principal: -loan / d.AmortYrs };
   const { interest, principal } = cumulativeInterestPrincipal(
     d.LoanRate / 12,
     d.AmortYrs * 12,
@@ -197,6 +217,7 @@ function validate(inputs: UwInputs): void {
   }
   if (!Number.isInteger(IOYrs) || IOYrs < 0) throw new Error(`IOYrs must be a whole number >= 0 (got ${IOYrs})`);
   if (!Number.isInteger(AmortYrs) || AmortYrs < 1) throw new Error(`AmortYrs must be a whole number >= 1 (got ${AmortYrs})`);
+  if (!(inputs.LoanRate >= 0)) throw new Error(`LoanRate must be 0 or above (got ${inputs.LoanRate})`);
   const { ExitCap } = activeLevers(inputs);
   if (!(ExitCap > 0)) throw new Error(`ExitCap must be above 0 (got ${ExitCap})`);
 }
@@ -326,11 +347,19 @@ export function solvedPrice(cf: CashFlowTable, CloseCost: number): number {
   return num / den;
 }
 
+/** Scenario capex for items booked after the exit year (never charged to the hold). */
+export function capexAfterExit(inputs: UwInputs): number {
+  const { CapexOverrun } = activeLevers(inputs);
+  return sum(inputs.capex.filter((item) => item.year > inputs.Hold).map((item) => capexScenarioCost(item, inputs, CapexOverrun)));
+}
+
 export function computeReturns(inputs: UwInputs, cf: CashFlowTable): Returns {
-  const { PurchPrice, CloseCost, Acres, TaxRate } = inputs;
+  const { PurchPrice, CloseCost, Acres, TaxRate, Hold } = inputs;
   const coc = cf.cashOnCash.filter((v): v is number => v !== null);
   const dscr = cf.dscr.filter((v): v is number => v !== null);
-  // C71: capex row 35 only (not reserves), within the hold.
+  // Yield on cost: NOI in year MIN(2, Hold), so a 1-year hold isn't measured
+  // on a year it never owns. Cost basis is price + closing + capex (row 35)
+  // scheduled inside the hold; reserves are not in it.
   const capexInHold = sum(cf.capex.map((v, t) => v * cf.inHold[t]));
   const costBasis = PurchPrice * (1 + CloseCost) - capexInHold;
   const solved = solvedPrice(cf, CloseCost);
@@ -340,7 +369,7 @@ export function computeReturns(inputs: UwInputs, cf: CashFlowTable): Returns {
     leveredIrr: irr(cf.leveredCF),
     leveredMultiple: equityMultiple(cf.leveredCF),
     goingInCap: cf.noi[1] / PurchPrice,
-    yieldOnCost: costBasis !== 0 ? cf.noi[2] / costBasis : null,
+    yieldOnCost: costBasis !== 0 ? cf.noi[Math.min(2, Hold)] / costBasis : null,
     equityAtClose: -cf.leveredCF[0],
     avgCashOnCash: coc.length ? sum(coc) / coc.length : 0,
     minDscr: dscr.length ? Math.min(...dscr) : null,
@@ -353,6 +382,7 @@ export function computeReturns(inputs: UwInputs, cf: CashFlowTable): Returns {
     solvedPricePerAcre: solved / Acres,
     priceVsSolved: PurchPrice / solved - 1,
     reassessedYear1Tax: PurchPrice * TaxRate,
+    capexAfterExit: capexAfterExit(inputs),
   };
 }
 

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { buildCashFlow, runUnderwriting } from "../engine";
 import { irr, npv } from "../irr";
-import { rendon } from "../fixtures/rendon";
+import { RENDON_CASES, rendon } from "../fixtures/rendon";
 import type { UwInputs } from "../types";
 
 const VARIANTS: Array<[string, UwInputs]> = [
@@ -21,6 +21,18 @@ describe("IRR at the solved price equals the target unlevered IRR", () => {
     it(name, () => {
       const { solvedPrice } = runUnderwriting(inputs).returns;
       // Reassessed taxes scale with price, so this also proves the closed form's tax term.
+      const atSolved = runUnderwriting({ ...inputs, PurchPrice: solvedPrice }).returns;
+      expect(atSolved.unleveredIrr).not.toBeNull();
+      expect(atSolved.unleveredIrr!).toBeCloseTo(inputs.TgtUnlev, 10);
+    });
+  }
+});
+
+describe("IRR at the solved price equals the target in every Phase 1b case", () => {
+  for (const name of ["LargeInBase", "Rate0", "Hold1", "CapexAfterExit"] as const) {
+    it(name, () => {
+      const inputs = RENDON_CASES[name];
+      const { solvedPrice } = runUnderwriting(inputs).returns;
       const atSolved = runUnderwriting({ ...inputs, PurchPrice: solvedPrice }).returns;
       expect(atSolved.unleveredIrr).not.toBeNull();
       expect(atSolved.unleveredIrr!).toBeCloseTo(inputs.TgtUnlev, 10);
@@ -94,10 +106,18 @@ describe("debt guards", () => {
     expect(cf.loanPayoff.every((v) => v === 0)).toBe(true);
   });
 
-  it("zero rate: workbook guard zeroes interest AND principal; balance repaid at exit", () => {
+  it("zero rate: no interest; principal straight-line after IO; balance repaid at exit", () => {
     const cf = buildCashFlow({ ...rendon, LoanRate: 0 });
-    expect(cf.debtService.every((v) => v === 0)).toBe(true);
-    expect(cf.loanPayoff[rendon.Hold]).toBeCloseTo(-cf.loanProceeds[0], 9);
+    const loan = cf.loanProceeds[0];
+    expect(cf.interest.every((v) => v === 0)).toBe(true);
+    expect(cf.principal[rendon.IOYrs]).toBe(0);
+    expect(cf.principal[rendon.IOYrs + 1]).toBeCloseTo(-loan / rendon.AmortYrs, 9);
+    const repaidInHold = (rendon.Hold - rendon.IOYrs) * (loan / rendon.AmortYrs);
+    expect(cf.loanPayoff[rendon.Hold]).toBeCloseTo(-(loan - repaidInHold), 9);
+  });
+
+  it.each([-0.01, -1e-9, Number.NaN])("rejects LoanRate %s", (LoanRate) => {
+    expect(() => runUnderwriting({ ...rendon, LoanRate })).toThrow(/LoanRate/);
   });
 
   it("annual debt service equals 12 monthly payments once amortising", () => {
