@@ -41,6 +41,13 @@ export interface Tenant {
   leaseEndMonth: number | null;
   /** Col L. Share of rent kept after lease end. Null behaves as 0 (blank cell). */
   retention: number | null;
+  /** Col S. Free months from the effective start (whole number 0-60). Default 0. */
+  freeRentMonths?: number;
+  /**
+   * Col T. Free months from the lease end on the retained (renewal) rent, so
+   * weighted by retention (whole number 0-60). Default 0.
+   */
+  freeRentOnRenewalMonths?: number;
   /** Cols M:O. */
   include: ByScenario<number>;
 }

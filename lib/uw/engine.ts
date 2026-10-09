@@ -82,13 +82,22 @@ export function effectiveStart(t: Tenant, LeaseDelay: number): number {
 }
 
 /**
- * CashFlow!D9:N18 -- one tenant's revenue in year t (t >= 1):
+ * CashFlow!D9:N18 -- one tenant's revenue in year t (t >= 1), with E = lease
+ * end (99999 if none) and st = effective start:
  *
- *   H * P * (1+Q)^(t-1) * ( MAX(0, MIN(12t, end) - MAX(12(t-1), R))
- *                         + L * MAX(0, 12t - MAX(12(t-1), end, R)) ) / 12
+ *   inlease = MAX(0, MIN(12t, E) - MAX(12(t-1), st))
+ *   free0   = MAX(0, MIN(12t, st + freeRentMonths, E) - MAX(12(t-1), st))
+ *   post    = MAX(0, 12t - MAX(12(t-1), E, st))
+ *   free1   = MAX(0, MIN(12t, E + freeRentOnRenewalMonths) - MAX(12(t-1), E, st))
+ *   revenue = H * P * (1+Q)^(t-1) * ((inlease - free0) + L * (post - free1)) / 12
  *
- * Months in lease plus retained months after the lease end, counted from
- * closing. Growth compounds from year 1 even for a tenant that starts later.
+ * Months in lease (less free months from the start) plus retained months
+ * after the lease end (less free months on renewal), counted from closing.
+ * Free rent never extends past the period it belongs to, so free rent longer
+ * than the lease only costs the in-lease months. Growth compounds from year 1
+ * even for a tenant that starts later; free months don't change growth or
+ * retention. With both free-rent fields at 0 this is the original workbook
+ * formula.
  */
 export function tenantRevenue(
   t: Tenant,
@@ -104,9 +113,14 @@ export function tenantRevenue(
   const L = t.retention ?? 0; // a blank cell multiplies as 0
   const yearStart = 12 * (year - 1);
   const yearEnd = 12 * year;
-  const leaseMonths = Math.max(0, Math.min(yearEnd, end) - Math.max(yearStart, R));
-  const retainedMonths = Math.max(0, yearEnd - Math.max(yearStart, end, R));
-  return (H * P * (1 + Q) ** (year - 1) * (leaseMonths + L * retainedMonths)) / 12;
+  const free = t.freeRentMonths ?? 0;
+  const freeRenewal = t.freeRentOnRenewalMonths ?? 0;
+  const inLease = Math.max(0, Math.min(yearEnd, end) - Math.max(yearStart, R));
+  const freeAtStart = Math.max(0, Math.min(yearEnd, R + free, end) - Math.max(yearStart, R));
+  const post = Math.max(0, yearEnd - Math.max(yearStart, end, R));
+  const freeOnRenewal = Math.max(0, Math.min(yearEnd, end + freeRenewal) - Math.max(yearStart, end, R));
+  const months = inLease - freeAtStart + L * (post - freeOnRenewal);
+  return (H * P * (1 + Q) ** (year - 1) * months) / 12;
 }
 
 // --- Capex ------------------------------------------------------------------
@@ -218,6 +232,14 @@ function validate(inputs: UwInputs): void {
   if (!Number.isInteger(IOYrs) || IOYrs < 0) throw new Error(`IOYrs must be a whole number >= 0 (got ${IOYrs})`);
   if (!Number.isInteger(AmortYrs) || AmortYrs < 1) throw new Error(`AmortYrs must be a whole number >= 1 (got ${AmortYrs})`);
   if (!(inputs.LoanRate >= 0)) throw new Error(`LoanRate must be 0 or above (got ${inputs.LoanRate})`);
+  for (const t of inputs.rentRoll) {
+    for (const [field, v] of [["freeRentMonths", t.freeRentMonths], ["freeRentOnRenewalMonths", t.freeRentOnRenewalMonths]] as const) {
+      if (v === undefined) continue;
+      if (!Number.isInteger(v) || v < 0 || v > 60) {
+        throw new Error(`${t.name}: ${field} must be a whole number of months from 0 to 60 (got ${v})`);
+      }
+    }
+  }
   const { ExitCap } = activeLevers(inputs);
   if (!(ExitCap > 0)) throw new Error(`ExitCap must be above 0 (got ${ExitCap})`);
 }

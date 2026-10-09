@@ -3,7 +3,7 @@
 // The default inputs of fixtures/Rendon_Rd_IOS_DCF.xlsx (3879 Rendon Rd), as
 // saved. This is the test input for the golden tests; each value cites its cell.
 
-import type { UwInputs } from "../types";
+import type { Tenant, UwInputs } from "../types";
 
 export const RENDON_FIXTURE_PATH = "fixtures/Rendon_Rd_IOS_DCF.xlsx";
 
@@ -72,8 +72,25 @@ export const rendon: UwInputs = {
   ],
 };
 
+const REINDEER = 1;
 const LARGE_TENANT = 9;
 const LIGHTING = 3;
+
+/**
+ * Base with per-tenant edits. `baseInclude` replaces only the Base include %;
+ * Upside and Downside keep the fixture's values.
+ */
+function withTenants(edits: Record<number, Partial<Omit<Tenant, "include">> & { baseInclude?: number }>): UwInputs {
+  return {
+    ...rendon,
+    rentRoll: rendon.rentRoll.map((t, i) => {
+      const e = edits[i];
+      if (!e) return t;
+      const { baseInclude, ...rest } = e;
+      return { ...t, ...rest, ...(baseInclude !== undefined ? { include: [baseInclude, t.include[1], t.include[2]] as const } : {}) };
+    }),
+  };
+}
 
 /** The golden-test cases: each is the fixture with one documented edit. */
 export const RENDON_CASES: Record<string, UwInputs> = {
@@ -96,6 +113,14 @@ export const RENDON_CASES: Record<string, UwInputs> = {
     ...rendon,
     capex: rendon.capex.map((c, i) => (i === LIGHTING ? { ...c, year: 9 } : c)),
   },
+  // Phase 3d. Large tenant at 100% with 3 months free from its start.
+  FreeNew: withTenants({ [LARGE_TENANT]: { baseInclude: 1, freeRentMonths: 3 } }),
+  // Reindeer gets 2 months free on renewal (weighted by its 90% retention).
+  FreeRenew: withTenants({ [REINDEER]: { freeRentOnRenewalMonths: 2 } }),
+  FreeBoth: withTenants({
+    [LARGE_TENANT]: { baseInclude: 1, freeRentMonths: 3, freeRentOnRenewalMonths: 2 },
+    [REINDEER]: { freeRentMonths: 1, freeRentOnRenewalMonths: 2 },
+  }),
 };
 
 /** CashFlow rows checked year by year against the workbook's cached Base values. */
