@@ -221,3 +221,60 @@ describe("markToMarket", () => {
     expect(r.note).toMatch(/insufficient/);
   });
 });
+
+// --- Phase 2b ---------------------------------------------------------------
+
+describe("no cross-size fallback for price", () => {
+  const salesUsable = (acres: number[]) =>
+    selectComps(salesFrom(acres.map((a, i) => sale(900_000 + i * 50_000, a))), "sale", { market: "Testville", asOf: AS_OF }).usable;
+
+  it("sale price is insufficient when the subject is more than 2x the largest comp, with no numbers", () => {
+    const s = valueStats(salesUsable([2, 4, 6, 8, 17]), "sale", 37);
+    expect(s.status).toBe("insufficient");
+    if (s.status !== "insufficient") return;
+    expect(s.reason).toBe("size");
+    expect(s.largestCompAcres).toBe(17);
+    expect(s.message).toMatch(/insufficient comps for this size/);
+    expect(s.warnings.some((w) => /17 ac/.test(w))).toBe(true);
+    expect(s).not.toHaveProperty("withExtreme");
+  });
+
+  it("sale price still works at exactly 2x the largest comp", () => {
+    const s = valueStats(salesUsable([2, 4, 6, 8, 17]), "sale", 34);
+    expect(s.status).toBe("ok");
+  });
+
+  it("market-count shortfalls report reason 'market'", () => {
+    const s = valueStats(salesUsable([2, 4]), "sale", 3);
+    expect(s.status === "insufficient" && s.reason).toBe("market");
+  });
+
+  it("rent keeps the whole-market numbers but labels them small-lot reference only", () => {
+    const rows = [6_000, 7_000, 8_000, 9_000, 10_000].map((r, i) => lease(r, 2 + i));
+    const s = valueStats(usableLeases(rows), "lease", 37);
+    expect(s.status).toBe("ok");
+    if (s.status !== "ok") return;
+    expect(s.reference).toBe("small-lot reference only");
+    expect(s.withExtreme.base).toBe(8_000);
+    expect(s.warnings.some((w) => /Small-lot reference only/.test(w))).toBe(true);
+  });
+
+  it("rent within 2x of the largest comp carries no label", () => {
+    const rows = [6_000, 7_000, 8_000, 9_000, 10_000].map((r, i) => lease(r, 2 + i));
+    const s = valueStats(usableLeases(rows), "lease", 12);
+    expect(s.status === "ok" && s.reference).toBeUndefined();
+  });
+
+  it("markToMarket still uses each tenant's own band, unlabelled", () => {
+    const comps = usableLeases([6_000, 7_000, 8_000, 9_000, 10_000].map((r) => lease(r, 2)));
+    const bands = rentBands(comps, "Testville");
+    const ok = bands.byBand["<3"];
+    expect(ok.status === "ok" && ok.reference).toBeUndefined();
+    const [r] = markToMarket(
+      [{ name: "T", status: "In-place", acres: 1, rent: 8_000, rentPeriod: "Monthly", bump: null, startMonth: 0, leaseEndMonth: null, retention: null, include: [1, 1, 1] }],
+      bands
+    );
+    expect(r.basis).toBe("band");
+    expect(r.position).toBe("within");
+  });
+});

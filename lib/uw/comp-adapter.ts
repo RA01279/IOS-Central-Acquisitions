@@ -20,15 +20,15 @@
 export const SQFT_PER_ACRE = 43560;
 /** "Dates within about 400 days" for duplicate detection. */
 export const DUPLICATE_WINDOW_DAYS = 400;
-/** review_extreme: more than 5x, or less than 1/5, of the market-band median. */
-export const EXTREME_RATIO = 5;
+/** review_extreme: more than 3x, or less than 1/3, of the market-band median (was 5x). */
+export const EXTREME_RATIO = 3;
 
 export type CompType = "lease" | "sale";
 export type AcreageBand = "<3" | "3-10" | "10-25" | "25+";
 export const BANDS: readonly AcreageBand[] = ["<3", "3-10", "10-25", "25+"];
 
 export type NnnStatus = "stated" | "stated_nn" | "assumed" | "adjusted" | "not_convertible";
-export type CompFlag = "suspect_duplicate" | "not_convertible" | "review_extreme";
+export type CompFlag = "suspect_duplicate" | "not_convertible" | "review_extreme" | "market_conflict";
 
 /** The `comps` columns the adapter reads. Numerics may arrive as strings from PostgREST. */
 export interface CompRow {
@@ -73,6 +73,8 @@ interface CompBase {
   flags: CompFlag[];
   /** Why each flag was raised, keyed by flag. */
   reasons: Partial<Record<CompFlag, string>>;
+  /** valuePerAcre / median of its market and band; set when that median exists. */
+  ratioToBandMedian?: number;
 }
 
 export interface LeaseComp extends CompBase {
@@ -277,38 +279,92 @@ function addFlag(c: NormalizedComp, flag: CompFlag, reason: string) {
   c.reasons[flag] = reason;
 }
 
+/** Rent or price within 1% counts as the same amount ($4,839 vs $4,838.71). */
+export const DUPLICATE_AMOUNT_TOLERANCE = 0.01;
+
+export function sameAmount(a: number, b: number): boolean {
+  const hi = Math.max(Math.abs(a), Math.abs(b));
+  return hi === 0 || Math.abs(a - b) <= DUPLICATE_AMOUNT_TOLERANCE * hi;
+}
+
 /**
  * suspect_duplicate: same comp type, normalized address, project and suite,
- * the same quoted rent (and basis) or sale price, and dates within ~400 days.
- * The latest is kept; each earlier one is flagged with the id it duplicates.
+ * rent (same basis) or sale price within 1%, and dates within ~400 days.
+ * The LATER date is kept; each earlier one is flagged with the id it duplicates.
  * Project and suite are in the key because a business park selling building
  * by building, or a rent roll's suites, are genuinely separate comps.
+ *
+ * NEEDS A HUMAN CHECK: nearly all lease duplicates come from the
+ * "TX IOS Lease Comps (ver.2.0).xlsx" import, in pairs dated the 1st of a
+ * month and the 22nd-24th of the same month (23 days apart) or of the same
+ * month a year later (~388 days apart). That looks like a date-parsing error
+ * in that import, not a re-lease. Keeping the later date is the agreed rule,
+ * but for the ~388-day pairs it may make a comp look a year more recent than
+ * it is. Resolve before the reviewed exclusion migration.
  */
 export function flagDuplicates(comps: NormalizedComp[], rows: ReadonlyMap<string, CompRow>): void {
-  const groups = new Map<string, NormalizedComp[]>();
+  const groups = new Map<string, Array<{ c: NormalizedComp; amount: number }>>();
   for (const c of comps) {
     const row = rows.get(c.id);
-    if (!row || !c.date) continue;
-    const amount = c.compType === "lease" ? `${num(row.rent)}|${row.rent_basis ?? ""}` : `${num(row.sale_price)}`;
+    const amount = row ? num(c.compType === "lease" ? row.rent : row.sale_price) : null;
+    if (!row || !c.date || amount === null) continue;
     const key = [
       c.compType,
       normalizeAddress(c.address),
       (row.project_name ?? "").trim().toLowerCase(),
       (row.suite ?? "").trim().toLowerCase(),
-      amount,
+      c.compType === "lease" ? row.rent_basis ?? "" : "",
     ].join("|");
     const list = groups.get(key) ?? [];
-    list.push(c);
+    list.push({ c, amount });
     groups.set(key, list);
   }
   for (const list of groups.values()) {
     if (list.length < 2) continue;
-    // Latest first; anything with a later twin inside the window is a duplicate of it.
-    list.sort((a, b) => b.date!.localeCompare(a.date!) || a.id.localeCompare(b.id));
+    // Latest first; anything with a later twin (same amount within 1%, dated
+    // inside the window) is a duplicate of it.
+    list.sort((a, b) => b.c.date!.localeCompare(a.c.date!) || a.c.id.localeCompare(b.c.id));
     for (let i = 1; i < list.length; i++) {
-      const later = list.slice(0, i).find((k) => !k.flags.includes("suspect_duplicate") && daysBetween(k.date!, list[i].date!) <= DUPLICATE_WINDOW_DAYS);
-      if (later) addFlag(list[i], "suspect_duplicate", `same address and ${list[i].compType === "lease" ? "rent" : "price"} as ${later.id} (${later.date}), ${Math.round(daysBetween(later.date!, list[i].date!))} days apart`);
+      const cur = list[i];
+      const later = list
+        .slice(0, i)
+        .find(
+          (k) =>
+            !k.c.flags.includes("suspect_duplicate") &&
+            sameAmount(k.amount, cur.amount) &&
+            daysBetween(k.c.date!, cur.c.date!) <= DUPLICATE_WINDOW_DAYS
+        );
+      if (later) {
+        const days = Math.round(daysBetween(later.c.date!, cur.c.date!));
+        addFlag(
+          cur.c,
+          "suspect_duplicate",
+          `same address and ${cur.c.compType === "lease" ? "rent" : "price"}${later.amount === cur.amount ? "" : " (within 1%)"} as ${later.c.id} (${later.c.date}), ${days} days apart`
+        );
+      }
     }
+  }
+}
+
+/**
+ * market_conflict: the same normalized address recorded under two or more
+ * markets (e.g. 2950 Roy Orr Blvd as both Dallas and Fort Worth). Every comp
+ * at that address is flagged; none is excluded. A blank market is unknown,
+ * not a conflict.
+ */
+export function flagMarketConflicts(comps: NormalizedComp[]): void {
+  const byAddress = new Map<string, NormalizedComp[]>();
+  for (const c of comps) {
+    const key = normalizeAddress(c.address);
+    const list = byAddress.get(key) ?? [];
+    list.push(c);
+    byAddress.set(key, list);
+  }
+  for (const list of byAddress.values()) {
+    const markets = [...new Set(list.map((c) => c.market?.trim()).filter((m): m is string => !!m))];
+    const distinct = new Set(markets.map((m) => m.toLowerCase()));
+    if (distinct.size < 2) continue;
+    for (const c of list) addFlag(c, "market_conflict", `address recorded in ${markets.join(" and ")}`);
   }
 }
 
@@ -320,9 +376,10 @@ export function median(values: readonly number[]): number | null {
 }
 
 /**
- * review_extreme: value per acre more than 5x, or under 1/5, of the median of
+ * review_extreme: value per acre more than 3x, or under 1/3, of the median of
  * its market and acreage band (same comp type, duplicates and unconvertible
- * comps left out of the median). Kept in stats, but counted and listed.
+ * comps left out of the median). Kept in stats, but counted and listed. The
+ * ratio is recorded on the comp so a report can show how far out it is.
  */
 export function flagExtremes(comps: NormalizedComp[]): void {
   const groups = new Map<string, NormalizedComp[]>();
@@ -338,6 +395,7 @@ export function flagExtremes(comps: NormalizedComp[]): void {
     if (m === null || m <= 0) continue;
     for (const c of list) {
       const ratio = c.valuePerAcre! / m;
+      c.ratioToBandMedian = ratio;
       if (ratio > EXTREME_RATIO || ratio < 1 / EXTREME_RATIO) {
         addFlag(c, "review_extreme", `${ratio.toFixed(2)}x the ${c.market} ${c.band} ac median (${Math.round(m).toLocaleString("en-US")})`);
       }
@@ -349,6 +407,7 @@ export function flagExtremes(comps: NormalizedComp[]): void {
 export function adaptComps(rows: readonly CompRow[]): NormalizedComp[] {
   const comps: NormalizedComp[] = rows.map((r) => (r.comp_type === "sale" ? normalizeSale(r) : normalizeLease(r)));
   flagDuplicates(comps, new Map(rows.map((r) => [r.id, r])));
+  flagMarketConflicts(comps);
   flagExtremes(comps);
   return comps;
 }

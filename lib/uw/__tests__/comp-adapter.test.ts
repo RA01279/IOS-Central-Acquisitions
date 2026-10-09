@@ -239,3 +239,79 @@ describe("bands and tiers", () => {
     expect(tierOf(normalizeLease(lease({ status: "draft" })))).toBeNull();
   });
 });
+
+// --- Phase 2b ---------------------------------------------------------------
+
+describe("fuzzy duplicate amounts (within 1%)", () => {
+  it("treats $4,839 and $4,838.71 as the same rent", () => {
+    const out = adaptComps([
+      lease({ id: "f-old", address: "2751 Aaron St", rent: 4_838.71, rent_basis: "total_monthly", date_commenced: "2023-10-01" }),
+      lease({ id: "f-new", address: "2751 Aaron St", rent: 4_839, rent_basis: "total_monthly", date_commenced: "2023-11-01" }),
+    ]);
+    const old = out.find((c) => c.id === "f-old")!;
+    expect(old.flags).toContain("suspect_duplicate");
+    expect(old.reasons.suspect_duplicate).toMatch(/within 1%/);
+    expect(out.find((c) => c.id === "f-new")!.flags).not.toContain("suspect_duplicate");
+  });
+
+  it("matches at 1% and not beyond", () => {
+    const pair = (a: number, b: number) =>
+      adaptComps([
+        sale({ id: "a", address: "7 P St", sale_price: a, closed_on: "2024-01-01" }),
+        sale({ id: "b", address: "7 P St", sale_price: b, closed_on: "2024-06-01" }),
+      ]).some((c) => c.flags.includes("suspect_duplicate"));
+    expect(pair(1_000_000, 1_010_000)).toBe(true); // $10,000 apart; 1% of the larger is $10,100
+    expect(pair(990_000, 1_000_000)).toBe(true);
+    expect(pair(1_000_000, 1_015_000)).toBe(false);
+  });
+
+  it("still requires the same rent basis", () => {
+    const out = adaptComps([
+      lease({ id: "b1", address: "8 Q St", rent: 8_000, rent_basis: "per_acre_monthly", date_commenced: "2024-01-01" }),
+      lease({ id: "b2", address: "8 Q St", rent: 8_000, rent_basis: "total_monthly", date_commenced: "2024-02-01" }),
+    ]);
+    expect(out.every((c) => !c.flags.includes("suspect_duplicate"))).toBe(true);
+  });
+});
+
+describe("market_conflict", () => {
+  it("flags every comp at an address recorded in two markets, without excluding any", () => {
+    const out = adaptComps([
+      lease({ id: "m1", address: "2950 Roy Orr Blvd", market: "Fort Worth", rent: 8_790, date_commenced: "2022-06-01" }),
+      lease({ id: "m2", address: "2950 Roy Orr Blvd.", market: "Dallas", rent: 8_790, date_commenced: "2024-01-01" }),
+      lease({ id: "m3", address: "1 Elsewhere Rd", market: "Dallas" }),
+    ]);
+    expect(out.find((c) => c.id === "m1")!.flags).toContain("market_conflict");
+    expect(out.find((c) => c.id === "m2")!.flags).toContain("market_conflict");
+    expect(out.find((c) => c.id === "m2")!.reasons.market_conflict).toMatch(/Fort Worth and Dallas/);
+    expect(out.find((c) => c.id === "m3")!.flags).not.toContain("market_conflict");
+    // Not a duplicate (579 days apart) and not excluded: still has a value.
+    expect(out.every((c) => !c.flags.includes("suspect_duplicate") && c.valuePerAcre !== null)).toBe(true);
+  });
+
+  it("ignores case and a blank market", () => {
+    const out = adaptComps([
+      lease({ id: "c1", address: "5 Same St", market: "Dallas" }),
+      lease({ id: "c2", address: "5 Same St", market: "dallas ", rent: 9_999 }),
+      lease({ id: "c3", address: "5 Same St", market: null, rent: 7_777 }),
+    ]);
+    expect(out.every((c) => !c.flags.includes("market_conflict"))).toBe(true);
+  });
+});
+
+describe("review_extreme at 3x", () => {
+  const band = (rents: number[]) =>
+    adaptComps(rents.map((rent, i) => lease({ id: `x${i}`, rent, address: `${i} Three St` })));
+
+  it("flags above 3x and below 1/3 of the market-band median", () => {
+    const out = band([8_000, 8_000, 8_000, 8_000, 28_000, 2_400]);
+    const flagged = out.filter((c) => c.flags.includes("review_extreme")).map((c) => c.id).sort();
+    expect(flagged).toEqual(["x4", "x5"]); // 3.5x and 0.3x
+    expect(out.find((c) => c.id === "x4")!.ratioToBandMedian).toBeCloseTo(3.5, 12);
+  });
+
+  it("does not flag at or inside 3x", () => {
+    const out = band([8_000, 8_000, 8_000, 8_000, 24_000, 2_700]); // 3.0x and 0.3375x
+    expect(out.every((c) => !c.flags.includes("review_extreme"))).toBe(true);
+  });
+});

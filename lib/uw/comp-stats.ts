@@ -24,6 +24,8 @@ import {
 import type { Tenant } from "./types";
 
 export const MIN_COMPS = 5;
+/** A subject more than this multiple of the largest comp acreage is out of the pool's size range. */
+export const OVERSIZE_FACTOR = 2;
 
 export interface SelectOptions {
   market: string;
@@ -118,6 +120,11 @@ const scenarios = (s: Summary): Scenarios => ({ downside: s.p25, base: s.median,
 export interface ValueStatsOk {
   status: "ok";
   compType: CompType;
+  /**
+   * Set on rent stats when the subject is more than 2x the largest comp in the
+   * pool: the numbers describe smaller lots and are not a rent for the subject.
+   */
+  reference?: "small-lot reference only";
   /** "band" when the subject's band had >= 5 comps, else "market" (fallback). */
   basis: "band" | "market";
   subjectBand: AcreageBand | null;
@@ -136,8 +143,12 @@ export interface ValueStatsOk {
 export interface ValueStatsInsufficient {
   status: "insufficient";
   compType: CompType;
-  /** Usable comps in the whole market. */
+  /** "market": fewer than 5 usable comps. "size": sale subject over 2x the largest comp. */
+  reason: "market" | "size";
+  /** Usable comps in the market (reason "market") or in the pool (reason "size"). */
   n: number;
+  /** Reason "size": the largest comp acreage in the pool. */
+  largestCompAcres?: number;
   message: string;
   warnings: string[];
 }
@@ -150,6 +161,10 @@ const fmtAc = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 
  * Banded stats for one comp type. Uses the subject's acreage band when it has
  * at least 5 usable comps; otherwise the whole market, with a warning; and
  * "insufficient comps" when the market itself has fewer than 5.
+ *
+ * Size: when the subject is more than 2x the largest comp in the pool, sale
+ * price returns "insufficient comps for this size" with no numbers, and rent
+ * is returned but labelled "small-lot reference only".
  */
 export function valueStats(
   usable: readonly NormalizedComp[],
@@ -171,6 +186,7 @@ function statsForBand(
     return {
       status: "insufficient",
       compType,
+      reason: "market",
       n: usable.length,
       message: `insufficient comps: ${usable.length} usable ${label} comp${usable.length === 1 ? "" : "s"} in the market (need ${MIN_COMPS})`,
       warnings,
@@ -201,6 +217,28 @@ function statsForBand(
     );
   }
 
+  // Much bigger than anything in the pool. Price per acre falls with size, so
+  // small-lot sales would overstate the subject's value: no price numbers at
+  // all. Rent stats are still returned, labelled as a small-lot reference.
+  const oversized = subjectAcres !== null && acresRange !== null && subjectAcres > OVERSIZE_FACTOR * acresRange.max;
+  let reference: ValueStatsOk["reference"];
+  if (oversized) {
+    const vs = `subject ${fmtAc(subjectAcres!)} ac is more than ${OVERSIZE_FACTOR}x the largest ${label} comp in the pool (${fmtAc(acresRange!.max)} ac)`;
+    if (compType === "sale") {
+      return {
+        status: "insufficient",
+        compType,
+        reason: "size",
+        n: pool.length,
+        largestCompAcres: acresRange!.max,
+        message: `insufficient comps for this size: ${vs}`,
+        warnings: [...warnings, `No price per acre: the largest sale comp in the pool is ${fmtAc(acresRange!.max)} ac.`],
+      };
+    }
+    reference = "small-lot reference only";
+    warnings.push(`Small-lot reference only: ${vs}.`);
+  }
+
   const extreme = pool.filter((c) => c.flags.includes("review_extreme"));
   const withExtreme = summarize(pool);
   const without = pool.filter((c) => !c.flags.includes("review_extreme"));
@@ -220,6 +258,7 @@ function statsForBand(
   return {
     status: "ok",
     compType,
+    ...(reference ? { reference } : {}),
     basis,
     subjectBand,
     withExtreme: { ...withExtreme, ...scenarios(withExtreme) },

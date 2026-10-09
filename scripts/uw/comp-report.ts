@@ -61,8 +61,11 @@ function statsBlock(label: string, s: ValueStats) {
   console.log(`\n${label}`);
   if (s.status !== "ok") {
     console.log(`  ${s.message}`);
+    console.log(`  no downside / base / upside`);
+    for (const w of s.warnings) console.log(`  ! ${w}`);
     return;
   }
+  if (s.reference) console.log(`  *** ${s.reference.toUpperCase()} ***`);
   console.log(`  basis: ${s.basis === "band" ? `${s.subjectBand} ac band` : "whole market (fallback)"}; comps' acreage ${s.acresRange ? `${s.acresRange.min.toFixed(1)}-${s.acresRange.max.toFixed(1)} ac` : "—"}`);
   const row = (name: string, x: { n: number; min: number | null; downside: number | null; base: number | null; upside: number | null; max: number | null } | null | undefined) =>
     console.log(
@@ -102,17 +105,26 @@ async function main() {
   h("Flags across the whole repository");
   const flagCount = (type: string, flag: string) => comps.filter((c) => c.compType === type && c.flags.includes(flag as never)).length;
   for (const type of ["lease", "sale"]) {
-    console.log(`${pad(type, 6)} suspect_duplicate ${flagCount(type, "suspect_duplicate")}   not_convertible ${flagCount(type, "not_convertible")}   review_extreme ${flagCount(type, "review_extreme")}`);
+    console.log(`${pad(type, 6)} suspect_duplicate ${flagCount(type, "suspect_duplicate")}   not_convertible ${flagCount(type, "not_convertible")}   review_extreme ${flagCount(type, "review_extreme")}   market_conflict ${flagCount(type, "market_conflict")}`);
   }
   const nnn = leases.reduce<Record<string, number>>((m, c) => ((m[c.nnnStatus] = (m[c.nnnStatus] ?? 0) + 1), m), {});
   console.log(`lease nnnStatus: ${Object.entries(nnn).map(([k, v]) => `${k} ${v}`).join(", ")}`);
-  console.log(`\nsuspect duplicates (flagged row -> kept row):`);
+  console.log(`\nsuspect duplicates (flagged row -> kept row; the LATER date is kept):`);
+  console.log(`  NEEDS A HUMAN CHECK: the ~388-day pairs from "TX IOS Lease Comps (ver.2.0).xlsx" look like a`);
+  console.log(`  date-parsing error in that import (1st of a month vs the 22nd-24th a year later). Keeping the`);
+  console.log(`  later date may make those comps look a year more recent than they are.`);
   for (const c of comps.filter((x) => x.flags.includes("suspect_duplicate"))) {
     console.log(`  ${c.id}  ${pad(c.compType, 5)} ${pad(c.market ?? "—", 12)} ${pad(c.address, 32)} ${c.date}  ${c.reasons.suspect_duplicate}`);
   }
-  console.log(`\nreview_extreme:`);
+  // At the old 5x threshold only ratios beyond 5 (or under 1/5) were flagged.
+  const newAt3x = (c: NormalizedComp) => c.ratioToBandMedian !== undefined && c.ratioToBandMedian <= 5 && c.ratioToBandMedian >= 1 / 5;
+  console.log(`\nreview_extreme (3x threshold; NEW = would not have been flagged at the old 5x):`);
   for (const c of comps.filter((x) => x.flags.includes("review_extreme"))) {
-    console.log(`  ${c.id}  ${pad(c.compType, 5)} ${pad(c.market ?? "—", 12)} ${pad(c.address, 32)} ${lpad(usd(c.valuePerAcre), 12)}/ac  ${c.reasons.review_extreme}`);
+    console.log(`  ${newAt3x(c) ? "NEW " : "    "}${c.id}  ${pad(c.compType, 5)} ${pad(c.market ?? "—", 12)} ${pad(c.address, 32)} ${lpad(usd(c.valuePerAcre), 12)}/ac  ${c.reasons.review_extreme}`);
+  }
+  console.log(`\nmarket_conflict (same address, different markets; not excluded):`);
+  for (const c of comps.filter((x) => x.flags.includes("market_conflict")).sort((a, b) => a.address.localeCompare(b.address))) {
+    console.log(`  ${c.id}  ${pad(c.compType, 5)} ${pad(c.market ?? "—", 12)} ${pad(c.address, 32)} ${c.date}  ${c.reasons.market_conflict}`);
   }
   const ncReasons = comps
     .filter((c) => c.flags.includes("not_convertible"))
