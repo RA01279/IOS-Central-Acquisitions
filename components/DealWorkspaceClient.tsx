@@ -11,10 +11,15 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronLeft, Share, LayoutGrid, Map as MapIcon, NotebookPen, Presentation } from "lucide-react";
 import { pushRecent } from "@/lib/recent";
 
+// The Underwriting tab (Hopper engine, sample inputs) is behind a flag until it
+// runs on real deal inputs. The route 404s without it too.
+const UW_ENGINE_TAB = process.env.NEXT_PUBLIC_UW_ENGINE_TAB === "1";
+
 export const DEAL_TABS = [
   { seg: "", label: "Summary", short: "Summary", icon: LayoutGrid },
   { seg: "demand-map", label: "Demand Map", short: "Map", icon: MapIcon },
   { seg: "financials", label: "Financials", short: "Financials", icon: null },
+  ...(UW_ENGINE_TAB ? [{ seg: "underwriting", label: "Underwriting", short: "UW", icon: null }] : []),
   { seg: "notes", label: "Notes & History", short: "Notes", icon: NotebookPen },
   { seg: "ic-deck", label: "IC Deck", short: "IC Deck", icon: Presentation },
 ] as const;
