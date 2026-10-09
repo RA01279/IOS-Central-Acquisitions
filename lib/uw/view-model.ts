@@ -99,7 +99,7 @@ export function buildUwView(inputs: UwInputs): UwView {
     { label: "Effective gross revenue", values: span(cf.egr), format: "usd" },
     { label: "Operating expenses", values: span(cf.totalOpex), format: "usd" },
     { label: "NOI", values: span(cf.noi), format: "usd", emphasis: true },
-    { label: "Capex & reserves", values: span(cf.capexInHold), format: "usd" },
+    { label: "Capex, reserves & leasing", values: span(cf.capexInHold), format: "usd" },
     { label: "Purchase + closing", values: years.map((t) => (t === 0 ? cf.purchase[0] : null)), format: "usd" },
     { label: "Net sale proceeds", values: span(cf.netSale), format: "usd" },
     { label: "Unlevered cash flow", values: span(cf.unleveredCF, 0), format: "usd", emphasis: true },

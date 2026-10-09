@@ -20,7 +20,15 @@ export interface ScenarioLevers {
   CapexOverrun: ByScenario<number>;
   /** Months added to the start of every Pipeline tenant. */
   LeaseDelay: ByScenario<number>;
+  /**
+   * Probability a tenant renews at lease end (RollMethod 2). Defaults to
+   * DEFAULT_RENEW_PROB ([0.7, 0.8, 0.5]) when omitted.
+   */
+  RenewProb?: ByScenario<number>;
 }
+
+/** Base / Upside / Downside renewal probability when the lever is not given. */
+export const DEFAULT_RENEW_PROB: ByScenario<number> = [0.7, 0.8, 0.5];
 
 /** One RentRoll row (RentRoll!A6:O15). */
 export interface Tenant {
@@ -48,6 +56,24 @@ export interface Tenant {
    * weighted by retention (whole number 0-60). Default 0.
    */
   freeRentOnRenewalMonths?: number;
+
+  // Rollover tab (rows 6-15, same order as RentRoll). Used only when RollMethod = 2.
+  /** Renewal probability for this tenant; null/undefined = the RenewProb lever. */
+  renewalProbOverride?: number | null;
+  /** Rent on renewal, in the tenant's rent period; null/undefined = current rent. */
+  renewalRent?: number | null;
+  /** Rent from a new tenant, in the tenant's rent period; null/undefined = current rent. */
+  newDealRent?: number | null;
+  /** Months vacant before a new tenant starts (whole number 0-60). */
+  newDealDowntimeMonths?: number;
+  /** Free months for a new tenant after the downtime (whole number 0-60). */
+  newDealFreeRentMonths?: number;
+  /** Flat dollars at rollover, weighted by renewal probability. Not grown. */
+  renewalTI?: number;
+  renewalLC?: number;
+  newDealTI?: number;
+  newDealLC?: number;
+
   /** Cols M:O. */
   include: ByScenario<number>;
 }
@@ -112,6 +138,13 @@ export interface UwInputs {
   IOYrs: number;
   LoanFee: number;
 
+  /**
+   * Inputs "Rollover method". 1 = retention % (the original model; default).
+   * 2 = renewal probability, with separate renewal and new-deal rent, downtime,
+   * free rent, TI and leasing commissions.
+   */
+  RollMethod?: 1 | 2;
+
   rentRoll: Tenant[];
   capex: CapexItem[];
 }
@@ -151,6 +184,8 @@ export interface CashFlowTable {
   /** Rows 35-36 (negative). */
   capex: YearSeries;
   reserves: YearSeries;
+  /** Row 37 (negative): TI and leasing commissions at rollover. Zero unless RollMethod = 2. */
+  leasingCosts: YearSeries;
   /** Rows 39-46. Row 39 lives in year 0 only. */
   purchase: YearSeries;
   noiInHold: YearSeries;
@@ -220,7 +255,7 @@ export interface SensitivityGrid {
 export interface UwResult {
   scenario: ScenarioName;
   /** Inputs!E5:E9 -- the levers for the active scenario. */
-  active: { RentGrowth: number; Vacancy: number; ExitCap: number; CapexOverrun: number; LeaseDelay: number };
+  active: { RentGrowth: number; Vacancy: number; ExitCap: number; CapexOverrun: number; LeaseDelay: number; RenewProb: number };
   cashFlow: CashFlowTable;
   returns: Returns;
   sensitivity: SensitivityGrid;

@@ -16,6 +16,7 @@
 
 import { irr } from "./irr";
 import {
+  DEFAULT_RENEW_PROB,
   SCENARIOS,
   type CapexItem,
   type CashFlowTable,
@@ -52,7 +53,24 @@ export function activeLevers(inputs: UwInputs) {
     ExitCap: l.ExitCap[i],
     CapexOverrun: l.CapexOverrun[i],
     LeaseDelay: l.LeaseDelay[i],
+    RenewProb: (l.RenewProb ?? DEFAULT_RENEW_PROB)[i],
   };
+}
+
+/** Rollover method, defaulting to 1 (retention %, the original model). */
+export function rollMethod(inputs: Pick<UwInputs, "RollMethod">): 1 | 2 {
+  return inputs.RollMethod ?? 1;
+}
+
+/** The tenant's renewal probability: its override, else the active RenewProb lever. */
+export function renewalProb(t: Tenant, RenewProb: number): number {
+  return t.renewalProbOverride ?? RenewProb;
+}
+
+/** A Rollover-tab rent annualised like RentRoll!H; blank = the tenant's current rent. */
+function annualized(t: Tenant, amount: number | null | undefined): number {
+  if (amount === null || amount === undefined) return annualRent(t);
+  return t.rentPeriod === "Annual" ? amount : amount * 12;
 }
 
 // --- RentRoll ---------------------------------------------------------------
@@ -98,11 +116,26 @@ export function effectiveStart(t: Tenant, LeaseDelay: number): number {
  * even for a tenant that starts later; free months don't change growth or
  * retention. With both free-rent fields at 0 this is the original workbook
  * formula.
+ *
+ * RollMethod 2 replaces "retention x current rent" after the lease end with a
+ * probability-weighted mix: p x renewal rent (less renewal free rent) plus
+ * (1 - p) x new-deal rent, less the one-time downtime and new-deal free rent:
+ *
+ *   freeN   = MAX(0, MIN(12t, E + downtime + newFree) - MAX(12(t-1), E, st))
+ *   revenue = P * (1+Q)^(t-1) * (H*(inlease - free0) + p*Rr*(post - free1)
+ *                                + (1-p)*Rn*(post - freeN)) / 12
  */
 export function tenantRevenue(
   t: Tenant,
   year: number,
-  ctx: { scenario: ScenarioName; RentGrowth: number; LeaseDelay: number; growthShift?: number }
+  ctx: {
+    scenario: ScenarioName;
+    RentGrowth: number;
+    LeaseDelay: number;
+    growthShift?: number;
+    RollMethod?: 1 | 2;
+    RenewProb?: number;
+  }
 ): number {
   if (year < 1) return 0;
   const H = annualRent(t);
@@ -119,8 +152,18 @@ export function tenantRevenue(
   const freeAtStart = Math.max(0, Math.min(yearEnd, R + free, end) - Math.max(yearStart, R));
   const post = Math.max(0, yearEnd - Math.max(yearStart, end, R));
   const freeOnRenewal = Math.max(0, Math.min(yearEnd, end + freeRenewal) - Math.max(yearStart, end, R));
-  const months = inLease - freeAtStart + L * (post - freeOnRenewal);
-  return (H * P * (1 + Q) ** (year - 1) * months) / 12;
+  const growth = P * (1 + Q) ** (year - 1);
+  if ((ctx.RollMethod ?? 1) === 1) {
+    const months = inLease - freeAtStart + L * (post - freeOnRenewal);
+    return (H * growth * months) / 12;
+  }
+  const p = renewalProb(t, ctx.RenewProb ?? DEFAULT_RENEW_PROB[ScenIdx(ctx.scenario) - 1]);
+  const Rr = annualized(t, t.renewalRent);
+  const Rn = annualized(t, t.newDealRent);
+  const newDealGap = (t.newDealDowntimeMonths ?? 0) + (t.newDealFreeRentMonths ?? 0);
+  const freeNew = Math.max(0, Math.min(yearEnd, end + newDealGap) - Math.max(yearStart, end, R));
+  const dollarMonths = H * (inLease - freeAtStart) + p * Rr * (post - freeOnRenewal) + (1 - p) * Rn * (post - freeNew);
+  return (growth * dollarMonths) / 12;
 }
 
 // --- Capex ------------------------------------------------------------------
@@ -232,12 +275,27 @@ function validate(inputs: UwInputs): void {
   if (!Number.isInteger(IOYrs) || IOYrs < 0) throw new Error(`IOYrs must be a whole number >= 0 (got ${IOYrs})`);
   if (!Number.isInteger(AmortYrs) || AmortYrs < 1) throw new Error(`AmortYrs must be a whole number >= 1 (got ${AmortYrs})`);
   if (!(inputs.LoanRate >= 0)) throw new Error(`LoanRate must be 0 or above (got ${inputs.LoanRate})`);
+  const method = inputs.RollMethod ?? 1;
+  if (method !== 1 && method !== 2) throw new Error(`RollMethod must be 1 or 2 (got ${inputs.RollMethod})`);
+  for (const p of inputs.levers.RenewProb ?? []) {
+    if (!(p >= 0 && p <= 1)) throw new Error(`RenewProb must be between 0 and 1 (got ${p})`);
+  }
   for (const t of inputs.rentRoll) {
-    for (const [field, v] of [["freeRentMonths", t.freeRentMonths], ["freeRentOnRenewalMonths", t.freeRentOnRenewalMonths]] as const) {
+    const months = [
+      ["freeRentMonths", t.freeRentMonths],
+      ["freeRentOnRenewalMonths", t.freeRentOnRenewalMonths],
+      ["newDealDowntimeMonths", t.newDealDowntimeMonths],
+      ["newDealFreeRentMonths", t.newDealFreeRentMonths],
+    ] as const;
+    for (const [field, v] of months) {
       if (v === undefined) continue;
       if (!Number.isInteger(v) || v < 0 || v > 60) {
         throw new Error(`${t.name}: ${field} must be a whole number of months from 0 to 60 (got ${v})`);
       }
+    }
+    const p = t.renewalProbOverride;
+    if (p !== null && p !== undefined && !(p >= 0 && p <= 1)) {
+      throw new Error(`${t.name}: renewalProbOverride must be between 0 and 1 (got ${p})`);
     }
   }
   const { ExitCap } = activeLevers(inputs);
@@ -272,7 +330,15 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
   const exitFlag = YEARS.map((t) => (t === Hold ? 1 : 0));
 
   // Rows 9-21.
-  const ctx = { scenario: inputs.scenario, RentGrowth: lv.RentGrowth, LeaseDelay: lv.LeaseDelay, growthShift: overrides.growthShift ?? 0 };
+  const method = rollMethod(inputs);
+  const ctx = {
+    scenario: inputs.scenario,
+    RentGrowth: lv.RentGrowth,
+    LeaseDelay: lv.LeaseDelay,
+    growthShift: overrides.growthShift ?? 0,
+    RollMethod: method,
+    RenewProb: lv.RenewProb,
+  };
   const tenantRev = inputs.rentRoll.map((tenant) => YEARS.map((t) => tenantRevenue(tenant, t, ctx)));
   const totalRevenue = YEARS.map((t) => sum(tenantRev.map((row) => row[t])));
   const vacancy = totalRevenue.map((r) => -r * lv.Vacancy);
@@ -293,12 +359,28 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
   const capexCosts = inputs.capex.map((item) => ({ year: item.year, cost: capexScenarioCost(item, inputs, lv.CapexOverrun) }));
   const capex = ops((t) => -sum(capexCosts.filter((c) => c.year === t).map((c) => c.cost)));
   const reserves = ops((t) => -ReservePerAcre * Acres * grow(t));
+  // Row 37: TI + LC at rollover, booked in year INT(leaseEnd/12) + 1, weighted
+  // by renewal probability and include %. Flat dollars. RollMethod 2 only.
+  const leasingCosts = zeros();
+  if (method === 2) {
+    for (const tenant of inputs.rentRoll) {
+      if (tenant.leaseEndMonth === null) continue;
+      const year = Math.floor(tenant.leaseEndMonth / 12) + 1;
+      if (year < 1 || year > LAST_YEAR) continue;
+      const p = renewalProb(tenant, lv.RenewProb);
+      const renewal = (tenant.renewalTI ?? 0) + (tenant.renewalLC ?? 0);
+      const newDeal = (tenant.newDealTI ?? 0) + (tenant.newDealLC ?? 0);
+      leasingCosts[year] -= activeIncl(tenant, inputs.scenario) * (p * renewal + (1 - p) * newDeal);
+    }
+  }
 
   // Rows 39-46. Forward NOI for year 11 reads the blank column O, i.e. 0.
   const noiAt = (t: number) => (t <= LAST_YEAR ? noi[t] : 0);
   const purchase = YEARS.map((t) => (t === 0 ? -PurchPrice * (1 + CloseCost) : 0));
   const noiInHold = YEARS.map((t) => noi[t] * inHold[t]);
-  const capexInHold = YEARS.map((t) => (capex[t] + reserves[t]) * inHold[t]);
+  // Capex, reserves and leasing costs, in hold. Feeds unlevered and levered
+  // cash flow, the price solve and the sensitivities.
+  const capexInHold = YEARS.map((t) => (capex[t] + reserves[t] + leasingCosts[t]) * inHold[t]);
   const forwardNoi = ops((t) => noiAt(t + 1));
   const grossExit = ops((t) => (exitFlag[t] * forwardNoi[t]) / ExitCap);
   const saleCosts = grossExit.map((g) => -g * SaleCost);
@@ -338,7 +420,7 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
     year, inHold, exitFlag,
     tenantRevenue: tenantRev, totalRevenue, vacancy, egr,
     propertyTax, insurance, otherOpex, mgmtFee, totalOpex, noi, noiExReassessedTax, reassessedTaxPerDollar,
-    capex, reserves,
+    capex, reserves, leasingCosts,
     purchase, noiInHold, capexInHold, forwardNoi, grossExit, saleCosts, netSale, unleveredCF,
     loanProceeds, loanFee, interest, principal, debtService, loanBalance, loanPayoff, leveredCF,
     cashOnCash, dscr,

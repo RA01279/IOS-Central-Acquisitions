@@ -7,6 +7,28 @@ import type { Tenant, UwInputs } from "../types";
 
 export const RENDON_FIXTURE_PATH = "fixtures/Rendon_Rd_IOS_DCF.xlsx";
 
+/**
+ * Rollover-tab defaults for every tenant (rows 6-15). Rents blank = current
+ * rent; probability blank = the RenewProb lever; no TI or LC.
+ *
+ * INFERRED, not read from a workbook: the fixture has no Rollover tab yet.
+ * A 3-month new-deal downtime is the only default that reproduces the
+ * spec's RM2Default golden numbers (all seven revenue years, both IRRs,
+ * solved price, exit, DSCR); 0, 1, 2 and 6 months all miss. Confirm against
+ * the workbook's Rollover tab when it is available.
+ */
+export const ROLLOVER_DEFAULTS = {
+  renewalProbOverride: null,
+  renewalRent: null,
+  newDealRent: null,
+  newDealDowntimeMonths: 3,
+  newDealFreeRentMonths: 0,
+  renewalTI: 0,
+  renewalLC: 0,
+  newDealTI: 0,
+  newDealLC: 0,
+} satisfies Partial<Tenant>;
+
 export const rendon: UwInputs = {
   property: "3879 Rendon Rd", // Inputs!B15
   scenario: "Base", // Dashboard!D4
@@ -16,7 +38,9 @@ export const rendon: UwInputs = {
     ExitCap: [0.07, 0.065, 0.0775], // Inputs!B7:D7
     CapexOverrun: [0, 0, 0.15], // Inputs!B8:D8
     LeaseDelay: [0, 0, 6], // Inputs!B9:D9
+    RenewProb: [0.7, 0.8, 0.5], // Inputs "Renewal probability" (Phase 3e spec)
   },
+  RollMethod: 1, // Inputs "Rollover method": 1 = retention % (original), 2 = renewal probability
 
   Acres: 37, // Inputs!B16
   PurchPrice: 5_500_000, // Inputs!B17
@@ -46,8 +70,8 @@ export const rendon: UwInputs = {
   IOYrs: 2, // Inputs!B45
   LoanFee: 0.01, // Inputs!B46
 
-  // RentRoll!A6:O15
-  rentRoll: [
+  // RentRoll!A6:O15, plus the Rollover-tab defaults (used only by RollMethod 2).
+  rentRoll: ([
     { name: "S&A Leasing", status: "In-place", acres: null, rent: 13_000, rentPeriod: "Monthly", bump: 0.03, startMonth: 0, leaseEndMonth: 60, retention: 0.85, include: [1, 1, 1] },
     { name: "Reindeer (Prime)", status: "In-place", acres: 1.56, rent: 7_000, rentPeriod: "Monthly", bump: null, startMonth: 0, leaseEndMonth: 24, retention: 0.9, include: [1, 1, 0] },
     { name: "Straight 6", status: "In-place", acres: 1, rent: 6_500, rentPeriod: "Monthly", bump: null, startMonth: 0, leaseEndMonth: null, retention: null, include: [1, 1, 1] },
@@ -58,7 +82,7 @@ export const rendon: UwInputs = {
     { name: "Prime expansion (+1 ac)", status: "Pipeline", acres: 1, rent: 3_500, rentPeriod: "Monthly", bump: null, startMonth: 3, leaseEndMonth: null, retention: null, include: [1, 1, 0] },
     { name: "Straight 6 expansion (~10 spots)", status: "Pipeline", acres: null, rent: 1_000, rentPeriod: "Monthly", bump: null, startMonth: 3, leaseEndMonth: null, retention: null, include: [1, 1, 0] },
     { name: "Large tenant (~5.75 ac, in county)", status: "Pipeline", acres: 5.75, rent: 20_000, rentPeriod: "Monthly", bump: null, startMonth: 6, leaseEndMonth: 18, retention: 0.7, include: [0, 1, 0] },
-  ],
+  ] as Tenant[]).map((t) => ({ ...ROLLOVER_DEFAULTS, ...t })),
 
   // Capex!A6:I9. Lease-up paving (rows 1-2) takes its include % from the
   // tenants it serves; site work (rows 3-4) keeps fixed 1/0 flags.
@@ -72,17 +96,23 @@ export const rendon: UwInputs = {
   ],
 };
 
+const SA = 0;
 const REINDEER = 1;
 const LARGE_TENANT = 9;
 const LIGHTING = 3;
 
 /**
- * Base with per-tenant edits. `baseInclude` replaces only the Base include %;
- * Upside and Downside keep the fixture's values.
+ * The fixture with per-tenant edits (and optional top-level edits).
+ * `baseInclude` replaces only the Base include %; Upside and Downside keep
+ * the fixture's values.
  */
-function withTenants(edits: Record<number, Partial<Omit<Tenant, "include">> & { baseInclude?: number }>): UwInputs {
+function withTenants(
+  edits: Record<number, Partial<Omit<Tenant, "include">> & { baseInclude?: number }>,
+  top: Partial<UwInputs> = {}
+): UwInputs {
   return {
     ...rendon,
+    ...top,
     rentRoll: rendon.rentRoll.map((t, i) => {
       const e = edits[i];
       if (!e) return t;
@@ -121,6 +151,20 @@ export const RENDON_CASES: Record<string, UwInputs> = {
     [LARGE_TENANT]: { baseInclude: 1, freeRentMonths: 3, freeRentOnRenewalMonths: 2 },
     [REINDEER]: { freeRentMonths: 1, freeRentOnRenewalMonths: 2 },
   }),
+  // Phase 3e. Rollover method 2 (renewal probability) with the defaults.
+  RM2Default: { ...rendon, RollMethod: 2 },
+  // S&A with its own renewal and new-deal rents, TI and LC.
+  RM2SA: withTenants(
+    { [SA]: { renewalRent: 13_500, newDealRent: 14_500, renewalTI: 10_000, renewalLC: 5_000, newDealTI: 40_000, newDealLC: 20_000 } },
+    { RollMethod: 2 }
+  ),
+  RM2UpsideOverride: withTenants(
+    {
+      [REINDEER]: { renewalProbOverride: 0.5 },
+      [LARGE_TENANT]: { newDealFreeRentMonths: 2, renewalTI: 15_000 },
+    },
+    { RollMethod: 2, scenario: "Upside" }
+  ),
 };
 
 /** CashFlow rows checked year by year against the workbook's cached Base values. */
