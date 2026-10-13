@@ -10,6 +10,7 @@ import {
   Plus,
   Gauge,
   BarChart3,
+  LineChart,
   ListChecks,
   Radar,
   Handshake,
@@ -50,6 +51,7 @@ export const NAV_GROUPS: Array<{ label: string | null; links: NavLink[] }> = [
     label: "Evidence",
     links: [
       { href: "/comps", label: "Comps", key: "comps", icon: FileStack },
+      { href: "/market", label: "Market", key: "market", icon: LineChart },
       { href: "/assets", label: "Our Assets", key: "assets", icon: Building2 },
       { href: "/locations", label: "Map Locations", key: "locations", icon: MapPin },
     ],
