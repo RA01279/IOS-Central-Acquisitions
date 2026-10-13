@@ -18,7 +18,7 @@ function load(path, dependencies = {}) {
   return loaded;
 }
 const rates = load("../lib/comps/rates.ts");
-const { compRate, rateStats, recentHalves, halfOf, monthsBefore, marketView } = load("../lib/comps/market.ts", { "./rates": rates });
+const { compRate, rateStats, recentHalves, halfOf, monthsBefore, marketView, marketFigureFor } = load("../lib/comps/market.ts", { "./rates": rates });
 
 let n = 0;
 const check = (label, fn) => { try { fn(); n++; } catch (e) { console.error(`FAIL ${label}`); throw e; } };
@@ -94,5 +94,18 @@ check("drill into a market by submarket", () => {
 });
 check("future-dated comps are ignored", () =>
   assert.equal(marketView([yard({ date_commenced: "2027-01-01" })], "lease", "ios", { today }).rows.length, 0));
+
+// ---- for a deal
+check("IOS lease figure is per lot acre", () => {
+  // 3 yard acres on a 4-acre lot: $8,000 per yard acre is $6,000 per lot acre.
+  const f = marketFigureFor([7000, 8000, 9000].map((r, i) => yard({ id: `f${i}`, rent: r })), "lease", "ios", "Dallas", today);
+  assert.equal(f.value, 6000); assert.equal(f.count, 3);
+});
+check("industrial lease figure is per SF per month", () => {
+  const ind = [8.4, 9, 9.6].map((r, i) => ({ id: `i${i}`, comp_type: "lease", asset_class: "industrial", market: "Dallas", rent: r, rent_basis: "per_sf_bldg_annual", building_sf: 50000, date_commenced: "2026-05-01" }));
+  near(marketFigureFor(ind, "lease", "industrial", "Dallas", today).value, 0.75, 1e-9);
+});
+check("no market label, no figure", () => assert.equal(marketFigureFor(comps, "lease", "ios", null, today).value, null));
+check("year-on-year carried", () => near(marketFigureFor(comps, "lease", "ios", "Dallas", today).change, 8000 / 6500 - 1, 1e-9));
 
 console.log(`${n} market checks passed`);

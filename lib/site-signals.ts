@@ -22,6 +22,7 @@ import { haversineMiles } from "./ic-deck/geo";
 import { rateViews } from "./comps/rates";
 import { COMP_POLICY, marketRange, type CompRecord } from "./comps/match";
 import { loadCompEvidence, subjectOf } from "./comps/evidence";
+import { marketFigureFor } from "./comps/market";
 import { dealValue } from "./summary";
 import { fmtMoney } from "./format";
 import { researchZoning } from "./zoning/research";
@@ -303,12 +304,25 @@ export async function computeFlood(point: { lat: number; lng: number }, lotSf: n
 // acre of LOT on both sides (the comp's whole-site figure over its lot, the
 // deal's over its lot); industrial per building SF.
 
-/** The market figure in the flag's unit, or why there isn't one. */
+/**
+ * The market figure in the flag's unit, or why there isn't one. The comps
+ * nearest the deal when there are enough; otherwise the deal's whole market
+ * over the last year, said so in the source. The note carries the market's
+ * year-on-year move either way, so a figure built on year-old comps is read
+ * against where the market has gone since.
+ */
 function marketFor(deal: any, comps: CompRecord[], type: "sale" | "lease") {
   const ios = deal.asset_class !== "industrial";
   const { range } = marketRange(comps, subjectOf(deal), type, ios ? "land" : "building");
   const perUnit = range.mid === null ? null : ios ? range.mid * SQFT_PER_ACRE : range.mid;
-  return { value: range.count >= COMP_POLICY.minComps ? perUnit : null, count: range.count };
+  const label = deal.properties?.market ?? null;
+  const wide = marketFigureFor(comps, type, ios ? "ios" : "industrial", label);
+  const trend = wide.change === null ? "" : `; ${label} ${wide.change >= 0 ? "+" : ""}${(wide.change * 100).toFixed(1)}% year on year`;
+  if (range.count >= COMP_POLICY.minComps) return { value: perUnit, count: range.count, source: COMP_SOURCE(type), trend };
+  if (wide.value !== null) {
+    return { value: wide.value, count: wide.count, source: `Market median of ${wide.label} (fewer than ${COMP_POLICY.minComps} within ${COMP_POLICY.radiusMiles} mi)`, trend };
+  }
+  return { value: null, count: range.count, source: COMP_SOURCE(type), trend };
 }
 
 export function computeBasis(deal: any, comps: CompRecord[]): Auto {
@@ -327,14 +341,14 @@ export function computeBasis(deal: any, comps: CompRecord[]): Auto {
   const subject = price / subjDen;
   const m = marketFor(deal, comps, "sale");
   if (m.value === null) {
-    return { state: "unknown", note: `${fmtRate(subject)}${askNote}; only ${m.count} comparable sale${m.count === 1 ? "" : "s"} nearby`, source };
+    return { state: "unknown", note: `${fmtRate(subject)}${askNote}; only ${m.count} comparable sale${m.count === 1 ? "" : "s"} nearby${m.trend}`, source: m.source };
   }
   const ratio = subject / m.value;
   const pct = (Math.abs(1 - ratio) * 100).toFixed(2);
   return {
     state: ratio <= 0.95 ? "strong" : ratio <= 1.1 ? "watch" : "weak",
-    note: `${fmtRate(subject)}${askNote} vs ${fmtRate(m.value)} market from ${m.count} sales (${pct}% ${ratio <= 1 ? "below" : "above"})`,
-    source,
+    note: `${fmtRate(subject)}${askNote} vs ${fmtRate(m.value)} market from ${m.count} sales (${pct}% ${ratio <= 1 ? "below" : "above"})${m.trend}`,
+    source: m.source,
   };
 }
 
@@ -347,8 +361,9 @@ export function computeRent(deal: any, comps: CompRecord[], mlaMarketRent: numbe
     ios ? (v.perSfLandMonthly === null ? null : v.perSfLandMonthly * SQFT_PER_ACRE) : v.perSfBldgMonthly;
   const fmt = (v: number) => (ios ? `$${Math.round(v).toLocaleString("en-US")}/ac/mo` : `$${v.toFixed(2)}/sf/mo`);
 
-  let source = COMP_SOURCE("lease");
-  let market = marketFor(deal, comps, "lease").value;
+  const m = marketFor(deal, comps, "lease");
+  let source = m.source;
+  let market = m.value;
   if (market === null && !ios && mlaMarketRent) {
     market = mlaMarketRent;
     source = "MLA market base rent";
@@ -373,7 +388,7 @@ export function computeRent(deal: any, comps: CompRecord[], mlaMarketRent: numbe
   const upside = market / inPlace - 1;
   return {
     state: upside >= 0.1 ? "strong" : upside >= -0.05 ? "watch" : "weak",
-    note: `In-place ${fmt(inPlace)} vs market ${fmt(market)} (${upside >= 0 ? "+" : ""}${(upside * 100).toFixed(2)}%)`,
+    note: `In-place ${fmt(inPlace)} vs market ${fmt(market)} (${upside >= 0 ? "+" : ""}${(upside * 100).toFixed(2)}%)${m.trend}`,
     source,
   };
 }

@@ -15,6 +15,7 @@ import Link from "next/link";
 import MapView, { type MapPoint } from "./MapView";
 import { rateSummary } from "@/lib/comps/rates";
 import SavedAnalysis from "./SavedAnalysis";
+import { marketView } from "@/lib/comps/market";
 import {
   COMP_POLICY,
   DEFAULT_WEIGHTS,
@@ -73,6 +74,16 @@ export default function DealCompsPanel({
   );
 
   const range = useMemo(() => suggestRange(scored, compType, basis), [scored, compType, basis]);
+
+  // The whole market over the last year, beside the nearby range: a range
+  // built on comps from 18 months ago means something different in a market
+  // that has moved 15% since.
+  const wide = useMemo(() => {
+    const cls = subject.assetClass === "industrial" ? "industrial" : subject.assetClass === "ios" ? "ios" : null;
+    if (!cls || !subject.market) return null;
+    const v = marketView(comps, compType, cls, { market: subject.market, face: true });
+    return v.overall.current.median === null ? null : { cls, unit: v.unit, row: v.overall };
+  }, [comps, compType, subject.assetClass, subject.market]);
 
   const eligible = scored.filter((s) => !s.excluded);
   const rows = showAll ? scored : scored.slice(0, Math.max(12, eligible.length));
@@ -146,6 +157,18 @@ export default function DealCompsPanel({
       <h2>
         Market evidence <span className="count">{eligible.length}</span>
       </h2>
+
+      {wide && (
+        <p className="hint">
+          {subject.market} {wide.cls === "ios" ? "IOS" : "industrial"} {compType}s, last 12 months:{" "}
+          <strong>
+            ${wide.unit.includes("AC") ? Math.round(wide.row.current.median!).toLocaleString() : wide.row.current.median!.toFixed(2)} {wide.unit.slice(1)}
+          </strong>{" "}
+          median of {wide.row.current.count} comps
+          {wide.row.change !== null && <>, {wide.row.change >= 0 ? "+" : ""}{(wide.row.change * 100).toFixed(1)}% on the year before</>}.{" "}
+          <Link href={`/market?type=${compType}&class=${wide.cls}&market=${encodeURIComponent(subject.market!)}`}>Market page</Link>
+        </p>
+      )}
 
       {!hasCoords && (
         <div className="warning">

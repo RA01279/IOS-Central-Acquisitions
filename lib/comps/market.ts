@@ -64,7 +64,7 @@ export interface CompRate {
 }
 
 /** A comp's rate in its class's market unit, or null when it can't be derived. */
-export function compRate(c: MarketComp, cls: MarketClass): CompRate | null {
+export function compRate(c: MarketComp, cls: MarketClass, opts: { lotAcres?: boolean } = {}): CompRate | null {
   if (c.comp_type === "sale") {
     const price = num(c.sale_price);
     if (!price || price <= 0) return null;
@@ -75,7 +75,11 @@ export function compRate(c: MarketComp, cls: MarketClass): CompRate | null {
   }
 
   const views = rateViews(c);
-  const face = cls === "ios" ? views.perAcreMonthly : views.perSfBldgAnnual;
+  // IOS rents are quoted per usable yard acre; a deal is measured over its lot,
+  // so a comparison with one asks for per lot acre instead.
+  const face = cls === "ios"
+    ? opts.lotAcres ? (views.perSfLandMonthly === null ? null : views.perSfLandMonthly * SQFT_PER_ACRE) : views.perAcreMonthly
+    : views.perSfBldgAnnual;
   if (face === null || face <= 0) return null;
 
   const term = num(c.lease_term_months);
@@ -203,6 +207,8 @@ export interface MarketOptions {
   face?: boolean;
   /** Group by submarket within this market instead of by market. */
   market?: string | null;
+  /** IOS rents per lot acre rather than per yard acre (see compRate). */
+  lotAcres?: boolean;
   /** Half-years in the trend. */
   halves?: number;
 }
@@ -249,7 +255,7 @@ export function marketView(comps: MarketComp[], compType: CompType, assetClass: 
   for (const c of inMarket) {
     if (marketClassOf(c) !== assetClass) continue;
     const date = compDate(c);
-    const r = compRate(c, assetClass);
+    const r = compRate(c, assetClass, { lotAcres: opts.lotAcres });
     if (!date || !r || date > today) continue;
     const group = (opts.market ? c.submarket : c.market)?.trim() || (opts.market ? "No submarket" : "No market");
     points.push({ date, rate: opts.face ? r.face : r.effective, concessions: r.concessions, group });
@@ -269,5 +275,43 @@ export function marketView(comps: MarketComp[], compType: CompType, assetClass: 
     rows,
     overall: rowOf(opts.market ?? "All markets", points, today, halves),
     unclassified: inMarket.filter((c) => marketClassOf(c) === null).length,
+  };
+}
+
+// ---- for a deal ------------------------------------------------------------
+
+export interface MarketFigure {
+  /** Trailing-12-month median in the deal's units, or null when too thin. */
+  value: number | null;
+  count: number;
+  /** Year-on-year change of the median, as a fraction. */
+  change: number | null;
+  /** e.g. "Dallas IOS lease comps, last 12 months". */
+  label: string;
+}
+
+/**
+ * The market-wide figure a deal is set against when there aren't enough comps
+ * near it, and the trend it sits in when there are. Face rates (a deal's rent
+ * is face), and in the units a deal is measured in: IOS rents per lot acre per
+ * month, industrial rents per building SF per MONTH, sales per lot acre or per
+ * building SF.
+ */
+export function marketFigureFor(
+  comps: MarketComp[],
+  compType: CompType,
+  assetClass: MarketClass,
+  market: string | null | undefined,
+  today?: string
+): MarketFigure {
+  const label = `${market ?? "All"} ${assetClass === "ios" ? "IOS" : "industrial"} ${compType} comps, last 12 months`;
+  if (!market) return { value: null, count: 0, change: null, label };
+  const v = marketView(comps, compType, assetClass, { today, market, face: true, lotAcres: true }).overall;
+  const perMonth = compType === "lease" && assetClass === "industrial" ? 1 / 12 : 1;
+  return {
+    value: v.current.median === null ? null : v.current.median * perMonth,
+    count: v.current.count,
+    change: v.change,
+    label,
   };
 }
