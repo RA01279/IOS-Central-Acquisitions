@@ -11,6 +11,9 @@ import { resolveFlags, siteScore, demandBreakdown, type DemandSnapshot } from ".
 import { dealValue, VALUE_BASIS_LABELS } from "./summary";
 import { acres, fmtMoney, fmtPct } from "./format";
 import { LOCATED_PRECISIONS } from "./ic-deck/geo";
+import { loadCompEvidence, subjectOf } from "./comps/evidence";
+
+export { subjectOf };
 
 export const getDeal = cache(async (id: string) => {
   const { data: deal } = await getServiceClient()
@@ -32,19 +35,8 @@ export const getSiteView = cache(async (id: string) => {
 // Demand Map (proximity) and Financials (comps) tabs.
 export const getEvidence = cache(async () => {
   const supabase = getServiceClient();
-  // Confirmed and locatable only -- a draft or an ungeocoded comp has no
-  // business influencing an underwriting assumption. Fetched for the whole
-  // repository rather than pre-filtered by market: the panels' radius filter
-  // is the real constraint, and market labels are too inconsistent to trust.
-  const [{ data: comps }, { data: assets }, { data: pipeline }] = await Promise.all([
-    supabase
-      .from("comps")
-      .select(
-        "id, comp_type, address, project_name, suite, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision"
-      )
-      .eq("status", "confirmed")
-      .not("latitude", "is", null)
-      .limit(1000),
+  const [comps, { data: assets }, { data: pipeline }] = await Promise.all([
+    loadCompEvidence(),
     // Sold assets come through too -- the panel holds them behind a toggle.
     supabase
       .from("assets")
@@ -62,7 +54,7 @@ export const getEvidence = cache(async () => {
       .limit(1000),
   ]);
   return {
-    comps: comps ?? [],
+    comps,
     assets: assets ?? [],
     pipeline: (pipeline ?? []).map((d: any) => {
       const dp = Array.isArray(d.properties) ? d.properties[0] : d.properties;
@@ -79,22 +71,6 @@ export const getEvidence = cache(async () => {
     }),
   };
 });
-
-export function subjectOf(deal: any) {
-  const p = deal.properties ?? {};
-  return {
-    lat: p.latitude != null ? Number(p.latitude) : null,
-    lng: p.longitude != null ? Number(p.longitude) : null,
-    buildingSf: p.building_sf != null ? Number(p.building_sf) : null,
-    lotSf: p.lot_sf != null ? Number(p.lot_sf) : null,
-    // Coverage isn't stored on a property, but it's derivable and it's the
-    // factor that separates a yard from a warehouse.
-    coveragePct: p.building_sf && p.lot_sf ? Number(p.building_sf) / Number(p.lot_sf) : null,
-    assetClass: deal.asset_class ?? null,
-    market: p.market ?? null,
-    submarket: p.submarket ?? null,
-  };
-}
 
 export function latestReturns(deal: any) {
   const latest = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number)[0];

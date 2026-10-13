@@ -9,8 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { STAGE_LABELS } from "@/lib/deals";
-import { readAllCompPages } from "@/lib/comps/mapData";
-import { scoreComps, unitValue, isUsableForDistance, haversineMiles, type CompRecord } from "@/lib/comps/match";
+import { COMP_POLICY, scoreComps, unitValue, isUsableForDistance, haversineMiles } from "@/lib/comps/match";
+import { loadCompEvidence, subjectOf } from "@/lib/comps/evidence";
 import { validateModelSummary } from "@/lib/ic-deck/model";
 import { renderIcDeck, type DeckAsset, type DeckComp } from "@/lib/ic-deck/deck";
 import type { Picture } from "@/lib/ic-deck/pptx-kit";
@@ -20,7 +20,6 @@ import { UUID } from "@/lib/agents/catalog";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const COMP_RADIUS_MILES = 15;
 const ASSET_RADIUS_MILES = 50;
 const RENT_UNITS: Record<string, string> = {
   total_monthly: "/ mo", per_sf_bldg_monthly: "/ SF / mo", per_sf_bldg_annual: "/ SF / yr",
@@ -92,17 +91,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // ---- comps: Hopper's own ranking, same as the deal page's comps panel ----
   let leaseComps: DeckComp[] = [], saleComps: DeckComp[] = [];
   if (lat !== null && lng !== null) {
-    const rows = await readAllCompPages<CompRecord & { status?: string }>((from, to) =>
-      db.from("comps").select("*").eq("status", "confirmed").order("id").range(from, to) as any);
+    const rows = await loadCompEvidence();
+    // The workbook's sizes win over the property record, but the subject is
+    // otherwise the comps panel's. Coverage is a FRACTION on both sides; the
+    // deck once passed a percentage, which zeroed the coverage factor for
+    // every comp and ranked them differently from the panel.
+    const base = subjectOf(deal);
+    const buildingSf = model.property.buildingSf ?? base.buildingSf;
+    const lotSf = model.property.siteSf ?? base.lotSf;
     const subject = {
-      lat, lng,
-      buildingSf: model.property.buildingSf ?? (prop.building_sf != null ? Number(prop.building_sf) : null),
-      lotSf: model.property.siteSf ?? (prop.lot_sf != null ? Number(prop.lot_sf) : null),
-      coveragePct: model.property.coverage != null ? model.property.coverage * 100 : null,
-      assetClass: deal.asset_class ?? null, market: prop.market ?? null, submarket: prop.submarket ?? null,
+      ...base, lat, lng, buildingSf, lotSf,
+      coveragePct: model.property.coverage ?? (buildingSf && lotSf ? buildingSf / lotSf : null),
     };
     const pick = (type: "lease" | "sale"): DeckComp[] =>
-      scoreComps(rows, subject, type, { radiusMiles: COMP_RADIUS_MILES, topN: 10 })
+      scoreComps(rows, subject, type, { topN: 10 })
         .filter((s) => s.inRange)
         .map((s, i) => {
           const c = s.comp;
@@ -168,7 +170,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       lastOffer: offers[0] ? { price: Number(offers[0].price), date: String(offers[0].offered_at).slice(0, 10) } : null,
       ddEndOn: deal.dd_end_on ?? null, closingOn: deal.closing_on ?? null, loi,
     },
-    leaseComps, saleComps, compRadiusMiles: COMP_RADIUS_MILES, assets, maps, narrative, preparedOn: new Date(),
+    leaseComps, saleComps, compRadiusMiles: COMP_POLICY.radiusMiles, assets, maps, narrative, preparedOn: new Date(),
   });
   const name = `${(prop?.address ?? "Deal").replace(/[^\w .-]+/g, "").trim()} - IC Exec Summary (draft).pptx`;
   return new NextResponse(new Uint8Array(buffer), {

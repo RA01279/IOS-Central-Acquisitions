@@ -1,5 +1,8 @@
 import { getServiceClient } from "@/lib/supabase";
 import type { AgentId, Evidence } from "./catalog";
+import { COMP_POLICY, haversineMiles, isUsableForDistance } from "@/lib/comps/match";
+import { subjectOf } from "@/lib/comps/evidence";
+import { readAllCompPages } from "@/lib/comps/mapData";
 
 // Hopper is a shared acquisitions workspace; existing deal APIs use the same
 // authenticated workspace access. Agent reports remain private to the requester.
@@ -23,12 +26,32 @@ export async function loadEvidence(agent: AgentId, dealId?: string): Promise<Evi
     sources.push({ label: "Pipeline snapshot", href: "/deals", data: { coverage: (data?.length || 0) > 500 ? "Most recently updated 500 deals; not exhaustive" : "Current deal snapshot", deals: data?.slice(0, 500).map(d => ({ ...d, href: `/deals/${d.id}` })) } });
   }
   if (agent === "comp-analyst" || agent === "investment-memo") {
-    let query = db.from("comps").select("*").order("created_at", { ascending: false }).limit(101);
-    const market = subject?.properties?.market;
-    if (market) query = query.eq("market", market);
-    const { data, error } = await query;
-    if (error) throw new Error("Could not load comp evidence.");
-    sources.push({ label: "Comp records", href: "/comps", data: { coverage: `${market ? "Same market" : "All markets"}; latest 100 entered records, not exhaustive`, comps: data?.slice(0, 100).map(c => ({ ...c, href: `/comps/${c.id}` })) } });
+    // Confirmed comps only, nearest first when the deal has a usable pin --
+    // the evidence the Financials tab works from, not whatever was typed in
+    // last under a market label that may be spelled differently.
+    const s = subject ? subjectOf(subject) : null;
+    const located = s?.lat != null && s?.lng != null && isUsableForDistance(subject.properties?.geocode_precision);
+    let comps: any[];
+    let coverage: string;
+    if (located) {
+      const rows = await readAllCompPages<any>((from, to) =>
+        db.from("comps").select("*").eq("status", "confirmed").not("latitude", "is", null).order("id").range(from, to) as any);
+      comps = rows
+        .filter(c => isUsableForDistance(c.geocode_precision))
+        .map(c => ({ ...c, distance_mi: Math.round(haversineMiles(s!.lat!, s!.lng!, Number(c.latitude), Number(c.longitude)) * 10) / 10 }))
+        .sort((a, b) => a.distance_mi - b.distance_mi)
+        .slice(0, 100);
+      coverage = `Confirmed comps nearest the subject (Hopper's standard market window is ${COMP_POLICY.radiusMiles} mi / ${COMP_POLICY.maxAgeMonths} mo); 100 nearest, not exhaustive`;
+    } else {
+      let query = db.from("comps").select("*").eq("status", "confirmed").order("created_at", { ascending: false }).limit(100);
+      const market = subject?.properties?.market;
+      if (market) query = query.eq("market", market);
+      const { data, error } = await query;
+      if (error) throw new Error("Could not load comp evidence.");
+      comps = data ?? [];
+      coverage = `${market ? "Same market label" : "All markets"} (subject has no precise pin); latest 100 confirmed records, not exhaustive`;
+    }
+    sources.push({ label: "Comp records", href: "/comps", data: { coverage, comps: comps.map(c => ({ ...c, href: `/comps/${c.id}` })) } });
   }
   if (dealId && agent !== "site-research" && agent !== "ic-narrative") {
     const results = await Promise.all([

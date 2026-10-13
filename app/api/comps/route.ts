@@ -9,6 +9,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { geocodeMany } from "@/lib/geocode";
 import { compIssue } from "@/lib/comps/intake-validation";
+import { inferAssetClass } from "@/lib/comps/match";
 import { validCoordinates } from "@/lib/location";
 import { parseMoney } from "@/lib/money";
 
@@ -273,6 +274,15 @@ export async function POST(req: NextRequest) {
       row.seller = str(c.seller);
       row.sale_broker = str(c.saleBroker);
       row.occupancy_at_sale = plain(c.occupancyAtSale);
+    }
+
+    // A comp with no class is filtered out of every deal's analysis, so one
+    // that arrived without it takes whatever its own measurements make plain,
+    // labelled as inferred so it can be told apart from a stated one.
+    if (row.asset_class) row.asset_class_basis = "Stated at intake";
+    else {
+      const inferred = inferAssetClass(row as any);
+      if (inferred) { row.asset_class = inferred.assetClass; row.asset_class_basis = inferred.basis; }
     }
 
     rows.push({ address: c.address, key: c._key, row });

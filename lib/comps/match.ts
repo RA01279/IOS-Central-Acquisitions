@@ -95,6 +95,23 @@ export const DEFAULT_WEIGHTS: MatchWeights = {
   submarket: 0.08,
 };
 
+// ONE SET OF RULES FOR "WHAT IS THE MARKET HERE".
+//
+// The deal's comps panel, its rent and basis flags, the IC deck and the comp
+// agents each used to pick their own radius, age limit and statistic -- 10, 15
+// or exact-market; 24 or 36 months; weighted mean or plain median -- so one
+// deal could show different market rents depending on the screen. They all
+// start from this now. The panel still lets an analyst widen or narrow it for
+// a given deal; everything automatic uses it as is.
+export const COMP_POLICY = {
+  radiusMiles: 10,
+  maxAgeMonths: 24,
+  /** How many of the best comps feed the range. */
+  topN: 8,
+  /** Fewer than this and the range is too thin to act on. */
+  minComps: 3,
+} as const;
+
 export interface MatchOptions {
   /** Analyst explicitly permits unknown or different classes as supporting evidence. */
   allowOtherClasses?: boolean;
@@ -278,10 +295,10 @@ export function scoreComps(
 ): ScoredComp[] {
   const {
     basis = "building",
-    radiusMiles = 15,
+    radiusMiles = COMP_POLICY.radiusMiles,
     // Two years, matching the falloff below: a comp whose recency score has
     // decayed to nothing shouldn't still be dragging an average around.
-    maxAgeMonths = 24,
+    maxAgeMonths = COMP_POLICY.maxAgeMonths,
     distanceFalloffMi = 12,
     // Steep on purpose. At 36 months a two-year-old comp still scored 0.33 on
     // recency, which -- once recency became the heaviest factor -- would have
@@ -289,7 +306,7 @@ export function scoreComps(
     // comp scores 0.5 and a two-year-old scores 0.
     recencyFalloffMonths = 24,
     weights = DEFAULT_WEIGHTS,
-    topN = 8,
+    topN = COMP_POLICY.topN,
     excludedIds = [],
     today = new Date(),
   } = opts;
@@ -447,7 +464,7 @@ export function suggestRange(
   const low = weightedPercentile(sorted, 0.25);
   const high = weightedPercentile(sorted, 0.75);
 
-  if (contributing.length < 3) {
+  if (contributing.length < COMP_POLICY.minComps) {
     caveats.push(
       `Only ${contributing.length} comp${contributing.length === 1 ? "" : "s"} behind this — thin evidence.`
     );
@@ -501,6 +518,62 @@ export function suggestRange(
   }
 
   return { basis, compType, mid, low, high, count: contributing.length, weight, caveats };
+}
+
+/**
+ * The market figure for a subject under COMP_POLICY: the same ranking and the
+ * same weighted range the comps panel opens with, for callers with no analyst
+ * to adjust it (site flags, the IC deck).
+ */
+export function marketRange(
+  comps: CompRecord[],
+  subject: Subject,
+  compType: CompType,
+  basis: ValueBasis,
+  opts: Pick<MatchOptions, "today" | "topN"> = {}
+): { scored: ScoredComp[]; range: SuggestedRange } {
+  const scored = scoreComps(comps, subject, compType, { ...opts, basis });
+  return { scored, range: suggestRange(scored, compType, basis) };
+}
+
+/** Comp asset class as far as the comp's own measurements can tell. */
+export type InferredClass = { assetClass: "ios" | "industrial"; basis: string } | null;
+
+/**
+ * Asset class read off a comp that arrived without one -- 90% of the
+ * repository, which the class filter above then hid from every deal.
+ *
+ * Only unambiguous evidence counts: a yard rate (per acre, per land SF, per
+ * stall), stated yard acreage or trailer stalls, or a coverage ratio well
+ * clear of the line in either direction. A 25-40% coverage building with a
+ * per-SF rent could be either product and stays unclassified for a person.
+ *
+ * Mirrored in SQL by the backfill in 20261013120000_comp_asset_class.sql;
+ * scripts/test-comp-match.mjs pins the cases both must agree on.
+ */
+export function inferAssetClass(c: {
+  rent_basis?: string | null;
+  yard_acres?: number | string | null;
+  trailer_stalls?: number | null;
+  rate_per_stall?: number | null;
+  coverage_pct?: number | string | null;
+  building_sf?: number | string | null;
+  lot_sf?: number | string | null;
+}): InferredClass {
+  if (c.rent_basis === "per_acre_monthly" || c.rent_basis === "per_sf_land_monthly")
+    return { assetClass: "ios", basis: "Inferred: quoted as a land rate" };
+  if (Number(c.yard_acres) > 0 || Number(c.trailer_stalls) > 0 || Number(c.rate_per_stall) > 0)
+    return { assetClass: "ios", basis: "Inferred: yard acreage or trailer stalls stated" };
+  const coverage =
+    c.coverage_pct != null && c.coverage_pct !== ""
+      ? Number(c.coverage_pct)
+      : Number(c.building_sf) > 0 && Number(c.lot_sf) > 0
+        ? Number(c.building_sf) / Number(c.lot_sf)
+        : null;
+  if (coverage === null || !Number.isFinite(coverage)) return null;
+  if (coverage < 0.25) return { assetClass: "ios", basis: `Inferred: ${(coverage * 100).toFixed(0)}% building coverage` };
+  if (coverage >= 0.4) return { assetClass: "industrial", basis: `Inferred: ${(coverage * 100).toFixed(0)}% building coverage` };
+  return null;
 }
 
 /** How the suggested figure should be written out. */

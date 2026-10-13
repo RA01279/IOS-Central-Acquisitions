@@ -12,14 +12,16 @@
 //   zoning  municipal zoning GIS (lib/zoning/research)
 //   access  OpenStreetMap freeway exits (Overpass API)
 //   site    FEMA National Flood Hazard Layer, sampled across the lot
-//   basis   price vs confirmed sale comps within 10 mi / 36 months
-//   rent    in-place rent vs confirmed lease comps (or the MLA market rent)
+//   basis   price vs the sale-comp market (COMP_POLICY, lib/comps/match)
+//   rent    in-place rent vs the lease-comp market (or the MLA market rent)
 
 import { getServiceClient } from "./supabase";
 import { searchNearby } from "./demand-search";
 import { DEFAULT_CATEGORIES } from "./sourcing/yard-users";
 import { haversineMiles } from "./ic-deck/geo";
 import { rateViews } from "./comps/rates";
+import { COMP_POLICY, marketRange, type CompRecord } from "./comps/match";
+import { loadCompEvidence, subjectOf } from "./comps/evidence";
 import { dealValue } from "./summary";
 import { fmtMoney } from "./format";
 import { researchZoning } from "./zoning/research";
@@ -28,9 +30,8 @@ import { scoreState, type FlagKey, type SignalState } from "./hopper-tokens";
 import { demandBreakdown, type DemandSnapshot, type SignalRow } from "./site-score";
 
 const SQFT_PER_ACRE = 43560;
-const COMP_RADIUS_MI = 10;
-const COMP_MAX_AGE_MONTHS = 36;
-const MIN_COMPS = 3;
+const COMP_SOURCE = (type: "sale" | "lease") =>
+  `Confirmed ${type} comps, ${COMP_POLICY.radiusMiles} mi / ${COMP_POLICY.maxAgeMonths} mo, ranked as on the Financials tab`;
 export const SNAPSHOT_RADIUS_MI = 5;
 
 type Auto = { state: SignalState; note: string; source: string; detail?: unknown };
@@ -104,16 +105,6 @@ export async function setOverride(
 }
 
 // ---- helpers ----------------------------------------------------------------
-
-const median = (xs: number[]) => {
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
-
-function monthsAgo(date: string): number {
-  return (Date.now() - new Date(date).getTime()) / (30.44 * 86400000);
-}
 
 async function fetchJson(url: string, init?: RequestInit, timeoutMs = 20000): Promise<any> {
   const ctl = new AbortController();
@@ -306,78 +297,59 @@ export async function computeFlood(point: { lat: number; lng: number }, lotSf: n
 
 // ---- basis & rent -----------------------------------------------------------
 
-type CompRow = {
-  comp_type: string;
-  latitude: number | null;
-  longitude: number | null;
-  sale_price: number | null;
-  closed_on: string | null;
-  date_commenced: string | null;
-  lot_sf: number | null;
-  yard_acres: number | null;
-  building_sf: number | null;
-  rent: number | null;
-  rent_basis: string | null;
-  asset_class: string | null;
-};
+// Both flags take the market from marketRange() -- the ranking and weighted
+// range the deal's comps panel opens with -- so a flag can't call a rent "below
+// market" against a different market than the panel shows. IOS is compared per
+// acre of LOT on both sides (the comp's whole-site figure over its lot, the
+// deal's over its lot); industrial per building SF.
 
-function nearbyComps(comps: CompRow[], point: { lat: number; lng: number }, type: "sale" | "lease") {
-  return comps.filter((c) => {
-    if (c.comp_type !== type || c.latitude == null || c.longitude == null) return false;
-    const when = type === "sale" ? c.closed_on : c.date_commenced;
-    if (!when || monthsAgo(when) > COMP_MAX_AGE_MONTHS) return false;
-    return haversineMiles(point.lat, point.lng, Number(c.latitude), Number(c.longitude)) <= COMP_RADIUS_MI;
-  });
+/** The market figure in the flag's unit, or why there isn't one. */
+function marketFor(deal: any, comps: CompRecord[], type: "sale" | "lease") {
+  const ios = deal.asset_class !== "industrial";
+  const { range } = marketRange(comps, subjectOf(deal), type, ios ? "land" : "building");
+  const perUnit = range.mid === null ? null : ios ? range.mid * SQFT_PER_ACRE : range.mid;
+  return { value: range.count >= COMP_POLICY.minComps ? perUnit : null, count: range.count };
 }
 
-export function computeBasis(deal: any, comps: CompRow[], point: { lat: number; lng: number }): Auto {
+export function computeBasis(deal: any, comps: CompRecord[]): Auto {
   // Our number (close > contract > last offer) when there is one; before
   // that, the seller's ask from the OM, said so in the note.
   const ours = dealValue(deal).amount;
   const price = ours ?? (deal.asking_price != null ? Number(deal.asking_price) : null);
   const askNote = ours == null && price ? " ask" : "";
-  const source = `Confirmed sale comps, ${COMP_RADIUS_MI} mi / ${COMP_MAX_AGE_MONTHS} mo`;
+  const source = COMP_SOURCE("sale");
   if (!price) return { state: "unknown", note: "No price yet (ask, offer, contract or close)", source };
   const ios = deal.asset_class !== "industrial";
   const subjDen = ios ? Number(deal.properties?.lot_sf) / SQFT_PER_ACRE : Number(deal.properties?.building_sf);
   if (!(subjDen > 0)) return { state: "unknown", note: ios ? "Lot size missing" : "Building SF missing", source };
-  const rates = nearbyComps(comps, point, "sale")
-    .map((c) => {
-      const den = ios
-        ? Number(c.yard_acres) > 0 ? Number(c.yard_acres) : Number(c.lot_sf) / SQFT_PER_ACRE
-        : Number(c.building_sf);
-      return Number(c.sale_price) > 0 && den > 0 ? Number(c.sale_price) / den : null;
-    })
-    .filter((v): v is number => v != null);
   const unit = ios ? "/ac" : "/SF";
   const fmtRate = (v: number) => (ios ? fmtMoney(v) : `$${Math.round(v)}`) + unit;
   const subject = price / subjDen;
-  if (rates.length < MIN_COMPS) {
-    return { state: "unknown", note: `${fmtRate(subject)}${askNote}; only ${rates.length} sale comp${rates.length === 1 ? "" : "s"} nearby`, source };
+  const m = marketFor(deal, comps, "sale");
+  if (m.value === null) {
+    return { state: "unknown", note: `${fmtRate(subject)}${askNote}; only ${m.count} comparable sale${m.count === 1 ? "" : "s"} nearby`, source };
   }
-  const med = median(rates);
-  const ratio = subject / med;
+  const ratio = subject / m.value;
   const pct = (Math.abs(1 - ratio) * 100).toFixed(2);
   return {
     state: ratio <= 0.95 ? "strong" : ratio <= 1.1 ? "watch" : "weak",
-    note: `${fmtRate(subject)}${askNote} vs ${fmtRate(med)} median of ${rates.length} sales (${pct}% ${ratio <= 1 ? "below" : "above"})`,
+    note: `${fmtRate(subject)}${askNote} vs ${fmtRate(m.value)} market from ${m.count} sales (${pct}% ${ratio <= 1 ? "below" : "above"})`,
     source,
   };
 }
 
-export function computeRent(deal: any, comps: CompRow[], point: { lat: number; lng: number }, mlaMarketRent: number | null): Auto {
+export function computeRent(deal: any, comps: CompRecord[], mlaMarketRent: number | null): Auto {
   const ios = deal.asset_class !== "industrial";
   const p = deal.properties ?? {};
-  const pick = (v: ReturnType<typeof rateViews>) => (ios ? v.perAcreMonthly : v.perSfBldgMonthly);
+  // The deal's lot, not a yard: there's no yard acreage on a property, and
+  // the comps side is measured over lot too.
+  const pick = (v: ReturnType<typeof rateViews>) =>
+    ios ? (v.perSfLandMonthly === null ? null : v.perSfLandMonthly * SQFT_PER_ACRE) : v.perSfBldgMonthly;
   const fmt = (v: number) => (ios ? `$${Math.round(v).toLocaleString("en-US")}/ac/mo` : `$${v.toFixed(2)}/sf/mo`);
 
-  const leaseRates = nearbyComps(comps, point, "lease")
-    .map((c) => pick(rateViews(c)))
-    .filter((v): v is number => v != null && v > 0);
-  let market: number | null = null;
-  let source = `Confirmed lease comps, ${COMP_RADIUS_MI} mi / ${COMP_MAX_AGE_MONTHS} mo`;
-  if (leaseRates.length >= MIN_COMPS) market = median(leaseRates);
-  else if (!ios && mlaMarketRent) {
+  let source = COMP_SOURCE("lease");
+  let market = marketFor(deal, comps, "lease").value;
+  if (market === null && !ios && mlaMarketRent) {
     market = mlaMarketRent;
     source = "MLA market base rent";
   }
@@ -419,7 +391,7 @@ export async function refreshSignals(
   const supabase = getServiceClient();
   const { data: deal, error } = await supabase
     .from("deals")
-    .select("id, asset_class, closed_price, contract_price, asking_price, in_place_rent, in_place_rent_basis, offers(price, offered_at), mla_data(market_base_rent), properties(address, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status)")
+    .select("id, asset_class, closed_price, contract_price, asking_price, in_place_rent, in_place_rent_basis, offers(price, offered_at), mla_data(market_base_rent), properties(address, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status)")
     .eq("id", dealId)
     .single();
   if (error || !deal) throw new Error("Deal not found");
@@ -442,12 +414,7 @@ export async function refreshSignals(
   }
   const point = { lat, lng };
 
-  const { data: comps } = await supabase
-    .from("comps")
-    .select("comp_type, latitude, longitude, sale_price, closed_on, date_commenced, lot_sf, yard_acres, building_sf, rent, rent_basis, asset_class")
-    .eq("status", "confirmed")
-    .not("latitude", "is", null)
-    .limit(5000);
+  const comps = await loadCompEvidence();
   const mla = (deal.mla_data as any[] | null)?.find((m) => m.market_base_rent != null)?.market_base_rent ?? null;
 
   const needDemand = !opts.skipDemand && (opts.demand || !(await loadDemandSnapshot(dealId)));
@@ -456,8 +423,8 @@ export async function refreshSignals(
     run("zoning", () => computeZoning(dealId, p.address ?? "", point, p.geocode_precision ?? "")),
     run("access", () => computeAccess(point)),
     run("site", () => computeFlood(point, p.lot_sf != null ? Number(p.lot_sf) : null)),
-    run("basis", () => computeBasis(deal, (comps ?? []) as CompRow[], point)),
-    run("rent", () => computeRent(deal, (comps ?? []) as CompRow[], point, mla != null ? Number(mla) : null)),
+    run("basis", () => computeBasis(deal, comps)),
+    run("rent", () => computeRent(deal, comps, mla != null ? Number(mla) : null)),
   ]);
   return errors;
 }

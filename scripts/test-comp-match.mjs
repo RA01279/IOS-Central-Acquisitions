@@ -19,6 +19,7 @@ writeFileSync(
 );
 const {
   unitValue, ageMonths, scoreComps, suggestRange, haversineMiles, formatUnit,
+  COMP_POLICY, marketRange, inferAssetClass,
   isUsableForDistance,
 } = await import(tmp.href);
 
@@ -115,7 +116,7 @@ const mk = (id, over = {}) => ({
 });
 
 // Near/recent must outrank far/old.
-// "far" sits ~7.6 miles out: inside the default 15-mile radius, so this tests
+// "far" sits ~7.6 miles out: inside the default 10-mile radius, so this tests
 // the RANKING rather than the radius filter (covered separately below). The age
 // limit is lifted here so the stale comp is ranked rather than filtered.
 const ranked = scoreComps(
@@ -383,6 +384,32 @@ eq("per-acre priced on usable yard, not the parcel", Math.round(rateViews(PARTIA
 eq("matcher uses the same acreage as the display",
    Number(unitValue(PARTIAL, "building").toFixed(4)),
    Number((rateViews(PARTIAL).perSfBldgMonthly).toFixed(4)));
+
+console.log("\n== one policy ==");
+eq("policy window", [COMP_POLICY.radiusMiles, COMP_POLICY.maxAgeMonths, COMP_POLICY.topN, COMP_POLICY.minComps], [10, 24, 8, 3]);
+// ~12 miles out: inside the old 15-mile deck radius, outside the policy's 10.
+eq("scoreComps defaults to the policy radius",
+   scoreComps([mk("x", { latitude: 30.49, longitude: -95.4561 })], SUBJECT, "sale", { today: TODAY })[0].excluded?.endsWith("mi away"), true);
+{
+  const comps = [mk("a"), mk("b", { sale_price: 1800000 }), mk("c", { sale_price: 1200000 })];
+  const direct = suggestRange(scoreComps(comps, SUBJECT, "sale", { today: TODAY, basis: "land" }), "sale", "land");
+  const viaPolicy = marketRange(comps, SUBJECT, "sale", "land", { today: TODAY }).range;
+  eq("marketRange is the panel's opening range", viaPolicy, direct);
+}
+
+console.log("\n== asset class inference ==");
+eq("per-acre rent -> ios", inferAssetClass({ rent_basis: "per_acre_monthly", building_sf: 40000, lot_sf: 80000 })?.assetClass, "ios");
+eq("per-land-SF rent -> ios", inferAssetClass({ rent_basis: "per_sf_land_monthly" })?.assetClass, "ios");
+eq("yard acres -> ios", inferAssetClass({ rent_basis: "per_sf_bldg_annual", yard_acres: "3.2" })?.assetClass, "ios");
+eq("trailer stalls -> ios", inferAssetClass({ trailer_stalls: 40 })?.assetClass, "ios");
+eq("10% coverage -> ios", inferAssetClass({ building_sf: 10000, lot_sf: 100000 })?.assetClass, "ios");
+eq("stated coverage wins over sizes", inferAssetClass({ coverage_pct: 0.5, building_sf: 10000, lot_sf: 100000 })?.assetClass, "industrial");
+eq("45% coverage -> industrial", inferAssetClass({ building_sf: 45000, lot_sf: 100000 })?.assetClass, "industrial");
+eq("exactly 40% -> industrial", inferAssetClass({ coverage_pct: 0.4 })?.assetClass, "industrial");
+eq("exactly 25% stays open", inferAssetClass({ coverage_pct: 0.25 }), null);
+eq("30% coverage stays open", inferAssetClass({ building_sf: 30000, lot_sf: 100000, rent_basis: "per_sf_bldg_annual" }), null);
+eq("no evidence stays open", inferAssetClass({ rent_basis: "total_monthly" }), null);
+eq("basis says why", inferAssetClass({ building_sf: 10000, lot_sf: 100000 })?.basis, "Inferred: 10% building coverage");
 
 console.log("\n== formatting ==");
 eq("lease building unit", formatUnit(1.15, "lease", "building"), "$1.15/SF/mo");

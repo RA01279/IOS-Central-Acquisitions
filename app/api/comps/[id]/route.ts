@@ -242,6 +242,9 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     update.geocoded_at = g ? new Date().toISOString() : null;
   }
 
+  // A class set by hand replaces an inferred one, and says who decided it.
+  if ("asset_class" in update) update.asset_class_basis = update.asset_class ? `Set by ${user.email}` : null;
+
   update.updated_at = new Date().toISOString();
   update.updated_by = user.email;
 

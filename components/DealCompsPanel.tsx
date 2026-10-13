@@ -16,6 +16,7 @@ import MapView, { type MapPoint } from "./MapView";
 import { rateSummary } from "@/lib/comps/rates";
 import SavedAnalysis from "./SavedAnalysis";
 import {
+  COMP_POLICY,
   DEFAULT_WEIGHTS,
   formatUnit,
   scoreComps,
@@ -46,11 +47,11 @@ export default function DealCompsPanel({
 }) {
   const [compType, setCompType] = useState<CompType>("lease");
   const [basis, setBasis] = useState<ValueBasis>("building");
-  const [radiusMiles, setRadiusMiles] = useState(10);
-  // Two years by default, matching the recency falloff in match.ts -- a comp
-  // whose recency score has decayed to zero shouldn't still be moving an
-  // average. Widen it with the chips when evidence is thin.
-  const [maxAgeMonths, setMaxAgeMonths] = useState(24);
+  // Opens on the same rules as the rent and basis flags and the IC deck
+  // (COMP_POLICY), so the first number seen here is the one those show.
+  // Widen it with the chips when evidence is thin.
+  const [radiusMiles, setRadiusMiles] = useState<number>(COMP_POLICY.radiusMiles);
+  const [maxAgeMonths, setMaxAgeMonths] = useState<number>(COMP_POLICY.maxAgeMonths);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [allowOtherClasses, setAllowOtherClasses] = useState(false);

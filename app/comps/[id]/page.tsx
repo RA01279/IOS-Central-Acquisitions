@@ -92,6 +92,7 @@ export default async function CompDetailPage(props: { params: Promise<{ id: stri
     .from("comps")
     .select("id, address, project_name, comp_type, latitude, longitude, sale_price, rent, rent_basis, building_sf, closed_on, date_commenced")
     .eq("comp_type", comp.comp_type)
+    .eq("status", "confirmed")
     .neq("id", comp.id)
     .not("latitude", "is", null);
 
@@ -144,6 +145,9 @@ export default async function CompDetailPage(props: { params: Promise<{ id: stri
               {comp.project_name || comp.suite ? " · " : ""}
               {[comp.submarket, comp.city, comp.market].filter(Boolean).join(" · ") || "—"}
               {comp.asset_class ? ` · ${ASSET_CLASS_LABELS[comp.asset_class]}` : ""}
+              {comp.asset_class_basis?.startsWith("Inferred") ? (
+                <span title={`${comp.asset_class_basis}. Set the class in Edit to confirm or change it.`}> (inferred)</span>
+              ) : null}
             </p>
           </div>
           <span className="stage-badge">{isSale ? "Sale comp" : "Lease comp"}</span>
