@@ -9,6 +9,7 @@ function load(path, dependencies = {}) {
   return loaded;
 }
 let calls = 0;
+const match = load("../lib/comps/match.ts");
 const dependencies = {
   "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
   "@/lib/auth": { getCurrentUser: async () => ({ email: "test@example.com" }) },
@@ -16,13 +17,20 @@ const dependencies = {
   "@/lib/location": load("../lib/location.ts"),
   "@/lib/money": load("../lib/money.ts"),
   "@/lib/comps/intake-validation": load("../lib/comps/intake-validation.ts", { "../stage-rules": load("../lib/stage-rules.ts") }),
-  "@/lib/supabase": { getServiceClient: () => ({ from: () => ({ insert: (rows) => ({
-    select: async () => {
-      calls++;
-      if (Array.isArray(rows) || rows.address === "Duplicate") return { data: null, error: { code: "23505" } };
-      return { data: [{ id: rows.address, ...rows }], error: null };
-    },
-  }) }) }) },
+  "@/lib/comps/match": match,
+  "@/lib/comps/review": load("../lib/comps/review.ts", { "./match": match }),
+  "@/lib/comps/mapData": load("../lib/comps/mapData.ts"),
+  "@/lib/supabase": { getServiceClient: () => ({ from: () => ({
+    // The review checks read the repository first; it's empty here.
+    select: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }),
+    insert: (rows) => ({
+      select: async () => {
+        calls++;
+        if (Array.isArray(rows) || rows.address === "Duplicate") return { data: null, error: { code: "23505" } };
+        return { data: [{ id: rows.address, ...rows }], error: null };
+      },
+    }),
+  }) }) },
 };
 vm.runInNewContext(ts.transpileModule(
   readFileSync(new URL("../app/api/comps/route.ts", import.meta.url), "utf8"),

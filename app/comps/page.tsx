@@ -7,12 +7,15 @@ import Nav from "@/components/Nav";
 import CompIntakeForm from "@/components/CompIntakeForm";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
 import CompsMap, { type CompMapRow } from "@/components/CompsMap";
+import CompReviewQueue, { type ReviewRow } from "@/components/CompReviewQueue";
 import { hasMapCoordinates, readAllCompPages } from "@/lib/comps/mapData";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
 
 const SQFT_PER_ACRE = 43560;
+const REVIEW_COLUMNS =
+  "id, comp_type, address, city, market, date_commenced, closed_on, rent, rent_basis, sale_price, building_sf, lot_sf, yard_acres, tenant_name, buyer, review_flags, duplicate_of, source_ref";
 
 function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
@@ -49,7 +52,7 @@ export default async function CompsPage() {
   // The map needs EVERY mappable comp -- a map missing a third of the
   // repository is worse than no map, because it looks complete. It only needs
   // a dozen columns, so all of them fit comfortably.
-  const [mapComps, { data: comps, count: totalComps, error: listError }, { data: props }] =
+  const [mapComps, { data: comps, count: totalComps, error: listError }, { data: props }, { data: drafts }] =
     await Promise.all([
       readAllCompPages((from, to) => supabase
         .from("comps")
@@ -57,6 +60,8 @@ export default async function CompsPage() {
         // the TYPE level to shape the result, and a concatenated string defeats
         // that -- the rows come back typed as GenericStringError[].
         .select("id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, rent, rent_basis, sale_price, closed_on, date_commenced, tenant_name, buyer, geocode_precision")
+        // A rejected comp is kept for the record, not shown as evidence.
+        .neq("status", "rejected")
         .order("id")
         .range(from, to)),
       // The full-detail list stays capped -- it renders forty fields per row
@@ -69,7 +74,16 @@ export default async function CompsPage() {
       // Markets already in use, so intake can offer them rather than inviting a
       // fresh spelling of "Houston".
       supabase.from("properties").select("market").not("market", "is", null),
+      supabase.from("comps").select(REVIEW_COLUMNS).eq("status", "draft").order("created_at").limit(200),
     ]);
+
+  // The comps each held draft may repeat, so the reviewer sees both side by side.
+  const reviewRows = (drafts ?? []) as unknown as ReviewRow[];
+  const originalIds = [...new Set(reviewRows.map((r) => r.duplicate_of).filter(Boolean))] as string[];
+  const { data: originalRows } = originalIds.length
+    ? await supabase.from("comps").select(REVIEW_COLUMNS).in("id", originalIds)
+    : { data: [] };
+  const originals = Object.fromEntries(((originalRows ?? []) as unknown as ReviewRow[]).map((r) => [r.id, r]));
 
   if (listError) throw new Error(`Could not load comp details: ${listError.message}`);
   const rows = comps ?? [];
@@ -149,6 +163,8 @@ export default async function CompsPage() {
             </ul>
           </div>
         )}
+
+        <CompReviewQueue rows={reviewRows} originals={originals} />
 
         <CompsMap comps={mapRows as CompMapRow[]} />
 

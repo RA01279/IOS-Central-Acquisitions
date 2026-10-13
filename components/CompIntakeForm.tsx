@@ -368,7 +368,7 @@ export default function CompIntakeForm({
       // own saved/duplicate/rejected counts and they add up.
       const BATCH = 100;
       const totals: any = {
-        saved: 0, duplicates: 0, rejected: [], failed: [], savedComps: [],
+        saved: 0, duplicates: 0, held: 0, rejected: [], failed: [], savedComps: [],
         geocoding: { centroidOnly: 0, failed: 0, fromFile: 0 },
         batches: 0,
       };
@@ -391,6 +391,7 @@ export default function CompIntakeForm({
         totals.saved += body.saved ?? 0;
         totals.savedComps.push(...(body.savedComps ?? []));
         totals.duplicates += body.duplicates ?? 0;
+        totals.held += body.held ?? 0;
         totals.rejected.push(...(body.rejected ?? []));
         totals.failed.push(...(body.failed ?? []));
         totals.geocoding.centroidOnly += body.geocoding?.centroidOnly ?? 0;
@@ -710,6 +711,7 @@ export default function CompIntakeForm({
           <p style={{ margin: 0 }}>
             Saved {result.saved} comp{result.saved === 1 ? "" : "s"}
             {result.duplicates ? ` · ${result.duplicates} already in the repository` : ""}
+            {result.held ? ` · ${result.held} held for review (possible duplicate or unusual rate) — see Needs review above` : ""}
             {result.rejected?.length ? ` · ${result.rejected.length} rejected` : ""}
             {result.geocoding?.centroidOnly
               ? ` · ${result.geocoding.centroidOnly} only resolved to a centroid (won't distance-match)`

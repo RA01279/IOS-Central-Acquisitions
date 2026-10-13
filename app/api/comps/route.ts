@@ -10,6 +10,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { geocodeMany } from "@/lib/geocode";
 import { compIssue } from "@/lib/comps/intake-validation";
 import { inferAssetClass } from "@/lib/comps/match";
+import { canonicalName, canonicalSpellings, findDuplicate, isRateOutlier, type ReviewFlag } from "@/lib/comps/review";
+import { readAllCompPages } from "@/lib/comps/mapData";
+
+// Free-text names that group comps, kept to one spelling each.
+const NAME_FIELDS = ["tenant_name", "buyer", "seller", "landlord_name", "market", "submarket", "city"] as const;
 import { validCoordinates } from "@/lib/location";
 import { parseMoney } from "@/lib/money";
 
@@ -160,7 +165,22 @@ export async function POST(req: NextRequest) {
   let saved = 0;
   let duplicates = 0;
   const failed: { address: string; reason: string }[] = [];
-  const savedComps: { id: string; address: string; latitude: number | null; longitude: number | null; geocode_precision: string | null }[] = [];
+  const savedComps: { id: string; address: string; latitude: number | null; longitude: number | null; geocode_precision: string | null; status: string }[] = [];
+
+  // What's already in Hopper, for the review checks below: spellings to reuse,
+  // deals this file may repeat, and each market's rates. The whole table is a
+  // few hundred narrow rows.
+  const existing = await readAllCompPages<any>((from, to) =>
+    supabase.from("comps")
+      .select("id, comp_type, status, address, project_name, suite, latitude, longitude, rent, rent_basis, sale_price, date_commenced, closed_on, tenant_name, buyer, seller, landlord_name, market, submarket, city, asset_class, building_sf, lot_sf, yard_acres")
+      .order("id").range(from, to) as any);
+  const spellings = Object.fromEntries(
+    NAME_FIELDS.map((f) => [f, canonicalSpellings(existing.map((e) => e[f]))])
+  ) as Record<(typeof NAME_FIELDS)[number], Map<string, string>>;
+  const confirmed = existing.filter((e) => e.status === "confirmed");
+  // Rows earlier in this same file count too: the canonical workbook repeats
+  // some of its own leases.
+  const seen: any[] = existing.filter((e) => e.status !== "rejected");
 
   const rows: { address: string; key: string; row: Record<string, unknown> }[] = [];
   for (let i = 0; i < valid.length; i++) {
@@ -285,6 +305,19 @@ export async function POST(req: NextRequest) {
       if (inferred) { row.asset_class = inferred.assetClass; row.asset_class_basis = inferred.basis; }
     }
 
+    // One spelling per name, so "Tri-county" joins "Tri County" and a
+    // market's comps aren't split across two labels.
+    for (const f of NAME_FIELDS) if (f in row) row[f] = canonicalName(row[f] as string | null, spellings[f]);
+
+    // Held for a person, with the reason, rather than allowed to move a
+    // market figure on a reviewer's oversight in a long file.
+    const flags: ReviewFlag[] = [];
+    const dup = findDuplicate(row as any, seen);
+    if (dup) { flags.push("possible_duplicate"); row.duplicate_of = dup.id ?? null; }
+    if (isRateOutlier(row as any, confirmed)) flags.push("rate_outlier");
+    if (flags.length) { row.status = "draft"; row.review_flags = flags; }
+    seen.push(row);
+
     rows.push({ address: c.address, key: c._key, row });
   }
 
@@ -303,7 +336,7 @@ export async function POST(req: NextRequest) {
   for (let start = 0; start < rows.length; start += CHUNK) {
     const chunk = rows.slice(start, start + CHUNK);
     const { data, error } = await supabase.from("comps").insert(chunk.map((r) => r.row))
-      .select("id,address,latitude,longitude,geocode_precision");
+      .select("id,address,latitude,longitude,geocode_precision,status");
     if (!error) {
       saved += chunk.length;
       savedComps.push(...(data ?? []));
@@ -312,7 +345,7 @@ export async function POST(req: NextRequest) {
     }
     for (const { address, key, row } of chunk) {
       const { data: savedRow, error: rowErr } = await supabase.from("comps").insert(row)
-        .select("id,address,latitude,longitude,geocode_precision");
+        .select("id,address,latitude,longitude,geocode_precision,status");
       if (!rowErr) { saved++; savedComps.push(...(savedRow ?? [])); if (key) completedKeys.push(key); }
       else if (rowErr.code === "23505") { duplicates++; if (key) completedKeys.push(key); }
       else failed.push({ address, reason: rowErr.message });
@@ -328,6 +361,9 @@ export async function POST(req: NextRequest) {
     completedKeys,
     savedComps,
     duplicates,
+    // Saved, but as drafts awaiting review (possible duplicate or outlier
+    // rate); they stay out of every market figure until confirmed.
+    held: savedComps.filter((c) => c.status === "draft").length,
     rejected,
     failed,
     // Surfaced so a batch of comps that can't be distance-matched is visible
