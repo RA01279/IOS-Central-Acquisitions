@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 const OutlookCompPicker = dynamic(() => import("./OutlookCompPicker"), { ssr: false });
+import type { CompSourcePart } from "./OutlookCompPicker";
 import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
 import { validCoordinates } from "@/lib/location";
@@ -144,32 +145,61 @@ export default function CompIntakeForm({
   });
 
   async function sendToParser(payload: Record<string, unknown>) {
+    return sendParts([{ label: null, payload }]);
+  }
+
+  // Several sources at once -- an Outlook email's body and each of its
+  // attachments -- parsed separately and reviewed as one set. Each part's rows
+  // are tagged with where they came from, so the per-tab selection below can
+  // drop a whole attachment. One part failing doesn't lose the others.
+  async function sendParts(parts: CompSourcePart[]) {
     setView("table");
     setShowNeedsWork(false);
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const res = await fetch("/api/comps/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, ...context() }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not read that");
+      const comps: any[] = [];
+      const props: PropertyRecord[] = [];
+      const notes: string[] = [];
+      let lastSeen = null;
+      let lastSource = "manual";
+      const failures: string[] = [];
+      for (const { label, payload, warnings: partNotes } of parts) {
+        const tag = (w: string) => (label && parts.length > 1 ? `${label}: ${w}` : w);
+        for (const w of partNotes ?? []) notes.push(tag(w));
+        if (!payload) continue;
+        const res = await fetch("/api/comps/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, ...context() }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          failures.push(tag(body.error ?? "Could not read that"));
+          continue;
+        }
+        for (const c of body.comps ?? []) comps.push(label && parts.length > 1 ? { ...c, sheet: c.sheet ? `${label} · ${c.sheet}` : label } : c);
+        props.push(...(body.properties ?? []));
+        notes.push(...(body.warnings ?? []).map(tag));
+        lastSeen = body.seen ?? lastSeen;
+        lastSource = body.source ?? lastSource;
+      }
+      if (failures.length && failures.length === parts.filter((p) => p.payload).length) throw new Error(failures.join(" "));
       setDrafts(
-        (body.comps ?? []).map((c: any) => ({
+        comps.map((c: any) => ({
           ...c,
           _key: crypto.randomUUID(),
           _include: true,
           assetClass: assetClass || c.assetClass || null,
         }))
       );
-      setProperties(body.properties ?? []);
-      setWarnings(body.warnings ?? []);
-      setSeen(body.seen ?? null);
-      setSource(body.source ?? "manual");
-      if (typeof payload.sourceRef === "string") setSourceRef(payload.sourceRef);
+      setProperties(props);
+      setWarnings([...failures, ...notes]);
+      setSeen(lastSeen);
+      setSource(lastSource);
+      const ref = parts.find((p) => typeof p.payload?.sourceRef === "string")?.payload?.sourceRef;
+      if (typeof ref === "string") setSourceRef(ref);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -428,7 +458,7 @@ export default function CompIntakeForm({
         <button type="button" className={entryMode === "file" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("file")}>Upload spreadsheet</button>
         <button type="button" className={entryMode === "single" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("single")}>Enter one comp</button>
       </div>
-      {entryMode === "outlook" && <OutlookCompPicker disabled={busy} hasDrafts={Boolean(drafts?.length)} onSelect={sendToParser} />}
+      {entryMode === "outlook" && <OutlookCompPicker disabled={busy} hasDrafts={Boolean(drafts?.length)} onSelect={sendParts} />}
       <div className="stage-actions">
         {entryMode === "single" && <>
           <button type="button" disabled={busy} onClick={() => addManual("lease")}>Add lease comp</button>

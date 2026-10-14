@@ -1,11 +1,12 @@
 // app/api/outlook-helper/upload/route.ts
 // The helper (bearer token) asks for a one-time storage slot for a PDF
-// attachment it pulled from Outlook during a fetch_om job. The file goes
+// attachment it pulled from Outlook during a fetch_om job (PDFs) or a
+// fetch_comps job (PDFs and spreadsheets, sent as `ext`). The file goes
 // straight to storage under the job owner's imports/ folder; the browser
 // reads it from there to extract the OM text.
 import { NextRequest } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { helperJson, helperTokenHash, importOwnerDir } from "@/lib/outlook-helper";
+import { COMP_IMPORT_EXTENSIONS, helperJson, helperTokenHash, importOwnerDir } from "@/lib/outlook-helper";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -19,10 +20,14 @@ export async function POST(req: NextRequest) {
     if (!helper) return helperJson({ error: "Pairing expired or revoked." }, 401);
     const body = await req.json().catch(() => null);
     if (typeof body?.jobId !== "string") return helperJson({ error: "Invalid job" }, 400);
-    const { data: job } = await db.from("outlook_helper_jobs").select("id").eq("id", body.jobId).eq("helper_id", helper.id)
-      .eq("owner_email", helper.owner_email).eq("kind", "fetch_om").eq("status", "processing").maybeSingle();
+    const { data: job } = await db.from("outlook_helper_jobs").select("id,kind").eq("id", body.jobId).eq("helper_id", helper.id)
+      .eq("owner_email", helper.owner_email).in("kind", ["fetch_om", "fetch_comps"]).eq("status", "processing").maybeSingle();
     if (!job) return helperJson({ error: "Job is no longer active" }, 409);
-    const path = `${importOwnerDir(helper.owner_email)}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.pdf`;
+    // An OM import only ever takes PDFs; a comp import takes spreadsheets too.
+    const ext = body.ext ?? "pdf";
+    if (!(job.kind === "fetch_comps" ? (COMP_IMPORT_EXTENSIONS as readonly string[]).includes(ext) : ext === "pdf"))
+      return helperJson({ error: "Unsupported attachment type" }, 400);
+    const path = `${importOwnerDir(helper.owner_email)}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const { data, error } = await db.storage.from("documents").createSignedUploadUrl(path);
     if (error || !data) throw error;
     return helperJson({ path: data.path, signedUrl: data.signedUrl });

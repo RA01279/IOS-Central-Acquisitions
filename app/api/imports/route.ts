@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
-import { IMPORT_PATH, importOwnerDir } from "@/lib/outlook-helper";
+import { COMP_IMPORT_PATH, importOwnerDir } from "@/lib/outlook-helper";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const path = req.nextUrl.searchParams.get("path") ?? "";
-  if (!IMPORT_PATH.test(path) || !path.startsWith(importOwnerDir(user.email) + "/")) {
+  // Comp attachments (spreadsheets too) are read back the same way as OMs.
+  if (!COMP_IMPORT_PATH.test(path) || !path.startsWith(importOwnerDir(user.email) + "/")) {
     return NextResponse.json({ error: "Not your import" }, { status: 403 });
   }
   const { data, error } = await getServiceClient().storage.from("documents").createSignedUrl(path, 600);

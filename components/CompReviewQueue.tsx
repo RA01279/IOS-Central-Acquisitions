@@ -36,17 +36,34 @@ export default function CompReviewQueue({ rows, originals }: { rows: ReviewRow[]
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function decide(id: string, status: "confirmed" | "rejected") {
+  // Confirm keeps the comp and counts it; Delete removes it for good.
+  async function decide(id: string, action: "confirm" | "delete") {
+    if (action === "delete" && !window.confirm("Delete this comp permanently?")) return;
     setBusy(id);
     setError(null);
     try {
-      const res = await fetch(`/api/comps/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
+      const res = await fetch(`/api/comps/${id}`, action === "delete"
+        ? { method: "DELETE" }
+        : { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "confirmed" }) });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not save the decision");
+      router.refresh();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const duplicates = rows.filter((r) => r.duplicate_of && (r.review_flags ?? []).includes("possible_duplicate")).length;
+  async function dedupe() {
+    if (!window.confirm(`Delete all ${duplicates} duplicate comp${duplicates === 1 ? "" : "s"}? The originals they repeat are kept.`)) return;
+    setBusy("all");
+    setError(null);
+    try {
+      const res = await fetch("/api/comps/dedupe", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not delete the duplicates");
       router.refresh();
     } catch (e: any) {
       setError(e.message);
@@ -69,9 +86,17 @@ export default function CompReviewQueue({ rows, originals }: { rows: ReviewRow[]
     <section className="warning">
       <p style={{ margin: 0 }}>
         <strong>{rows.length} comp{rows.length === 1 ? "" : "s"} need{rows.length === 1 ? "s" : ""} review.</strong>{" "}
-        They&apos;re saved but left out of every market figure until confirmed. Reject a duplicate
+        They&apos;re saved but left out of every market figure until confirmed. Delete a duplicate
         or a bad row; confirm one that&apos;s real.
       </p>
+      {duplicates > 0 && (
+        <p style={{ margin: "8px 0 0" }}>
+          <button type="button" disabled={busy !== null} onClick={dedupe}>
+            {busy === "all" ? "Deleting…" : `Dedupe: delete all ${duplicates} duplicate${duplicates === 1 ? "" : "s"}`}
+          </button>{" "}
+          <span className="muted">Keeps the original of each pair.</span>
+        </p>
+      )}
       {error && <p className="error" style={{ marginTop: 8 }}>{error}</p>}
       <div className="table-scroll" style={{ marginTop: 10 }}>
         <table className="summary-table log-table">
@@ -114,11 +139,11 @@ export default function CompReviewQueue({ rows, originals }: { rows: ReviewRow[]
                     )}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button type="button" disabled={busy === c.id} onClick={() => decide(c.id, "confirmed")}>
+                    <button type="button" disabled={busy !== null} onClick={() => decide(c.id, "confirm")}>
                       Confirm
                     </button>{" "}
-                    <button type="button" className="secondary" disabled={busy === c.id} onClick={() => decide(c.id, "rejected")}>
-                      Reject
+                    <button type="button" className="secondary" disabled={busy !== null} onClick={() => decide(c.id, "delete")}>
+                      Delete
                     </button>
                   </td>
                 </tr>

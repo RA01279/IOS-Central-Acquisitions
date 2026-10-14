@@ -1,0 +1,69 @@
+// scripts/test-comp-import.mjs
+//
+// Tests lib/agents/comp-import.ts and that its tables read through the real
+// comp parser: the agent's PDF rows must land with the right type, rate basis
+// and dates, exactly like a pasted broker table.
+//   node scripts/test-comp-import.mjs
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
+
+function load(path, dependencies = {}) {
+  const loaded = {};
+  vm.runInNewContext(
+    ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText,
+    { exports: loaded, require: (name) => dependencies[name], console }
+  );
+  return loaded;
+}
+const { parseCompImport, LEASE_COLUMNS, SALE_COLUMNS } = load("../lib/agents/comp-import.ts");
+const parse = load("../lib/comps/parse.ts", { "../stage-rules": load("../lib/stage-rules.ts") });
+
+let n = 0;
+const check = (label, fn) => { try { fn(); n++; } catch (e) { console.error(`FAIL ${label}`); throw e; } };
+const row = (cols, values) => cols.map((c) => values[c] ?? "");
+
+const report = JSON.stringify({
+  leases: [
+    row(LEASE_COLUMNS, { Address: "3412 Kelli Ct", City: "Fort Worth", State: "TX", Market: "Dallas", Tenant: "The Landscape Partners", Commencement: "2026-04-01", "Term Months": "60", "Rate (AC/Mo)": "8500", Acres: "3.2", "Free Rent": "2" }),
+    row(LEASE_COLUMNS, { Address: "100 Warehouse Way", City: "Houston", State: "TX", Market: "Houston", Tenant: "Acme", Commencement: "2026-02", "Rate Annual": "9.60", "Building SF": "50000" }),
+    row(LEASE_COLUMNS, { Address: "", Tenant: "No address" }),
+  ],
+  sales: [row(SALE_COLUMNS, { Address: "2591 NE 28th St", City: "Fort Worth", State: "TX", "Sale Price": "10750000", "Sale Date": "2026-03-24", Buyer: "Birddog Investments", Acres: "6.1" })],
+  notes: ["Skipped two asking rents."],
+});
+
+const imp = parseCompImport(report);
+check("contract parses", () => assert.ok(imp));
+check("rows without an address are dropped", () => assert.equal(imp.leases.split("\n").length, 3));
+check("notes kept", () => assert.equal(imp.notes[0], "Skipped two asking rents."));
+check("not the contract", () => { assert.equal(parseCompImport("Here are the comps"), null); assert.equal(parseCompImport("{}"), null); });
+check("fenced JSON accepted", () => assert.ok(parseCompImport("```json\n" + report + "\n```")));
+check("tabs and newlines in cells can't break the table", () => {
+  const t = parseCompImport(JSON.stringify({ leases: [row(LEASE_COLUMNS, { Address: "1 A St\t\nSuite 2" })], sales: [] }));
+  assert.equal(t.leases.split("\n").length, 2); assert.equal(t.sales, null);
+});
+
+const leases = parse.parseCompInput({ text: imp.leases }, { defaultCompType: "lease" }).comps;
+check("both leases read", () => assert.equal(leases.length, 2));
+check("per-acre rate keeps its basis", () => {
+  const k = leases.find((c) => c.address.startsWith("3412"));
+  assert.equal(k.compType, "lease"); assert.equal(k.rent, 8500); assert.equal(k.rentBasis, "per_acre_monthly");
+  assert.equal(k.dateCommenced, "2026-04-01"); assert.equal(k.tenantName, "The Landscape Partners");
+  assert.equal(k.leaseTermMonths, 60); assert.equal(k.freeRentMonths, 2);
+});
+check("annual per-SF rate keeps its basis", () => {
+  const w = leases.find((c) => c.address.startsWith("100"));
+  assert.equal(w.rent, 9.6); assert.equal(w.rentBasis, "per_sf_bldg_annual"); assert.equal(w.buildingSf, 50000);
+});
+const sales = parse.parseCompInput({ text: imp.sales }, { defaultCompType: "sale" }).comps;
+check("sale reads", () => {
+  assert.equal(sales.length, 1);
+  assert.equal(sales[0].compType, "sale"); assert.equal(sales[0].salePrice, 10750000);
+  assert.equal(sales[0].closedOn, "2026-03-24"); assert.equal(sales[0].buyer, "Birddog Investments");
+});
+
+console.log(`${n} comp import checks passed`);

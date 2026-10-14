@@ -157,12 +157,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nothing pasted or dropped" }, { status: 400 });
     }
 
-    const result = parseCompInput({ html: body.html, text: body.text }, context);
+    // A table from the comp-import agent arrives as leases or sales already.
+    const hint = body.defaultCompType === "lease" || body.defaultCompType === "sale" ? body.defaultCompType : undefined;
+    const result = parseCompInput({ html: body.html, text: body.text }, { ...context, defaultCompType: hint });
     if (body.source === "email") {
       const sourceRef = typeof body.sourceRef === "string" ? body.sourceRef.slice(0, 12000) : null;
       for (const comp of result.comps) comp.sourceRef = sourceRef || comp.sourceRef;
       result.warnings.push("Review the full email against these rows. Unsupported wording may not produce a comp; add any missing transactions manually.");
-      if (body.emailHasAttachments) result.warnings.push("This email has attachments. Only its body was read; upload any comp spreadsheets separately.");
+      if (body.emailHasAttachments && !body.attachmentsRead) result.warnings.push("This email has attachments. Only its body was read; upload any comp spreadsheets separately.");
     }
     // A pasted property report gets the same treatment as a dropped one.
     const asProperties = asPropertyReport(result.comps);
