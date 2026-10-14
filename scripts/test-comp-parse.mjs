@@ -381,6 +381,27 @@ const yrs = parseCompTable(
 check("implausible term warned", yrs.warnings.some((w) => w.includes("looks like years")), true);
 
 // ------------------------------------------------------------------ garbage
+// ------------------------------------------ annual figures under a monthly label
+// TX IOS ver.2.0: the "$/Building SF/Mo" column is genuinely monthly where it
+// can be checked, but six Houston rows with no acreage carry annual figures.
+console.log("\n== hand-typed annual rate in a monthly column ==");
+{
+  const t = parseCompTable(
+    "Address\tDate\tRate ($/Building SF/Mo)\tRate (AC/Mo)\tUsable Acres\tBuilding Area\n" +
+      "1 Yard Rd\t2026-01-01\t2.08\t6785\t6.19\t20200\n" +
+      "2 Yard Rd\t2026-01-01\t1.10\t5000\t4\t18150\n" +
+      "3 Yard Rd\t2026-01-01\t0.92\t4000\t3\t13068\n" +
+      "5711 Navigation Blvd\t2025-06-01\t10.2\t\t\t\n" +
+      "9 Small Bldg\t2025-06-01\t1.25\t\t\t8000\n",
+    { defaultCompType: "lease" }
+  ).comps;
+  const nav = t.find((c) => c.address.startsWith("5711"));
+  check("$10.20/SF/mo read as annual", nav.rentBasis, "per_sf_bldg_annual");
+  check("and says so", nav.warnings.some((w) => w.includes("per SF/year")), true);
+  check("a plausible monthly rate is left alone", t.find((c) => c.address.startsWith("9 ")).rentBasis, "per_sf_bldg_monthly");
+  check("per-acre rows untouched", t.find((c) => c.address.startsWith("1 ")).rentBasis, "per_acre_monthly");
+}
+
 console.log("\n== nothing parseable ==");
 const empty = parseCompTable("Hey Rhett, give me a call about Conroe when you get a sec.", {});
 check("no comps", empty.comps.length, 0);

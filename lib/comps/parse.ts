@@ -109,6 +109,8 @@ export interface ParseResult {
 }
 
 const SQFT_PER_ACRE = 43560;
+/** A $/building SF/month figure at or above this is an annual rate under the wrong label. */
+const MAX_PLAUSIBLE_BLDG_MONTHLY = 4;
 
 // -- scalar parsing -------------------------------------------------------
 
@@ -1506,6 +1508,24 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
             : " (every other row is priced off the per-acre column, so nothing else moves)"
         }. Worth fixing the header at source.`
     );
+  }
+
+  // The column can be genuinely monthly and still hold a few annual figures
+  // typed in by hand on rows with no acreage to audit them against. TX IOS
+  // ver.2.0 has six Houston rows like that ($9.60-$20.40 under "$/Building
+  // SF/Mo"). No Texas building rents for $4+ per SF per MONTH -- that's $48+
+  // a year -- so on a row priced only off this column, read such a figure as
+  // annual and say so.
+  if (!columnIsAnnual) {
+    for (const c of fromMonthlyColumn) {
+      if (c.rentBasis === "per_sf_bldg_monthly" && Number(c.rent) >= MAX_PLAUSIBLE_BLDG_MONTHLY) {
+        c.rentBasis = "per_sf_bldg_annual";
+        c.warnings.push(
+          `Read as $${Number(c.rent).toFixed(2)} per SF/year: no building rents for that per SF per month. ` +
+            `Check it against the source.`
+        );
+      }
+    }
   }
 
   // Rows that reconcile with neither reading are a genuine per-row problem and
