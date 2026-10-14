@@ -8,6 +8,33 @@
 // costs nothing new.
 
 import ExcelJS from "exceljs";
+import PizZip from "pizzip";
+
+const COMMENT_REL = /<Relationship\b[^>]*Type="[^"]*\/(?:comments|vmlDrawing|threadedComment)"[^>]*\/>/g;
+
+/**
+ * The workbook with every sheet's links to comments, notes and threaded
+ * comments removed, or null when there were none (or it isn't a zip). The
+ * comment files themselves stay in the package, unreferenced and unread.
+ */
+export function withoutComments(buffer: Buffer): Buffer | null {
+  let zip: PizZip;
+  try {
+    zip = new PizZip(buffer);
+  } catch {
+    return null;
+  }
+  let changed = false;
+  for (const f of zip.file(/^xl\/worksheets\/_rels\/[^/]+\.rels$/)) {
+    const xml = f.asText();
+    const next = xml.replace(COMMENT_REL, "");
+    if (next !== xml) {
+      zip.file(f.name, next);
+      changed = true;
+    }
+  }
+  return changed ? (zip.generate({ type: "nodebuffer", compression: "DEFLATE" }) as Buffer) : null;
+}
 
 /** Cell -> text, resolving the shapes ExcelJS returns for formulas and links. */
 function cellText(value: unknown): string {
@@ -117,7 +144,19 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
   try {
     await workbook.xlsx.load(buffer as any);
   } catch (err: any) {
-    throw new Error(`Could not read that workbook: ${err.message}`);
+    // ExcelJS 4.4 can't load a workbook whose cell comments sit where newer
+    // Excel puts them (xl/comments/comment1.xml, linked by an absolute path):
+    // it looks them up under "../comments1.xml" and dies with "Cannot read
+    // properties of undefined (reading 'comments')". Comments carry nothing a
+    // comp needs, so unlink them and try once more.
+    const stripped = withoutComments(buffer);
+    if (!stripped) throw new Error(`Could not read that workbook: ${err.message}`);
+    try {
+      await workbook.xlsx.load(stripped as any);
+      warnings.push("This workbook's cell comments were skipped; they can't be read and aren't needed for comps.");
+    } catch (retryErr: any) {
+      throw new Error(`Could not read that workbook: ${retryErr.message}`);
+    }
   }
 
   const sheets: SheetText[] = [];
