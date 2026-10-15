@@ -191,7 +191,10 @@ export default function CompIntakeForm({
           ...c,
           _key: crypto.randomUUID(),
           _include: true,
-          assetClass: assetClass || c.assetClass || null,
+          // A tab named for IOS ("IOS Lease Comps") is IOS throughout; the TX
+          // IOS template has no asset-class column, so without this every one
+          // of its 294 rows was blocked until classed by hand.
+          assetClass: assetClass || c.assetClass || (/\bIOS\b/i.test(String(c.sheet ?? "")) ? "ios" : null),
         }))
       );
       setProperties(props);
@@ -802,6 +805,12 @@ export default function CompIntakeForm({
           <button type="button" disabled={busy} onClick={checkLocations}>Check missing locations with Google</button>
           <button type="button" className="secondary" onClick={()=>setView(view === "table" ? "cards" : "table")}>{view === "table" ? "Use form view" : "Use table view"}</button>
           <button type="button" className="secondary" aria-pressed={showNeedsWork} onClick={() => setShowNeedsWork(value => !value)}>{showNeedsWork ? "Show all rows" : `Show ${blocked.length} needing attention`}</button>
+          {included.some(d => !d.assetClass) && <p className="warning" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {included.filter(d => !d.assetClass).length} rows have no asset class. Set them all to
+            {(["ios", "industrial"] as const).map(cls => <button key={cls} type="button" className="secondary" disabled={busy}
+              onClick={() => setDrafts(prev => prev?.map(d => d._include && !d.assetClass ? { ...d, assetClass: cls } : d) ?? null)}>
+              {cls === "ios" ? "IOS" : "Industrial"}</button>)}
+          </p>}
           <p className="hint">A substantial, separately usable outdoor storage yard is IOS. Choose the asset class for each row; the setting above applies to all rows.</p>
           <p className="hint">
             Fill in anything missing — dates especially, since broker lease tables usually omit
