@@ -2,6 +2,7 @@
 // The Excel model stays the driver; these are figures to type into it, with
 // their evidence beside them.
 
+import ExitCapForm from "./ExitCapForm";
 import { SALE_COST_PCT, type Band, type CompUnderwriting, type Totals } from "@/lib/comps/underwriting";
 
 const usd = (v: number | null) => (v === null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
@@ -20,7 +21,10 @@ function Rate({ label, unit, b, f }: { label: string; unit: string; b: Band; f: 
   );
 }
 
-export default function CompUnderwritingPanel({ uw, ios, modelHoldYears }: { uw: CompUnderwriting; ios: boolean; modelHoldYears: number | null }) {
+export default function CompUnderwritingPanel({ uw, ios, modelHoldYears, dealId, exitCap, modelExitCap }: {
+  uw: CompUnderwriting; ios: boolean; modelHoldYears: number | null;
+  dealId: string; exitCap: number | null; modelExitCap: number | null;
+}) {
   const { lease, sale } = uw;
   const modelHold = modelHoldYears ? Math.round(modelHoldYears * 12) : null;
   return (
@@ -43,6 +47,7 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears }: { uw:
         <Metric label="Whole site, per-acre rate" value={lease.monthlyByAcre ? `${range(lease.monthlyByAcre, usd)}/mo` : "Lot size missing"} />
         <Metric label="Whole building, per-SF rate" value={lease.annualBySf ? `${range(lease.annualBySf, usd)}/yr` : "Building SF missing"} />
         <Metric label="Lease term" value={lease.termMonths === null ? "Not stated" : `${Math.round(lease.termMonths)} mo (${lease.termCount} comps)`} />
+        <Metric label="Escalation" value={`${(lease.escalation * 100).toFixed(2)}%/yr ${lease.escalationCount ? `(${lease.escalationCount} comps)` : "(LOI default; no comps state one)"}`} />
         <Metric label="Free rent" value={lease.freeRentMonths === null ? "Not stated" : `${lease.freeRentMonths.toFixed(1)} mo (${lease.freeCount} comps)`} />
       </div>
       {!ios && <p className="hint">Per-acre rents on an industrial deal are shown for reference; industrial trades per building SF.</p>}
@@ -55,11 +60,12 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears }: { uw:
           <Rate label="Per building SF" unit="/SF" b={sale.perSf} f={usd2} />
         </tbody>
       </table>
+      <ExitCapForm dealId={dealId} exitCap={exitCap} modelExitCap={modelExitCap} />
       <p className="hint">
         Growth applied: per acre {sale.growthAcre.note}; per SF {sale.growthSf.note}.
       </p>
       <table className="summary-table">
-        <thead><tr><th>Hold</th><th>Per acre</th><th>Net proceeds at per-acre rate</th><th>Per SF</th><th>Net proceeds at per-SF rate</th></tr></thead>
+        <thead><tr><th>Hold</th><th>Per acre</th><th>Net proceeds at per-acre rate</th><th>Per SF</th><th>Net proceeds at per-SF rate</th><th>Net proceeds at {sale.exitCap === null ? "exit cap" : `${(sale.exitCap * 100).toFixed(2)}% cap`}</th></tr></thead>
         <tbody>
           {sale.exits.map((e) => (
             <tr key={e.months} style={modelHold === e.months ? { fontWeight: 600 } : undefined}>
@@ -68,13 +74,15 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears }: { uw:
               <td>{e.byAcre ? range(e.byAcre, usd) : "Lot size missing"}</td>
               <td>{range(e.perSf, usd2)}</td>
               <td>{e.bySf ? range(e.bySf, usd) : "Building SF missing"}</td>
+              <td>{e.byIncome ? range(e.byIncome, usd) : sale.exitCap === null ? "Set an exit cap" : "No market rent"}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="hint">
         Per-acre and per-SF figures are gross sale prices; net proceeds are after {(SALE_COST_PCT * 100).toFixed(0)}% selling
-        costs. Sale comps carry no cap rates yet, so this is a price per acre and per SF, not an income value.
+        costs. The exit-cap column is the comps' market rent{ios ? " per acre over the lot" : " per SF over the building"}, escalated to the
+        exit and taken as NOI (net leases), divided by the exit cap.
       </p>
     </section>
   );

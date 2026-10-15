@@ -10,7 +10,7 @@ import { readAllCompPages } from "./mapData";
 import type { CompRecord, Subject } from "./match";
 
 export const COMP_EVIDENCE_COLUMNS =
-  "id, comp_type, address, project_name, suite, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision, lease_term_months, free_rent_months";
+  "id, comp_type, address, project_name, suite, city, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, sale_price, closed_on, cap_rate, tenant_name, buyer, geocode_precision, lease_term_months, free_rent_months, escalations_pct";
 
 /**
  * Confirmed, located comps -- a draft or an ungeocoded comp has no business

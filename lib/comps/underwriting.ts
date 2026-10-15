@@ -25,6 +25,8 @@ const SQFT_PER_ACRE = 43560;
 export const DEFAULT_HOLDS = [36, 48, 60];
 /** Selling costs (broker, title, closing) taken off the exit price, as a fraction. */
 export const SALE_COST_PCT = 0.02;
+/** Annual escalation assumed when no comp behind the rent states one: the LOI default. */
+export const DEFAULT_ESCALATION = 0.035;
 /** The second circle tried when too few comps sit within COMP_POLICY.radiusMiles. */
 const WIDE_RADIUS_MILES = 25;
 /** Sales history a growth rate is read from. */
@@ -41,6 +43,7 @@ const GROWTH_CAP = 0.05;
 export interface UwComp extends CompRecord {
   lease_term_months?: number | null;
   free_rent_months?: number | null;
+  escalations_pct?: number | null;
 }
 
 export interface Band {
@@ -72,6 +75,11 @@ export interface ExitRow {
   byAcre: Totals | null;
   /** Per-SF value times the deal's building SF, net of selling costs. */
   bySf: Totals | null;
+  /**
+   * Income value, net of selling costs: the comps' market rent, escalated to
+   * the exit, over the exit cap. Null without an exit cap or a market rent.
+   */
+  byIncome: Totals | null;
 }
 
 export interface CompUnderwriting {
@@ -89,6 +97,10 @@ export interface CompUnderwriting {
     /** Comps that stated a term / free rent, behind the two figures above. */
     termCount: number;
     freeCount: number;
+    /** Annual escalation applied to rent to the exit, as a fraction. */
+    escalation: number;
+    /** Comps that stated an escalation; 0 means DEFAULT_ESCALATION was used. */
+    escalationCount: number;
   };
   sale: {
     /** $ per lot acre today. */
@@ -98,6 +110,8 @@ export interface CompUnderwriting {
     growthAcre: Growth;
     growthSf: Growth;
     exits: ExitRow[];
+    /** The exit cap the income values use, as a fraction, or null when none is set. */
+    exitCap: number | null;
   };
 }
 
@@ -244,7 +258,7 @@ const band = (b: Band): Totals => ({ low: b.low, mid: b.mid, high: b.high });
 export function compUnderwriting(
   comps: UwComp[],
   subject: Subject,
-  opts: { today?: Date; holds?: number[] } = {}
+  opts: { today?: Date; holds?: number[]; /** Fraction, e.g. 0.065. */ exitCap?: number | null; ios?: boolean } = {}
 ): CompUnderwriting {
   const today = opts.today ?? new Date();
   const acres = subject.lotSf ? subject.lotSf / SQFT_PER_ACRE : null;
@@ -256,6 +270,10 @@ export function compUnderwriting(
   const leaseUsed = [...new Map([...leaseAcre.used, ...leaseSf.used].map((c) => [c.id, c])).values()];
   const terms = leaseUsed.map((c) => num(c.lease_term_months)).filter((v): v is number => v !== null && v > 0);
   const frees = leaseUsed.filter((c) => num(c.lease_term_months) && num(c.free_rent_months) !== null).map((c) => num(c.free_rent_months)!);
+
+  // Stored as a fraction, but a few comps carry a typed percent (4 for 4%).
+  const escs = leaseUsed.map((c) => num(c.escalations_pct)).filter((v): v is number => v !== null && v >= 0).map((v) => (v > 0.5 ? v / 100 : v));
+  const escalation = median(escs) ?? DEFAULT_ESCALATION;
 
   const saleAcre = estimate(comps, subject, "sale", "land", today);
   const saleSf = estimate(comps, subject, "sale", "building", today);
@@ -270,7 +288,13 @@ export function compUnderwriting(
     const perAcre = grow(saleAcre, growthAcre.rate, months);
     const perSf = grow(saleSf, growthSf.rate, months);
     const net = 1 - SALE_COST_PCT;
-    return { months, perAcre, perSf, byAcre: times(perAcre, acres && acres * net), bySf: times(perSf, sf && sf * net) };
+    // Rent is taken as NOI: IOS and industrial leases here are overwhelmingly
+    // net. IOS income is the per-acre rent over the lot, industrial the
+    // per-SF rent over the building -- the unit each trades in.
+    const rent = (opts.ios ?? subject.assetClass !== "industrial") ? times(band(leaseAcre), acres && acres * 12) : times(band(leaseSf), sf);
+    const cap = opts.exitCap && opts.exitCap > 0 ? opts.exitCap : null;
+    const byIncome = rent && cap ? times(rent, ((1 + escalation) ** (months / 12) * net) / cap) : null;
+    return { months, perAcre, perSf, byAcre: times(perAcre, acres && acres * net), bySf: times(perSf, sf && sf * net), byIncome };
   });
 
   const strip = ({ used: _u, ...b }: Band & { used: UwComp[] }): Band => b;
@@ -284,7 +308,9 @@ export function compUnderwriting(
       freeRentMonths: median(frees),
       termCount: terms.length,
       freeCount: frees.length,
+      escalation,
+      escalationCount: escs.length,
     },
-    sale: { perAcre: strip(saleAcre), perSf: strip(saleSf), growthAcre, growthSf, exits },
+    sale: { perAcre: strip(saleAcre), perSf: strip(saleSf), growthAcre, growthSf, exits, exitCap: opts.exitCap && opts.exitCap > 0 ? opts.exitCap : null },
   };
 }

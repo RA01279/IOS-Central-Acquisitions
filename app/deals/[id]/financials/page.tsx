@@ -97,9 +97,14 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
       </section>
 
       <CompUnderwritingPanel
-        uw={compUnderwriting(evidence.comps as UwComp[], subjectOf(deal))}
+        uw={compUnderwriting(evidence.comps as UwComp[], subjectOf(deal), {
+          exitCap: deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : returns?.exitCapPct ?? null,
+        })}
         ios={deal.asset_class !== "industrial"}
         modelHoldYears={returns?.holdPeriodYears ?? null}
+        dealId={deal.id}
+        exitCap={deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null}
+        modelExitCap={returns?.exitCapPct ?? null}
       />
 
       <section className="panel">

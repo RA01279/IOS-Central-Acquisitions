@@ -93,4 +93,17 @@ check("no building SF, no per-SF value", () => {
   assert.equal(r.sale.exits[0].bySf, null);
 });
 
+// ---- exit cap
+check("income value is escalated rent over the exit cap, net of costs", () => {
+  const r = compUnderwriting([...leases], subject, { today, exitCap: 0.065 });
+  const at60 = r.sale.exits.find((e) => e.months === 60);
+  near(at60.byIncome.mid, r.lease.monthlyByAcre.mid * 12 * 1.035 ** 5 * 0.98 / 0.065);
+  assert.equal(r.lease.escalationCount, 0);
+});
+check("comp escalations, typed percents normalised", () => {
+  const r = compUnderwriting([lease({ escalations_pct: 0.03 }), lease({ escalations_pct: 3 }), lease({ escalations_pct: 0.04 })], subject, { today, exitCap: 0.07 });
+  near(r.lease.escalation, 0.03); assert.equal(r.lease.escalationCount, 3);
+});
+check("no exit cap, no income value", () => assert.equal(compUnderwriting([...leases], subject, { today }).sale.exits[0].byIncome, null));
+
 console.log(`${n} checks passed`);

@@ -227,6 +227,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       update.in_place_rent = rent;
       update.in_place_rent_basis = rent === null ? null : basis;
     }
+    // Typed as a percent (6.5), stored as a fraction like the model's.
+    // Blank clears it, so the model's exit cap applies again.
+    if ("exitCapPct" in body) {
+      const raw = String(body.exitCapPct ?? "").replace(/%/g, "").trim();
+      const pct = raw === "" ? null : Number(raw);
+      if (pct !== null && !(Number.isFinite(pct) && pct > 0 && pct < 25)) {
+        return NextResponse.json({ error: "Enter the exit cap as a percent between 0 and 25, e.g. 6.5" }, { status: 400 });
+      }
+      update.exit_cap_rate = pct === null ? null : pct / 100;
+    }
     if ("icRecommendation" in body) {
       const text = typeof body.icRecommendation === "string" ? body.icRecommendation.trim().slice(0, 1200) : "";
       update.ic_recommendation = text || null;
