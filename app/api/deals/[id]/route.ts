@@ -227,6 +227,13 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       update.in_place_rent = rent;
       update.in_place_rent_basis = rent === null ? null : basis;
     }
+    // The seller's ask -- for a portfolio site, the price allocated to it.
+    // Blank clears it.
+    if ("askingPrice" in body) {
+      const ask = parseMoney(body.askingPrice);
+      if (ask !== null && !(ask > 0)) return NextResponse.json({ error: "Enter a positive price" }, { status: 400 });
+      update.asking_price = ask;
+    }
     // Typed as a percent (6.5), stored as a fraction like the model's.
     // Blank clears it, so the model's exit cap applies again.
     if ("exitCapPct" in body) {

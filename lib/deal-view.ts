@@ -11,7 +11,7 @@ import { resolveFlags, siteScore, type Flag, type SignalRow } from "./site-score
 import { acres, dealRef, fmtAcres, fmtMoney, fmtSf } from "./format";
 
 export const DEAL_CARD_SELECT =
-  "id, ref, stage, asset_class, created_at, asking_price, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)";
+  "id, ref, stage, asset_class, created_at, asking_price, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, deal_portfolio_id, deal_portfolios(name), properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)";
 
 const DAY_MS = 86400000;
 
@@ -65,6 +65,9 @@ export interface DealCardData {
   geocodePrecision: string | null;
   lotSf: number | null;
   buildingSf: number | null;
+  /** Set when the deal is one site of a portfolio package. */
+  portfolioId: string | null;
+  portfolioName: string | null;
 }
 
 export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCardData {
@@ -109,5 +112,7 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
     geocodePrecision: p.geocode_precision ?? null,
     lotSf: p.lot_sf != null ? Number(p.lot_sf) : null,
     buildingSf: bsf,
+    portfolioId: deal.deal_portfolio_id ?? null,
+    portfolioName: deal.deal_portfolios?.name ?? null,
   };
 }

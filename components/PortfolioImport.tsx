@@ -42,6 +42,10 @@ export default function PortfolioImport() {
   const [meta, setMeta] = useState<Draft["portfolio"] & { notes: string[] }>({ name: null, sellerBroker: null, currentOwner: null, totalPrice: null, notes: [] });
   const [rows, setRows] = useState<Row[] | null>(null);
   const [portfolioId, setPortfolioId] = useState<string | null>(null);
+  // Sites can join a portfolio that already exists -- re-importing an OM to
+  // add sites that were skipped or deleted -- instead of starting a second one.
+  const [existing, setExisting] = useState<{ id: string; name: string; sites: number }[]>([]);
+  const [target, setTarget] = useState("");
   const alive = useRef(true);
   const busy = !!step;
 
@@ -124,7 +128,12 @@ export default function PortfolioImport() {
     if (!parts.length) throw new Error(failures.join(" ") || "No sites found.");
     const merged = mergePortfolioImports(parts);
     if (!merged.sites.length) throw new Error("No property sites found in that OM.");
-    setMeta({ ...merged.portfolio, name: merged.portfolio.name ?? f.name.replace(/\.pdf$/i, ""), notes: [...failures.map((m) => `Not read: ${m}`), ...merged.notes] });
+    const name = merged.portfolio.name ?? f.name.replace(/\.pdf$/i, "");
+    setMeta({ ...merged.portfolio, name, notes: [...failures.map((m) => `Not read: ${m}`), ...merged.notes] });
+    // Offer the existing portfolios, preselecting one with the same name.
+    const list: { id: string; name: string; sites: number }[] = await json("/api/deal-portfolios").then((r) => r.portfolios ?? []).catch(() => []);
+    setExisting(list);
+    setTarget(list.find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? "");
     setRows(merged.sites.map((s, i) => ({ ...s, key: `${i}`, include: true, location: null, locationNote: null, result: null })));
   }
 
@@ -147,8 +156,8 @@ export default function PortfolioImport() {
   async function create() {
     const ready = (rows ?? []).filter((r) => r.include && r.location && !r.result?.dealId);
     if (!ready.length) throw new Error("No ticked sites with a verified location. Check locations first.");
-    if (!meta.name?.trim()) throw new Error("Name the portfolio.");
-    let pid = portfolioId;
+    let pid = portfolioId ?? (target || null);
+    if (!pid && !meta.name?.trim()) throw new Error("Name the portfolio.");
     if (!pid) {
       setStep("Creating the portfolio…");
       const made = await post("/api/deal-portfolios", { name: meta.name, sellerBroker: meta.sellerBroker, currentOwner: meta.currentOwner, notes: meta.notes, importPath: file?.path, fileName: file?.name });
@@ -225,7 +234,14 @@ export default function PortfolioImport() {
       {rows && (
         <>
           <div className="grid-2">
-            <label>Portfolio name<input value={meta.name ?? ""} disabled={!!portfolioId} onChange={(e) => setMeta({ ...meta, name: e.target.value })} /></label>
+            <label>
+              Add the sites to
+              <select value={target} disabled={!!portfolioId || busy} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">A new portfolio</option>
+                {existing.map((p) => <option key={p.id} value={p.id}>{p.name} (existing, {p.sites} sites)</option>)}
+              </select>
+            </label>
+            {!target && <label>Portfolio name<input value={meta.name ?? ""} disabled={!!portfolioId} onChange={(e) => setMeta({ ...meta, name: e.target.value })} /></label>}
             <label>Sales broker<input value={meta.sellerBroker ?? ""} disabled={!!portfolioId} onChange={(e) => setMeta({ ...meta, sellerBroker: e.target.value || null })} /></label>
           </div>
           <p className="hint" style={{ margin: 0 }}>
@@ -288,8 +304,8 @@ export default function PortfolioImport() {
             <button type="button" disabled={busy || !located.filter((r) => !r.result?.dealId).length} onClick={() => void run(create)}>
               Create {located.filter((r) => !r.result?.dealId).length} deals
             </button>
-            {portfolioId && <a href={`/deals/portfolios/${portfolioId}`}>Open the portfolio ({created} sites) →</a>}
-            {!portfolioId && <button type="button" className="secondary" disabled={busy} onClick={() => { setRows(null); setFile(null); }}>Start over</button>}
+            {(portfolioId || (target && created > 0)) && <a href={`/deals/portfolios/${portfolioId ?? target}`}>Open the portfolio →</a>}
+            {!portfolioId && !created &&<button type="button" className="secondary" disabled={busy} onClick={() => { setRows(null); setFile(null); }}>Start over</button>}
           </div>
           <p className="hint" style={{ margin: 0 }}>
             Sites Google can&apos;t verify aren&apos;t created; fix the address and check again, or create that one from the

@@ -50,17 +50,14 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
     .eq("deal_type", "acquisition")
     .neq("stage", "archived")
     .order("created_at", { ascending: false });
-  if (asset !== "all") query = query.eq("asset_class", asset);
+  // Portfolio sites of the other class come too: a portfolio card stands for
+  // the whole package, and Project Empire's three warehouses are Industrial.
+  if (asset !== "all") query = query.or(`asset_class.eq.${asset},deal_portfolio_id.not.is.null`);
   const { data: rows } = await query;
-  // Portfolio packages, linked above the board. A failed query only hides them.
-  const { data: portfolios } = await supabase
-    .from("deal_portfolios")
-    .select("id, name, deals(count)")
-    .order("created_at", { ascending: false })
-    .limit(12);
   const deals = rows ?? [];
   const signals = await loadSignals(deals.map((d: any) => d.id));
-  const cards: DealCardData[] = deals.map((d: any) => toDealCard(d, signals.get(d.id)));
+  const allCards: DealCardData[] = deals.map((d: any) => toDealCard(d, signals.get(d.id)));
+  const cards = asset === "all" ? allCards : allCards.filter((c) => c.assetClass === asset);
 
   // ---- header KPIs (whole pipeline for this asset class, ignoring filters)
   const active = cards.filter((c) => c.stage !== "closed");
@@ -101,6 +98,38 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   };
   shown = [...shown].sort(by[sort]);
 
+  // A portfolio's sites show as ONE card, in the stage most of its sites are
+  // at (ties go to the earlier stage). Filters still apply site by site, so a
+  // market filter shows the package with only its sites in that market.
+  const groups = new Map<string, DealCardData[]>();
+  const singles: DealCardData[] = [];
+  for (const c of shown) {
+    if (c.portfolioId) groups.set(c.portfolioId, [...(groups.get(c.portfolioId) ?? []), c]);
+    else singles.push(c);
+  }
+  const packages: PortfolioCard[] = [...groups.keys()].map((id) => {
+    // Filters decide whether the package shows; the card then describes all of it.
+    const sites = allCards.filter((c) => c.portfolioId === id);
+    const ask = (c: DealCardData) => {
+      const row = deals.find((d: any) => d.id === c.id) as any;
+      return c.price ?? (row?.asking_price != null ? Number(row.asking_price) : 0);
+    };
+    const counts = ACQUISITION_STAGES.map((st) => [st, sites.filter((c) => c.stage === st).length] as const).filter(([, n]) => n);
+    const lead = counts.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    const acres = sites.reduce((t, c) => t + (c.lotSf ?? 0), 0) / 43560;
+    return {
+      id,
+      name: sites[0].portfolioName ?? "Portfolio",
+      sites: sites.length,
+      markets: new Set(sites.map((c) => c.market).filter(Boolean)).size,
+      stage: lead,
+      stageMix: counts.length > 1 ? counts.map(([st, n]) => `${n} ${STAGE_LABELS[st]}`).join(", ") : null,
+      acres,
+      price: sites.reduce((t, c) => t + ask(c), 0),
+    };
+  });
+  const totalShown = singles.length + packages.length;
+
   const soonCutoff = addDays(today, 7);
 
   return (
@@ -119,7 +148,14 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
             </div>
           </div>
           <div className="ph-kpis">
-            <DarkKpi label="Active deals" value={active.length} />
+            <DarkKpi
+              label="Active deals"
+              value={active.length}
+              sub={(() => {
+                const pk = new Set(active.map((c) => c.portfolioId).filter(Boolean));
+                return pk.size ? `${active.filter((c) => c.portfolioId).length} in ${pk.size} portfolio${pk.size === 1 ? "" : "s"}` : undefined;
+              })()}
+            />
             <DarkKpi
               label="Pipeline value"
               value={fmtMoney(value)}
@@ -130,17 +166,6 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
           </div>
         </div>
 
-        {(portfolios?.length ?? 0) > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "10px 24px 0" }}>
-            <span className="hint" style={{ margin: 0 }}>Portfolios:</span>
-            {portfolios!.map((p: any) => (
-              <a key={p.id} className="fchip" href={`/deals/portfolios/${p.id}`}>
-                {p.name} ({p.deals?.[0]?.count ?? 0} sites)
-              </a>
-            ))}
-          </div>
-        )}
-
         <DealFilters
           state={state}
           pipelines={[
@@ -150,13 +175,20 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
           markets={marketOptions}
           stages={stageOptions}
           sorts={Object.entries(SORTS).map(([value, label]) => ({ value, label }))}
-          shown={shown.length}
+          shown={totalShown}
           total={cards.length}
         />
 
         {view === "cards" ? (
-          shown.length ? (
-            <DealGrid cards={shown} />
+          totalShown ? (
+            <>
+              {packages.length > 0 && (
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "18px 28px 0" }}>
+                  {packages.map((p) => <PackageCard key={p.id} p={p} />)}
+                </div>
+              )}
+              {singles.length > 0 && <DealGrid cards={singles} />}
+            </>
           ) : (
             <p className="empty-state">No deals match these filters.</p>
           )
@@ -164,14 +196,16 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
           <div style={{ padding: "18px 28px 40px" }}>
             <div className="pipeline-board pipeline-board-6">
               {(stages.length ? ACQUISITION_STAGES.filter((s) => stages.includes(s)) : ACQUISITION_STAGES).map((s) => {
-                const col = shown.filter((c) => c.stage === s);
+                const col = singles.filter((c) => c.stage === s);
+                const colPackages = packages.filter((p) => p.stage === s);
                 return (
                   <section key={s} className="pipeline-column">
                     <h2>
                       {STAGE_LABELS[s]}
-                      <span className="count">{col.length}</span>
+                      <span className="count">{col.length + colPackages.length}</span>
                     </h2>
                     <div className="pipeline-cards">
+                      {colPackages.map((p) => <PackageCard key={p.id} p={p} />)}
                       {col.map((c) => {
                         const deal = deals.find((d: any) => d.id === c.id) as any;
                         const dd = deal?.dd_end_on as string | null;
@@ -191,7 +225,7 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
                           </div>
                         );
                       })}
-                      {col.length === 0 && <p className="empty">Nothing here</p>}
+                      {col.length + colPackages.length === 0 && <p className="empty">Nothing here</p>}
                     </div>
                   </section>
                 );
@@ -201,5 +235,35 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
         )}
       </main>
     </>
+  );
+}
+
+interface PortfolioCard {
+  id: string;
+  name: string;
+  sites: number;
+  markets: number;
+  stage: string;
+  /** "12 Prospect, 2 UW" when the sites aren't all at one stage. */
+  stageMix: string | null;
+  acres: number;
+  price: number;
+}
+
+/** One card for a whole portfolio package; its sites are on the portfolio page. */
+function PackageCard({ p }: { p: PortfolioCard }) {
+  return (
+    <div className="pipeline-card-wrap">
+      <a href={`/deals/portfolios/${p.id}`} className="pipeline-card" style={{ borderLeft: "4px solid #0E5AA7" }}>
+        <span className="address">{p.name}</span>
+        <span className="market muted">
+          Portfolio · {p.sites} site{p.sites === 1 ? "" : "s"} · {p.markets} market{p.markets === 1 ? "" : "s"}
+        </span>
+        <span className="stage-age">
+          {[p.acres ? `${p.acres.toFixed(1)} ac` : null, p.price ? fmtMoney(p.price) : "Unpriced"].filter(Boolean).join(" · ")}
+        </span>
+        {p.stageMix && <span className="stage-age">{p.stageMix}</span>}
+      </a>
+    </div>
   );
 }

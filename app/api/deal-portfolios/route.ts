@@ -48,3 +48,16 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ id: row.id, omWarning }, { status: 201 });
 }
+
+// GET -- portfolios to add sites to, newest first.
+export async function GET(req: NextRequest) {
+  const user = await getCurrentUser(req);
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const { data, error } = await getServiceClient()
+    .from("deal_portfolios")
+    .select("id, name, created_at, deals(count)")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ portfolios: (data ?? []).map((p: any) => ({ id: p.id, name: p.name, sites: p.deals?.[0]?.count ?? 0 })) });
+}

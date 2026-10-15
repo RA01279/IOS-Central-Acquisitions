@@ -13,6 +13,7 @@ import { STAGE_LABELS } from "@/lib/deals";
 import { dealRef } from "@/lib/format";
 import { loadCompEvidence, subjectOf } from "@/lib/comps/evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
+import AllocatedPriceInput from "@/components/AllocatedPriceInput";
 
 export const dynamic = "force-dynamic";
 
@@ -144,7 +145,7 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
           <div style={{ overflowX: "auto" }}>
             <table className="summary-table">
               <thead>
-                <tr><th>Site</th><th>Market</th><th>Stage</th><th>Acres</th><th>Bldg SF</th><th>Price</th><th>$/AC</th><th>Comp rent $/AC/mo</th><th>Comp value $/AC</th><th>Price vs comps</th></tr>
+                <tr><th>Site</th><th>Market</th><th>Stage</th><th>Acres</th><th>Bldg SF</th><th>Allocated price</th><th>$/AC</th><th>Comp rent $/AC/mo</th><th>Comp value $/AC</th><th>Price vs comps</th></tr>
               </thead>
               <tbody>
                 {sites.map((s) => {
@@ -161,7 +162,12 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
                       <td><Badge tone={STAGE_TONES[s.d.stage] ?? "neutral"}>{STAGE_LABELS[s.d.stage] ?? s.d.stage}</Badge></td>
                       <td>{s.acres ? s.acres.toFixed(2) : "—"}</td>
                       <td>{s.sf ? Math.round(s.sf).toLocaleString() : "—"}</td>
-                      <td>{usdM(s.price)}</td>
+                      <td>
+                        <AllocatedPriceInput dealId={s.d.id} price={num(s.d.asking_price)} />
+                        {s.price !== num(s.d.asking_price) && s.price != null && (
+                          <><br /><span className="muted">{num(s.d.closed_price) != null ? "Closed" : "Contract"} {usdM(s.price)}</span></>
+                        )}
+                      </td>
                       <td>{s.price && s.acres ? usd(s.price / s.acres) : "—"}</td>
                       <td title={s.uw.lease.perAcreMonthly.source}>{usd(s.uw.lease.perAcreMonthly.mid)}</td>
                       <td title={s.uw.sale.perAcre.source}>{usd(s.uw.sale.perAcre.mid)}</td>
