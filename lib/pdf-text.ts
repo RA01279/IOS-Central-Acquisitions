@@ -18,14 +18,15 @@ export interface PdfText {
 
 const MAX_CHARS = 60000;
 
-export async function pdfText(data: ArrayBuffer, maxChars = MAX_CHARS): Promise<PdfText> {
+export async function pdfText(data: ArrayBuffer, maxChars = MAX_CHARS, maxPages = 40): Promise<PdfText> {
   const pdfjs: any = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
   const doc = await pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false }).promise;
   let text = "";
   // OMs put the facts (address, acreage, price, broker) up front; cap the
   // pages read so a 90-page OM doesn't blow the agent's input budget.
-  const pages = Math.min(doc.numPages, 40);
+  // A portfolio OM's schedule can sit anywhere, so that caller reads them all.
+  const pages = Math.min(doc.numPages, maxPages);
   for (let i = 1; i <= pages && text.length < maxChars; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();

@@ -14,13 +14,22 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "Invalid deal" }, { status: 400 });
   const body = await req.json().catch(() => null);
+  const db = getServiceClient();
+  // A portfolio site: point at the OM its portfolio already filed, once for all its sites.
+  if (typeof body?.portfolioId === "string") {
+    const { data: pf } = await db.from("deal_portfolios").select("om_path,om_name").eq("id", body.portfolioId).maybeSingle();
+    if (!pf?.om_path) return NextResponse.json({ error: "That portfolio has no OM filed" }, { status: 404 });
+    const { error } = await db.from("documents").insert({ deal_id: id, doc_type: "om", storage_path: pf.om_path, uploaded_by: user.email });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logDealEvent(id, "om_attached", { file: pf.om_name, portfolio: body.portfolioId }, user.email).catch(() => {});
+    return NextResponse.json({ ok: true, path: pf.om_path }, { status: 201 });
+  }
   const from = String(body?.importPath ?? "");
   if (!IMPORT_PATH.test(from) || !from.startsWith(importOwnerDir(user.email) + "/")) {
     return NextResponse.json({ error: "Not your import" }, { status: 403 });
   }
   const name = String(body?.fileName ?? "OM.pdf").replace(/[^A-Za-z0-9._ -]+/g, "_").replace(/\s+/g, "_").slice(0, 120) || "OM.pdf";
   const to = `deals/${id}/om-${Date.now()}-${name.toLowerCase().endsWith(".pdf") ? name : name + ".pdf"}`;
-  const db = getServiceClient();
   const { error: moveError } = await db.storage.from("documents").move(from, to);
   if (moveError) return NextResponse.json({ error: `Could not file the OM: ${moveError.message}` }, { status: 500 });
   const { error } = await db.from("documents").insert({ deal_id: id, doc_type: "om", storage_path: to, uploaded_by: user.email });

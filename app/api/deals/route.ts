@@ -16,6 +16,12 @@ export async function POST(req: NextRequest) {
   try {
     // Validate before creating anything, so a bad ask can't leave a half-made deal.
     const askingPrice = parseMoney(body.askingPrice);
+    const portfolioId = typeof body.dealPortfolioId === "string" && /^[0-9a-f-]{36}$/i.test(body.dealPortfolioId) ? body.dealPortfolioId : null;
+    if (body.dealPortfolioId && !portfolioId) return NextResponse.json({ error: "Invalid portfolio" }, { status: 400 });
+    if (portfolioId) {
+      const { data: pf } = await getServiceClient().from("deal_portfolios").select("id").eq("id", portfolioId).maybeSingle();
+      if (!pf) return NextResponse.json({ error: "Portfolio not found" }, { status: 404 });
+    }
     if (body.intakeKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.intakeKey)) {
       return NextResponse.json({ error: "Invalid intake key" }, { status: 400 });
     }
@@ -54,6 +60,10 @@ export async function POST(req: NextRequest) {
     const dealId = (result as any).deal?.id;
     if (askingPrice !== null && dealId) {
       await getServiceClient().from("deals").update({ asking_price: askingPrice }).eq("id", dealId);
+    }
+    // A site created from a portfolio OM: flag it as part of the package.
+    if (dealId && portfolioId) {
+      await getServiceClient().from("deals").update({ deal_portfolio_id: portfolioId }).eq("id", dealId);
     }
     if (!result.deal && result.duplicates?.length) return NextResponse.json({ ...result, error: "This address already has a deal. Open the existing record below." }, { status: 409 });
     return NextResponse.json(result, { status: result.replayed ? 200 : 201 });

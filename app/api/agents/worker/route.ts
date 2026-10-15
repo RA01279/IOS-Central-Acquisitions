@@ -2,6 +2,7 @@ import { parseMemo, MEMO_VERSION } from "@/lib/agents/memo";
 import { parseNarrative } from "@/lib/agents/ic-narrative";
 import { parseSourcing } from "@/lib/agents/sourcing";
 import { parseDealImport } from "@/lib/agents/deal-import";
+import { parsePortfolioImport } from "@/lib/agents/portfolio-import";
 import { parseCompImport } from "@/lib/agents/comp-import";
 import { NextRequest } from "next/server";
 import { workerContext, json, reap } from "@/lib/agents/server";
@@ -51,6 +52,9 @@ export async function POST(req: NextRequest) {
   }
   if (!body.error && job.data.agent === "comp-import" && !parseCompImport(r.report)) {
     body.error = "Could not read comp rows from that document. Check it is a comp sheet, then try again.";
+  }
+  if (!body.error && job.data.agent === "portfolio-import" && !parsePortfolioImport(r.report)) {
+    body.error = "Could not read a property schedule from that section of the OM. Try again.";
   }
   const update = await db.from("agent_runs").update({ status: body.error ? "failed" : "completed",
     result: body.error ? null : { report: r.report, limitations: r.limitations }, model: body.error ? null : r.model,

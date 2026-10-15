@@ -52,6 +52,12 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
     .order("created_at", { ascending: false });
   if (asset !== "all") query = query.eq("asset_class", asset);
   const { data: rows } = await query;
+  // Portfolio packages, linked above the board. A failed query only hides them.
+  const { data: portfolios } = await supabase
+    .from("deal_portfolios")
+    .select("id, name, deals(count)")
+    .order("created_at", { ascending: false })
+    .limit(12);
   const deals = rows ?? [];
   const signals = await loadSignals(deals.map((d: any) => d.id));
   const cards: DealCardData[] = deals.map((d: any) => toDealCard(d, signals.get(d.id)));
@@ -123,6 +129,17 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
             <DarkKpi label="To IC this week" value={toIc} />
           </div>
         </div>
+
+        {(portfolios?.length ?? 0) > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "10px 24px 0" }}>
+            <span className="hint" style={{ margin: 0 }}>Portfolios:</span>
+            {portfolios!.map((p: any) => (
+              <a key={p.id} className="fchip" href={`/deals/portfolios/${p.id}`}>
+                {p.name} ({p.deals?.[0]?.count ?? 0} sites)
+              </a>
+            ))}
+          </div>
+        )}
 
         <DealFilters
           state={state}

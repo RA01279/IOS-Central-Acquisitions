@@ -61,6 +61,10 @@ export default async function DealLayout(props: { children: React.ReactNode; par
     broker ? `Broker: ${broker.companies?.name ? `${broker.companies.name} (${broker.name})` : broker.name}` : null,
   ].filter(Boolean);
   const site = await getSiteView(deal.id);
+  // Part of a portfolio package? Its own query, and a failure only hides the
+  // badge: the main select above must never depend on a newer column.
+  const { data: pfRow } = await supabase.from("deals").select("deal_portfolios(id, name)").eq("id", deal.id).maybeSingle();
+  const portfolio = (pfRow as any)?.deal_portfolios as { id: string; name: string } | null | undefined;
   const name = p.address ?? "Untitled deal";
   const ref = dealRef(deal.ref);
 
@@ -96,6 +100,11 @@ export default async function DealLayout(props: { children: React.ReactNode; par
               <Badge tone={STAGE_TONES[deal.stage] ?? "neutral"}>{STAGE_LABELS[deal.stage] ?? deal.stage}</Badge>
               {deal.asset_class && (
                 <Badge tone="brand">{ASSET_CLASS_LABELS[deal.asset_class] ?? deal.asset_class}</Badge>
+              )}
+              {portfolio && (
+                <a href={`/deals/portfolios/${portfolio.id}`} title="Part of a portfolio — open the portfolio view">
+                  <Badge tone="neutral">Portfolio: {portfolio.name}</Badge>
+                </a>
               )}
               <a href={`/deals/${deal.id}/ic-deck`} className="btn-inverse">
                 Export IC Deck
