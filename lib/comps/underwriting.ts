@@ -23,6 +23,8 @@ import type { CompRecord, CompType, Subject, ValueBasis } from "./match";
 const SQFT_PER_ACRE = 43560;
 /** Hold periods the exit table is shown for. */
 export const DEFAULT_HOLDS = [36, 48, 60];
+/** Selling costs (broker, title, closing) taken off the exit price, as a fraction. */
+export const SALE_COST_PCT = 0.02;
 /** The second circle tried when too few comps sit within COMP_POLICY.radiusMiles. */
 const WIDE_RADIUS_MILES = 25;
 /** Sales history a growth rate is read from. */
@@ -66,9 +68,9 @@ export interface ExitRow {
   months: number;
   perAcre: Totals;
   perSf: Totals;
-  /** Per-acre value times the deal's lot acres. */
+  /** Per-acre value times the deal's lot acres, net of selling costs. */
   byAcre: Totals | null;
-  /** Per-SF value times the deal's building SF. */
+  /** Per-SF value times the deal's building SF, net of selling costs. */
   bySf: Totals | null;
 }
 
@@ -267,7 +269,8 @@ export function compUnderwriting(
   const exits = (opts.holds ?? DEFAULT_HOLDS).map((months) => {
     const perAcre = grow(saleAcre, growthAcre.rate, months);
     const perSf = grow(saleSf, growthSf.rate, months);
-    return { months, perAcre, perSf, byAcre: times(perAcre, acres), bySf: times(perSf, sf) };
+    const net = 1 - SALE_COST_PCT;
+    return { months, perAcre, perSf, byAcre: times(perAcre, acres && acres * net), bySf: times(perSf, sf && sf * net) };
   });
 
   const strip = ({ used: _u, ...b }: Band & { used: UwComp[] }): Band => b;

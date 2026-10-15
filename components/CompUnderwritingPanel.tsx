@@ -2,7 +2,7 @@
 // The Excel model stays the driver; these are figures to type into it, with
 // their evidence beside them.
 
-import type { Band, CompUnderwriting, Totals } from "@/lib/comps/underwriting";
+import { SALE_COST_PCT, type Band, type CompUnderwriting, type Totals } from "@/lib/comps/underwriting";
 
 const usd = (v: number | null) => (v === null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
 const usd2 = (v: number | null) => (v === null ? "—" : `$${v.toFixed(2)}`);
@@ -59,7 +59,7 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears }: { uw:
         Growth applied: per acre {sale.growthAcre.note}; per SF {sale.growthSf.note}.
       </p>
       <table className="summary-table">
-        <thead><tr><th>Hold</th><th>Per acre</th><th>Site value at per-acre rate</th><th>Per SF</th><th>Value at per-SF rate</th></tr></thead>
+        <thead><tr><th>Hold</th><th>Per acre</th><th>Net proceeds at per-acre rate</th><th>Per SF</th><th>Net proceeds at per-SF rate</th></tr></thead>
         <tbody>
           {sale.exits.map((e) => (
             <tr key={e.months} style={modelHold === e.months ? { fontWeight: 600 } : undefined}>
@@ -73,8 +73,8 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears }: { uw:
         </tbody>
       </table>
       <p className="hint">
-        Gross sale price before selling costs. Sale comps carry no cap rates yet, so this is a price per
-        acre and per SF, not an income value.
+        Per-acre and per-SF figures are gross sale prices; net proceeds are after {(SALE_COST_PCT * 100).toFixed(0)}% selling
+        costs. Sale comps carry no cap rates yet, so this is a price per acre and per SF, not an income value.
       </p>
     </section>
   );

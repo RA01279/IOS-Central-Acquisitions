@@ -85,7 +85,7 @@ check("exit grows today's value by the hold", () => {
   const g = r.sale.growthAcre.rate;
   const at36 = r.sale.exits.find((e) => e.months === 36);
   near(at36.perAcre.mid, now * (1 + g) ** 3);
-  near(at36.byAcre.mid, at36.perAcre.mid * 5);
+  near(at36.byAcre.mid, at36.perAcre.mid * 5 * 0.98);
   assert.deepEqual([...r.sale.exits.map((e) => e.months)], [36, 48, 60]);
 });
 check("no building SF, no per-SF value", () => {
