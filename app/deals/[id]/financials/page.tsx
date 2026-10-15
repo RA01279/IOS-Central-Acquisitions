@@ -13,7 +13,9 @@ import MlaProvideForm from "@/components/MlaProvideForm";
 import DealCompsPanel from "@/components/DealCompsPanel";
 import InPlaceRentForm from "@/components/InPlaceRentForm";
 import { KpiCard } from "@/components/ui";
+import CompUnderwritingPanel from "@/components/CompUnderwritingPanel";
 import type { CompRecord } from "@/lib/comps/match";
+import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
 
 export const metadata = { title: "Financials" };
 
@@ -93,6 +95,12 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         )}
         <ExcelUploadForm dealId={deal.id} />
       </section>
+
+      <CompUnderwritingPanel
+        uw={compUnderwriting(evidence.comps as UwComp[], subjectOf(deal))}
+        ios={deal.asset_class !== "industrial"}
+        modelHoldYears={returns?.holdPeriodYears ?? null}
+      />
 
       <section className="panel">
         <h2>Version history</h2>
