@@ -176,7 +176,7 @@ export async function geocodeAddress(
         .replace(/\b(lane|road|street|drive|boulevard|avenue|court|parkway|highway|north|south|east|west)\b/g,
           (word) => ({ lane: "ln", road: "rd", street: "st", drive: "dr", boulevard: "blvd", avenue: "ave", court: "ct", parkway: "pkwy", highway: "hwy", north: "n", south: "s", east: "e", west: "w" }[word]!))
         .replace(/\s+/g, " ").trim();
-      const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?\s+/, "");
+      const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?(?:\s*[-–&]\s*\d+[A-Za-z]?)?\s+/, "");
       const exactPremise = best.geometry.location_type === "GEOMETRIC_CENTER" &&
         best.types?.includes("premise") && best.types?.includes("street_address");
       if (data.results.length !== 1 || best.partial_match || (!exactPremise && best.geometry.location_type !== "ROOFTOP") ||
