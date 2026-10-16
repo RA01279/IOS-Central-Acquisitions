@@ -12,6 +12,7 @@ import Docxtemplater from "docxtemplater";
 import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent, recordOffer } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
+import { dropSecondSigner } from "@/lib/loi-docx";
 
 // "$4,200,000" / "4.2M" typed into the price field -> 4200000, or null when
 // there's no usable number. Only a clean figure becomes an offer row; a
@@ -140,6 +141,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   let buffer: Buffer;
   try {
     const zip = new PizZip(Buffer.from(await tpl.arrayBuffer()));
+    if (!data.signer2_name.trim()) {
+      zip.file("word/document.xml", dropSecondSigner(zip.file("word/document.xml")!.asText()));
+    }
     const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
     doc.render(data);
     buffer = doc.getZip().generate({ type: "nodebuffer" });

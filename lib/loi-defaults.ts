@@ -6,8 +6,23 @@
 // the next LOI follows. Saved terms from a prior LOI only fill fields Hopper
 // has no source for (deposit, periods, rate...). Date always today.
 
+// Industrial LOIs go out under John alone, on his number; Rhett signs IOS only.
+// Saved terms still win, except Rhett's own phone and signature block carried
+// over from before this split -- those give way on an industrial deal.
+const IOS_TEL = "(912) 508-4170";
+const INDUSTRIAL_TEL = "214.517.9656";
+const IOS_SIGNER2 = "Rhett Anderson";
+
 export function loiDefaults(deal: any, dealContacts: any[]) {
-  const saved = (deal.loi_terms ?? {}) as Record<string, string>;
+  const industrial = deal.asset_class === "industrial";
+  const saved = { ...(deal.loi_terms ?? {}) } as Record<string, string>;
+  if (industrial) {
+    if (saved.tel === IOS_TEL) delete saved.tel;
+    if (saved.signer2Name === IOS_SIGNER2) {
+      delete saved.signer2Name;
+      delete saved.signer2Title;
+    }
+  }
   const latestOffer = [...(deal.offers ?? [])].sort((a: any, b: any) =>
     (b.offered_at ?? "").localeCompare(a.offered_at ?? "")
   )[0];
@@ -16,7 +31,7 @@ export function loiDefaults(deal: any, dealContacts: any[]) {
   const brokerFirm = brokerLink?.companies?.name;
   return {
     date: new Date().toISOString().slice(0, 10),
-    tel: saved.tel ?? "(912) 508-4170",
+    tel: saved.tel ?? (industrial ? INDUSTRIAL_TEL : IOS_TEL),
     attn: (brokerLink ? `${brokerLink.name}${brokerFirm ? `, ${brokerFirm}` : ""}` : null) ?? saved.attn ?? "",
     sellerClause: sellerLink?.name ?? saved.sellerClause ?? "its current ownership",
     propertyDescription:
@@ -31,8 +46,8 @@ export function loiDefaults(deal: any, dealContacts: any[]) {
     commissionPayer: saved.commissionPayer ?? "Seller",
     signer1Name: saved.signer1Name ?? "John Lettieri",
     signer1Title: saved.signer1Title ?? "Market Officer | Central",
-    signer2Name: saved.signer2Name ?? "Rhett Anderson",
-    signer2Title: saved.signer2Title ?? "IOS Market Lead | Central",
+    signer2Name: saved.signer2Name ?? (industrial ? "" : IOS_SIGNER2),
+    signer2Title: saved.signer2Title ?? (industrial ? "" : "IOS Market Lead | Central"),
     // SLB variant fields. LOI type follows the deal's acquisition_type.
     loiType: saved.loiType ?? (deal.acquisition_type === "slb" ? "slb" : "standard"),
     senderEmail: saved.senderEmail ?? "randerson@dalfen.com",
