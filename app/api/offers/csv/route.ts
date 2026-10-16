@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("offers")
     .select(
-      "id, price, offered_at, notes, source, created_by, deals(id, deal_type, stage, asset_class, properties(address, city, market, submarket, lot_sf, building_sf))"
+      "id, price, offered_at, notes, source, status, counter_price, responded_on, created_by, deals(id, deal_type, stage, asset_class, properties(address, city, market, submarket, lot_sf, building_sf))"
     )
     .gte("offered_at", start)
     .order("offered_at", { ascending: false, nullsFirst: false });
@@ -58,6 +58,9 @@ export async function GET(req: NextRequest) {
     "land_psf",
     "lot_sf",
     "building_sf",
+    "status",
+    "counter_price",
+    "responded_on",
     "stage",
     "source",
     "logged_by",
@@ -81,6 +84,9 @@ export async function GET(req: NextRequest) {
         psf,
         p.lot_sf,
         p.building_sf,
+        o.status ?? "sent",
+        o.counter_price,
+        o.responded_on,
         STAGE_LABELS[o.deals.stage] ?? o.deals.stage,
         o.source,
         o.created_by,

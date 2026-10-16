@@ -4,6 +4,7 @@ import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
 import { ctToday, isRangeKey, RANGE_KEYS, RANGE_LABELS, rangeStart } from "@/lib/summary";
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
+import { OFFER_STATUSES, OFFER_STATUS_LABELS, bidAskGap } from "@/lib/offer-status";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export default async function OffersPage(
   const { data } = await supabase
     .from("offers")
     .select(
-      "id, price, offered_at, notes, source, created_by, created_at, deals(id, deal_type, stage, asset_class, properties(address, city, market, lot_sf))"
+      "id, price, offered_at, notes, source, status, counter_price, responded_on, created_by, created_at, deals(id, deal_type, stage, asset_class, properties(address, city, market, lot_sf))"
     )
     .gte("offered_at", start)
     .order("offered_at", { ascending: false, nullsFirst: false })
@@ -59,6 +60,10 @@ export default async function OffersPage(
     value: rows.reduce((sum: number, o: any) => sum + (o.price ?? 0), 0),
   };
   const dealCount = new Set(rows.map((o: any) => o.deals.id)).size;
+  // Where the window's offers ended up, and how far apart we were when countered.
+  const statusCounts = OFFER_STATUSES.map((st) => [st, rows.filter((o: any) => (o.status ?? "sent") === st).length] as const).filter(([, n]) => n > 0);
+  const gaps = rows.map((o: any) => bidAskGap(o.price, o.counter_price)?.pct).filter((v): v is number => v != null).sort((a, b) => a - b);
+  const medianGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
 
   const csvHref = `/api/offers/csv?range=${range}${asset !== "all" ? `&asset=${asset}` : ""}`;
 
@@ -163,6 +168,12 @@ export default async function OffersPage(
 
         <section className="panel">
           <h2>All offers</h2>
+          {statusCounts.length > 0 && (
+            <p className="hint" style={{ marginTop: 0 }}>
+              {statusCounts.map(([st, n]) => `${n} ${OFFER_STATUS_LABELS[st].toLowerCase()}`).join(" · ")}
+              {medianGap != null ? ` · median counter ${(medianGap * 100).toFixed(1)}% above our offer (${gaps.length} countered)` : ""}
+            </p>
+          )}
           {rows.length === 0 ? (
             <p className="muted">
               No offers dated inside this window. Log one from a deal, or generate an LOI — that
@@ -179,6 +190,8 @@ export default async function OffersPage(
                   <th>Class</th>
                   <th>Price</th>
                   <th>$/SF land</th>
+                  <th>Status</th>
+                  <th>Counter</th>
                   <th>Stage</th>
                   <th>Source</th>
                 </tr>
@@ -199,6 +212,15 @@ export default async function OffersPage(
                       <td>{ASSET_CLASS_LABELS[o.deals.asset_class] ?? "—"}</td>
                       <td>{fmtUsd(o.price)}</td>
                       <td>{psf === null ? "—" : `$${psf.toFixed(2)}`}</td>
+                      <td>{OFFER_STATUS_LABELS[o.status ?? "sent"] ?? o.status}</td>
+                      <td>
+                        {o.counter_price ? (
+                          <>
+                            {fmtUsd(o.counter_price)}
+                            {(() => { const g = bidAskGap(o.price, o.counter_price); return g ? <span className="muted"> +{(g.pct * 100).toFixed(1)}%</span> : null; })()}
+                          </>
+                        ) : "—"}
+                      </td>
                       <td>{STAGE_LABELS[o.deals.stage] ?? o.deals.stage}</td>
                       <td>
                         <span className="doc-type">{o.source === "loi" ? "LOI" : "MANUAL"}</span>

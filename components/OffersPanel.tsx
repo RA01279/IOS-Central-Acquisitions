@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { OFFER_STATUSES, OFFER_STATUS_LABELS, bidAskGap } from "@/lib/offer-status";
 
 type Offer = {
   id: string;
@@ -15,7 +16,12 @@ type Offer = {
   price: number | null;
   notes: string | null;
   created_by: string;
+  status?: string | null;
+  counter_price?: number | null;
+  responded_on?: string | null;
 };
+
+const STATUS_TONE: Record<string, string> = { accepted: "#1E7A46", countered: "#B26A00", rejected: "#B3261E", withdrawn: "#6B7280", expired: "#6B7280", sent: "#2E6DA4" };
 
 function fmtUsd(v: number | null) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
@@ -34,6 +40,7 @@ export default function OffersPanel({
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [responding, setResponding] = useState<string | null>(null);
 
   const sorted = [...offers].sort((a, b) => (b.offered_at ?? "").localeCompare(a.offered_at ?? ""));
 
@@ -67,6 +74,36 @@ export default function OffersPanel({
     }
   }
 
+  async function handleRespond(e: React.FormEvent<HTMLFormElement>, offerId: string) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const form = new FormData(e.currentTarget);
+    try {
+      const res = await fetch(`/api/deals/${dealId}/offers`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          offerId,
+          status: form.get("status"),
+          counterPrice: form.get("counterPrice") || null,
+          respondedOn: form.get("respondedOn") || null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Save failed");
+      setResponding(null);
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Where the negotiation stands: rounds, and the gap on the latest counter.
+  const latestCounter = sorted.find((o) => o.counter_price);
+  const gap = latestCounter ? bidAskGap(latestCounter.price, latestCounter.counter_price) : null;
+
   async function handleRemove(offerId: string) {
     setBusy(true);
     try {
@@ -88,6 +125,14 @@ export default function OffersPanel({
         {sorted.length > 0 && <span className="count" style={{ marginLeft: 8 }}>{sorted.length}</span>}
       </h2>
 
+      {sorted.length > 0 && (
+        <p className="hint" style={{ marginTop: 0 }}>
+          {sorted.length} round{sorted.length === 1 ? "" : "s"} · latest {OFFER_STATUS_LABELS[sorted[0].status ?? "sent"]?.toLowerCase()}
+          {gap && latestCounter
+            ? ` · seller at ${fmtUsd(latestCounter.counter_price ?? null)} vs our ${fmtUsd(latestCounter.price)}: ${fmtUsd(gap.dollars)} apart (${(gap.pct * 100).toFixed(1)}%)`
+            : ""}
+        </p>
+      )}
       {sorted.length === 0 ? (
         <p className="muted">No offers yet. Logging one moves the deal to Offered.</p>
       ) : (
@@ -101,7 +146,32 @@ export default function OffersPanel({
                 {o.offered_at && <span className="muted"> · {o.offered_at}</span>}
                 <span className="muted"> · {o.created_by}</span>
                 {i === 0 && <span className="doc-type" style={{ marginLeft: 6 }}>LATEST</span>}
+                <span className="doc-type" style={{ marginLeft: 6, color: STATUS_TONE[o.status ?? "sent"] }}>
+                  {(OFFER_STATUS_LABELS[o.status ?? "sent"] ?? o.status ?? "Sent").toUpperCase()}
+                </span>
+                {o.counter_price ? (
+                  <span className="muted">
+                    {" "}· counter {fmtUsd(o.counter_price)}
+                    {(() => { const g = bidAskGap(o.price, o.counter_price); return g ? ` (+${(g.pct * 100).toFixed(1)}%)` : ""; })()}
+                  </span>
+                ) : null}
+                {o.responded_on && <span className="muted"> · answered {o.responded_on}</span>}
                 {o.notes && <div className="muted">{o.notes}</div>}
+                {responding === o.id ? (
+                  <form onSubmit={(e) => handleRespond(e, o.id)} className="stage-actions" style={{ margin: "6px 0 0" }}>
+                    <select name="status" defaultValue={o.status ?? "sent"} aria-label="Seller response">
+                      {OFFER_STATUSES.map((st) => <option key={st} value={st}>{OFFER_STATUS_LABELS[st]}</option>)}
+                    </select>
+                    <input name="counterPrice" placeholder="Counter, e.g. 4.6M" defaultValue={o.counter_price ? String(Math.round(o.counter_price)) : ""} style={{ width: 140 }} />
+                    <input name="respondedOn" type="date" defaultValue={o.responded_on ?? new Date().toISOString().slice(0, 10)} />
+                    <button type="submit" disabled={busy}>Save</button>
+                    <button type="button" className="secondary" onClick={() => setResponding(null)}>Cancel</button>
+                  </form>
+                ) : (
+                  <button type="button" className="link-caps" style={{ marginLeft: 8 }} onClick={() => setResponding(o.id)} disabled={busy}>
+                    Seller response
+                  </button>
+                )}
                 <button
                   type="button"
                   className="link-remove"
@@ -117,6 +187,7 @@ export default function OffersPanel({
         </ul>
       )}
 
+      {!adding && error && <p className="error">{error}</p>}
       {!adding ? (
         <div className="stage-actions" style={{ marginTop: 12, marginBottom: 0 }}>
           <button onClick={() => setAdding(true)}>+ Log offer</button>
