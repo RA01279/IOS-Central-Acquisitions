@@ -40,8 +40,13 @@ function bool(v: unknown): boolean | null {
   if (["false", "no", "n", "0"].includes(s)) return false;
   return null;
 }
-/** Percent typed as 6.5 meaning 6.5%, or 0.065 already a fraction. */
+/** Percent typed as 6.5 meaning 6.5%, or 0.065 already a fraction. A
+ * trailing "%" always means percent, so "0.5%" is 0.005, not 50%. */
 function fraction(v: unknown): number | null {
+  if (typeof v === "string" && v.trim().endsWith("%")) {
+    const pctValue = plain(v.trim().slice(0, -1));
+    return pctValue === null ? null : Number((pctValue / 100).toFixed(6));
+  }
   const n = plain(v);
   if (n === null) return null;
   return Number((n > 1 ? n / 100 : n).toFixed(6));

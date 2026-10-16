@@ -51,10 +51,14 @@ export async function flushOutbox(): Promise<number> {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(item.body),
         });
+        // A redirect or an HTML page means the session lapsed and we were sent
+        // to /login -- not delivered; keep it for after sign-in.
+        const delivered = res.ok && !res.redirected && (res.headers.get("content-type") ?? "").includes("json");
+        if (res.ok && !delivered) break;
         // 4xx won't fix itself on retry; drop it rather than loop forever.
-        if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 401)) {
+        if (delivered || (res.status >= 400 && res.status < 500 && res.status !== 401)) {
           write(readOutbox().filter((x) => x.id !== item.id));
-          if (res.ok) sent++;
+          if (delivered) sent++;
         }
       } catch {
         break; // still offline

@@ -30,6 +30,11 @@ export async function middleware(req: NextRequest) {
   const isLoginPage = req.nextUrl.pathname === "/login";
 
   if (!user && !isLoginPage) {
+    // An API caller needs a real 401, not a redirect it would follow to a 200
+    // login page and mistake for success (the offline outbox did exactly that).
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

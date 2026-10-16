@@ -41,7 +41,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
   if (!body.linkId) return NextResponse.json({ error: "linkId is required" }, { status: 400 });
 
   try {
-    await unlinkContactFromDeal(body.linkId);
+    if (!(await unlinkContactFromDeal(body.linkId, params.id))) {
+      return NextResponse.json({ error: "That contact isn't linked to this deal" }, { status: 404 });
+    }
     await logDealEvent(params.id, "contact_unlinked", { link_id: body.linkId }, user.email);
     return NextResponse.json({ ok: true });
   } catch (err: any) {

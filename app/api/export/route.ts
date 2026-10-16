@@ -28,6 +28,8 @@
 //   ?include=contacts,lois  -- both
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
+import { fetchAll } from "@/lib/fetch-all";
+import { bearerMatches } from "@/lib/sync-export";
 import {
   ASSET_CLASSES,
   IN_CONTRACT_STAGES,
@@ -63,7 +65,8 @@ export async function GET(req: NextRequest) {
     .eq("key", "export_token")
     .maybeSingle();
   const token = req.nextUrl.searchParams.get("token");
-  if (!tokenRow?.value || token !== tokenRow.value) {
+  // Constant-time; the token stays in the query string for the existing consumers.
+  if (!token || !bearerMatches(`Bearer ${token}`, tokenRow?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -77,23 +80,32 @@ export async function GET(req: NextRequest) {
   const wantLois = includes.has("lois");
 
   const today = ctToday();
-  const [dealsRes, offersRes, tasksRes] = await Promise.all([
-    supabase
+  // Every acquisition, archived included, so this pages past the 1000-row
+  // cap; any failed query is a 500, never an empty pipeline.
+  let deals: any[], offersRes: any, tasksRes: any;
+  try {
+    [deals, offersRes, tasksRes] = await Promise.all([
+    fetchAll((from, to) => supabase
       .from("deals")
       .select(
         "id, deal_type, stage, asset_class, created_at, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, marketing_status, acquisition_type, properties(address, city, market, submarket, lot_sf, building_sf, occupancy_status, walt_years, tenancy), offers(price, offered_at), deal_events(created_at), documents(doc_type, uploaded_at)" +
           (wantContacts ? ", deal_contacts(role, contacts(name, title, contact_type, companies(name)))" : "")
       )
-      .eq("deal_type", "acquisition"),
+      .eq("deal_type", "acquisition")
+      .order("id")
+      .range(from, to)),
     supabase
       .from("offers")
       .select("price, offered_at, created_at, source, deals(id, deal_type, asset_class, properties(address))")
       .order("offered_at", { ascending: false, nullsFirst: false })
       .limit(25),
     supabase.from("tasks").select("id, title, due_date, assigned_to").eq("status", "open"),
-  ]);
-
-  const deals = dealsRes.data ?? [];
+    ]);
+    if (offersRes.error) throw new Error(offersRes.error.message);
+    if (tasksRes.error) throw new Error(tasksRes.error.message);
+  } catch (err: any) {
+    return NextResponse.json({ error: `Export failed: ${err.message}` }, { status: 500 });
+  }
   const openTasks = tasksRes.data ?? [];
 
   function loiDocs(d: any) {

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { composeDigest } from "@/lib/digest";
+import { bearerMatches } from "@/lib/sync-export";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     .eq("key", "export_token")
     .maybeSingle();
   const key = req.nextUrl.searchParams.get("key");
-  if (!tokenRow?.value || key !== tokenRow.value) {
+  if (!key || !bearerMatches(`Bearer ${key}`, tokenRow?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     .from("comps")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(Math.min(Number(p.get("limit") ?? 200), 500));
+    .limit(Math.min(Math.max(Math.floor(Number(p.get("limit") ?? 200)) || 200, 1), 500));
 
   if (p.get("type")) query = query.eq("comp_type", p.get("type"));
   if (p.get("market")) query = query.eq("market", p.get("market"));

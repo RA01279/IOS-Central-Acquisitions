@@ -21,12 +21,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   if (!body.storagePath) {
     return NextResponse.json({ error: "Missing storagePath" }, { status: 400 });
   }
+  // Only a workbook ../upload-url issued for THIS deal. Any other path would
+  // let a version row point at (and hand out signed links to) any file in the
+  // bucket, including other people's imports.
+  const storagePath = String(body.storagePath);
+  const prefix = `deals/${params.id}/uw-`;
+  if (!storagePath.startsWith(prefix) || !/^[A-Za-z0-9._-]+$/.test(storagePath.slice(prefix.length)) || !/\.(xlsx|xlsm)$/i.test(storagePath)) {
+    return NextResponse.json({ error: "That upload doesn't belong to this deal. Upload the model again." }, { status: 400 });
+  }
 
   const supabase = getServiceClient();
 
   const { data: fileData, error: dlError } = await supabase.storage
     .from("documents")
-    .download(body.storagePath);
+    .download(storagePath);
   if (dlError || !fileData) {
     return NextResponse.json(
       { error: `Could not read uploaded file: ${dlError?.message ?? "not found"}` },
@@ -50,36 +58,50 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     .insert({
       deal_id: params.id,
       doc_type: "excel",
-      storage_path: body.storagePath,
+      storage_path: storagePath,
       uploaded_by: user.email,
     })
     .select()
     .single();
   if (docError) return NextResponse.json({ error: docError.message }, { status: 500 });
 
-  const { data: latest } = await supabase
-    .from("uw_versions")
-    .select("version_number")
-    .eq("deal_id", params.id)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Next version number. Two uploads at once can read the same latest number;
+  // unique(deal_id, version_number) rejects the loser, which simply re-reads
+  // and takes the next one.
+  let version: any = null;
+  let nextVersion = 0;
+  let error: { message: string; code?: string } | null = null;
+  for (let attempt = 0; attempt < 4 && !version; attempt++) {
+    const { data: latest, error: latestError } = await supabase
+      .from("uw_versions")
+      .select("version_number")
+      .eq("deal_id", params.id)
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestError) { error = latestError; break; }
+    nextVersion = (latest?.version_number ?? 0) + 1;
+    const res = await supabase
+      .from("uw_versions")
+      .insert({
+        deal_id: params.id,
+        version_number: nextVersion,
+        excel_document_id: doc.id,
+        returns_summary: returnsSummary,
+        created_by: user.email,
+      })
+      .select()
+      .single();
+    version = res.data;
+    error = res.error;
+    if (error && error.code !== "23505") break;
+  }
 
-  const nextVersion = (latest?.version_number ?? 0) + 1;
-
-  const { data: version, error } = await supabase
-    .from("uw_versions")
-    .insert({
-      deal_id: params.id,
-      version_number: nextVersion,
-      excel_document_id: doc.id,
-      returns_summary: returnsSummary,
-      created_by: user.email,
-    })
-    .select()
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!version) {
+    // Don't leave a document row that no version points at.
+    await supabase.from("documents").delete().eq("id", doc.id);
+    return NextResponse.json({ error: error?.message ?? "Could not save the version" }, { status: 500 });
+  }
 
   await logDealEvent(
     params.id,

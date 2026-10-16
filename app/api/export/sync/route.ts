@@ -15,22 +15,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { ctToday } from "@/lib/summary";
 import { bearerMatches, buildSyncPayload } from "@/lib/sync-export";
+import { fetchAll } from "@/lib/fetch-all";
 
 export const dynamic = "force-dynamic";
 
-// PostgREST caps a single select at 1000 rows; page until a short page.
-const PAGE = 1000;
-
-async function fetchAll(query: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>) {
-  const rows: any[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await query(from, from + PAGE - 1);
-    if (error) throw new Error(error.message ?? String(error));
-    rows.push(...(data ?? []));
-    if (!data || data.length < PAGE) break;
-  }
-  return rows;
-}
 
 export async function GET(req: NextRequest) {
   const secret = process.env.PROSPECTOR_SYNC_TOKEN;

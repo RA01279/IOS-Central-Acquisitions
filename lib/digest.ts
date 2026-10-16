@@ -8,6 +8,7 @@
 // This is the single source of the brief -- the cron route used to carry its
 // own copy of the same composition, and the two drifted.
 import { getServiceClient } from "./supabase";
+import { fetchAll } from "./fetch-all";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "./deals";
 import {
   assetClassOf,
@@ -37,19 +38,23 @@ export async function composeDigest() {
   const supabase = getServiceClient();
   const today = ctToday();
 
-  const [dealsRes, tasksRes] = await Promise.all([
-    supabase
+  // Throws on any failed query: a brief that says "nothing due" because the
+  // database blipped is worse than no brief.
+  const [deals, tasksRes] = await Promise.all([
+    fetchAll((from, to) => supabase
       .from("deals")
       .select(
         "id, deal_type, stage, asset_class, created_at, follow_up_on, pursuit_score, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), deal_events(created_at)"
       )
-      .eq("deal_type", "acquisition"),
+      .eq("deal_type", "acquisition")
+      .order("id")
+      .range(from, to)),
     supabase
       .from("tasks")
       .select("id, title, due_date, assigned_to, deal_id, contact_id")
       .eq("status", "open"),
   ]);
-  const deals = dealsRes.data ?? [];
+  if (tasksRes.error) throw new Error(`Loading tasks: ${tasksRes.error.message}`);
   const tasks = tasksRes.data ?? [];
 
   const overdue = tasks.filter(

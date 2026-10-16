@@ -13,15 +13,13 @@ import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent, recordOffer } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
 import { dropSecondSigner } from "@/lib/loi-docx";
+import { parseMoney } from "@/lib/money";
+import { validDate } from "@/lib/stage-rules";
 
-// "$4,200,000" / "4.2M" typed into the price field -> 4200000, or null when
-// there's no usable number. Only a clean figure becomes an offer row; a
-// garbled price should leave the offer log alone rather than record a wrong
-// number, since the LOI itself still renders whatever was typed.
-function parsePrice(v: string | undefined): number | null {
-  const n = Number(String(v ?? "").replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
-}
+// Dollar amounts go through the app's one money parser ("$4.2M" -> 4200000)
+// and are rejected before anything renders, so the letter and the logged offer
+// can never disagree with what was typed.
+const dollars = (n: number | null) => (n == null ? "" : Math.round(n).toLocaleString("en-US"));
 
 function fmtNumber(v: string | undefined): string {
   const n = Number(String(v ?? "").replace(/[^0-9.]/g, ""));
@@ -58,6 +56,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const t = await req.json();
   const supabase = getServiceClient();
 
+  let offerPrice: number | null;
+  let deposit: number | null;
+  try {
+    offerPrice = parseMoney(t.price);
+    deposit = parseMoney(t.depositAmount);
+  } catch (err: any) {
+    return NextResponse.json({ error: `Price and deposit: ${err.message}` }, { status: 400 });
+  }
+  if (offerPrice == null) return NextResponse.json({ error: "Enter the offer price" }, { status: 400 });
+  if (t.date && !validDate(t.date)) return NextResponse.json({ error: "Enter a valid LOI date" }, { status: 400 });
+  if (t.expiryDate && !validDate(t.expiryDate)) return NextResponse.json({ error: "Enter a valid expiry date" }, { status: 400 });
+
   const loiType = t.loiType === "slb" ? "slb" : "standard";
   const dateIso: string = t.date ?? new Date().toISOString().slice(0, 10);
   const dateLong = longDate(dateIso);
@@ -81,14 +91,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       broker_address2: t.brokerAddress2 ?? "",
       property_description: t.propertyDescription ?? "",
       price_words: t.priceWords ?? "",
-      price: fmtNumber(t.price),
+      price: dollars(offerPrice),
       building_sf: fmtNumber(t.buildingSf),
       acres: String(t.acres ?? ""),
       lease_term_years: String(t.leaseTermYears ?? ""),
       rent_phrase: rentPhrase,
       escalations: String(t.escalations ?? ""),
       deposit_words: t.depositWords ?? "",
-      deposit_amount: fmtNumber(t.depositAmount),
+      deposit_amount: dollars(deposit),
       dd_days: t.ddDays ?? "Forty-Five (45)",
       closing_days: t.closingDays ?? "Thirty (30)",
       commission_payer: t.commissionPayer === "Buyer" ? "Buyer" : "Seller",
@@ -105,9 +115,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       attn: t.attn ?? "",
       seller_clause: t.sellerClause || "its current ownership",
       property_description: t.propertyDescription ?? "",
-      price: fmtNumber(t.price),
+      price: dollars(offerPrice),
       deposit_words: t.depositWords ?? "",
-      deposit_amount: fmtNumber(t.depositAmount),
+      deposit_amount: dollars(deposit),
       dd_days: t.ddDays ?? "Sixty (60)",
       closing_days: t.closingDays ?? "thirty (30)",
       broker_clause_name: t.brokerClauseName ?? "",
@@ -182,8 +192,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // price so regenerating the document (typo fix, second download) doesn't
   // inflate the count. Never fatal: the LOI download must not fail because the
   // offer row didn't insert.
-  const offerPrice = parsePrice(t.price);
-  if (offerPrice !== null) {
+  {
     try {
       await recordOffer(
         params.id,

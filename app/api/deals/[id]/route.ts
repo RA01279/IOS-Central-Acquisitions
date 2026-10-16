@@ -262,6 +262,14 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq("id", params.id)
       .single();
     if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    // Everything that can be rejected is rejected before the first write, so
+    // the property and deal halves of this edit can't end up half-saved.
+    for (const [field, label] of [["acres", "Acres"], ["buildingSf", "Building SF"], ["waltYears", "WALT"]] as const) {
+      const v = body[field];
+      if (v != null && v !== "" && !(Number.isFinite(Number(v)) && Number(v) >= 0)) {
+        return NextResponse.json({ error: `${label} must be a number` }, { status: 400 });
+      }
+    }
     if (deal.stage === "closed" && "closedPrice" in body && body.closedPrice == null) {
       return NextResponse.json({ error: "A closed deal must retain its closing price" }, { status: 400 });
     }
@@ -324,7 +332,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
 
   if (body.action === "provide_mla") {
-    const { error: mlaError } = await supabase.from("mla_data").insert({
+    const { data: mla, error: mlaError } = await supabase.from("mla_data").insert({
       deal_id: params.id,
       market_base_rent: body.marketBaseRent ?? null,
       term_years: body.termYears ?? null,
@@ -339,14 +347,18 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       recovery_type: body.recoveryType ?? null,
       provided_by: user.email,
       provided_at: new Date().toISOString(),
-    });
+    }).select("id").single();
     if (mlaError) return NextResponse.json({ error: mlaError.message }, { status: 500 });
 
     const { error: dealError } = await supabase
       .from("deals")
       .update({ mla_status: "provided" })
       .eq("id", params.id);
-    if (dealError) return NextResponse.json({ error: dealError.message }, { status: 500 });
+    if (dealError) {
+      // Undo the MLA row so a retry doesn't stack a second one.
+      await supabase.from("mla_data").delete().eq("id", mla.id);
+      return NextResponse.json({ error: dealError.message }, { status: 500 });
+    }
 
     await logDealEvent(params.id, "mla_provided", {}, user.email);
     return NextResponse.json({ ok: true });
@@ -370,10 +382,20 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
 
   const { data: deal, error: findError } = await supabase
     .from("deals")
-    .select("id, property_id")
+    .select("id, property_id, stage, portfolio_asset_id")
     .eq("id", params.id)
     .single();
   if (findError || !deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  // A closed deal (or one tied to an owned asset) is the asset's purchase
+  // record; deleting it would leave the asset marked owned with no deal behind
+  // it. In-contract deals carry money and dates -- only the PSA signers delete
+  // those, and archiving is usually what's wanted.
+  if (deal.stage === "closed" || deal.portfolio_asset_id) {
+    return NextResponse.json({ error: "Closed deals can't be deleted. Record a sale on the asset instead." }, { status: 400 });
+  }
+  if (["moving_to_psa", "due_diligence"].includes(deal.stage) && !canConfirmPsa(user.email)) {
+    return NextResponse.json({ error: "Only Rhett/John can delete a deal that's under contract. Archive it instead." }, { status: 403 });
+  }
 
   const { error: delError } = await supabase.from("deals").delete().eq("id", params.id);
   if (delError) return NextResponse.json({ error: delError.message }, { status: 500 });
@@ -385,7 +407,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
       .eq("property_id", deal.property_id)
       .limit(1);
     if (!siblings || siblings.length === 0) {
-      await supabase.from("properties").delete().eq("id", deal.property_id);
+      const { error: propError } = await supabase.from("properties").delete().eq("id", deal.property_id);
+      // The deal is gone either way; say so rather than hiding a stray property.
+      if (propError) return NextResponse.json({ ok: true, warning: `Deal deleted, but its property row remains: ${propError.message}` });
     }
   }
 

@@ -57,13 +57,21 @@ export async function POST(req: NextRequest) {
 
     // The seller's ask (from an OM import or typed in). Not part of the atomic
     // create RPC's column set, so it's written straight after.
+    // A site created from a portfolio OM is flagged as part of the package in
+    // the same write. Checked: a site that silently missed its portfolio link
+    // would vanish from the portfolio view while the import reported success.
     const dealId = (result as any).deal?.id;
-    if (askingPrice !== null && dealId) {
-      await getServiceClient().from("deals").update({ asking_price: askingPrice }).eq("id", dealId);
-    }
-    // A site created from a portfolio OM: flag it as part of the package.
-    if (dealId && portfolioId) {
-      await getServiceClient().from("deals").update({ deal_portfolio_id: portfolioId }).eq("id", dealId);
+    const extra: Record<string, unknown> = {};
+    if (askingPrice !== null) extra.asking_price = askingPrice;
+    if (portfolioId) extra.deal_portfolio_id = portfolioId;
+    if (dealId && Object.keys(extra).length) {
+      const { error: extraError } = await getServiceClient().from("deals").update(extra).eq("id", dealId);
+      if (extraError) {
+        return NextResponse.json(
+          { ...result, error: `Deal created, but saving its ${portfolioId ? "portfolio link and " : ""}asking price failed: ${extraError.message}. Open the deal to fix it.` },
+          { status: 500 }
+        );
+      }
     }
     if (!result.deal && result.duplicates?.length) return NextResponse.json({ ...result, error: "This address already has a deal. Open the existing record below." }, { status: 409 });
     return NextResponse.json(result, { status: result.replayed ? 200 : 201 });

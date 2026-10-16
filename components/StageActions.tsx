@@ -280,7 +280,7 @@ export default function StageActions({
         </button>
       )}
 
-      {stage !== "archived" && (
+      {stage !== "archived" && stage !== "closed" && (
         <>
           {!showArchive ? (
             <button className="secondary" onClick={() => setShowArchive(true)}>
@@ -331,7 +331,7 @@ export default function StageActions({
                 )}
               </div>
               <div className="stage-actions" style={{ marginBottom: 0 }}>
-                <button onClick={handleArchive} disabled={busy !== null}>
+                <button onClick={handleArchive} disabled={busy !== null || !archiveReason.trim()}>
                   {busy === "archive" ? "Archiving…" : "Confirm archive"}
                 </button>
                 <button className="secondary" onClick={() => setShowArchive(false)}>

@@ -33,7 +33,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const { error: moveError } = await db.storage.from("documents").move(from, to);
   if (moveError) return NextResponse.json({ error: `Could not file the OM: ${moveError.message}` }, { status: 500 });
   const { error } = await db.from("documents").insert({ deal_id: id, doc_type: "om", storage_path: to, uploaded_by: user.email });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // Put the file back where it came from so attaching can simply be retried,
+    // rather than stranding it under the deal with no document row.
+    await db.storage.from("documents").move(to, from).catch(() => {});
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   await logDealEvent(id, "om_attached", { file: name }, user.email).catch(() => {});
   return NextResponse.json({ ok: true, path: to }, { status: 201 });
 }

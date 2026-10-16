@@ -40,12 +40,22 @@ type Auto = { state: SignalState; note: string; source: string; detail?: unknown
 export const SIGNAL_COLUMNS =
   "deal_id, key, auto_state, auto_note, auto_source, auto_at, override_state, override_note, override_by, override_at";
 
+// Deal ids per request. The ids travel in the URL, which fails outright at
+// ~400 ids; 100 deals' worth of signal rows also stays under the 1000-row cap.
+const SIGNAL_BATCH = 100;
+
 /** Signals for many deals at once, without the (large) demand snapshot. */
 export async function loadSignals(dealIds: string[]): Promise<Map<string, SignalRow[]>> {
   const out = new Map<string, SignalRow[]>();
   if (!dealIds.length) return out;
-  const { data } = await getServiceClient().from("deal_signals").select(SIGNAL_COLUMNS).in("deal_id", dealIds);
-  for (const row of (data ?? []) as any[]) {
+  const db = getServiceClient();
+  const batches: string[][] = [];
+  for (let i = 0; i < dealIds.length; i += SIGNAL_BATCH) batches.push(dealIds.slice(i, i + SIGNAL_BATCH));
+  const results = await Promise.all(batches.map((ids) => db.from("deal_signals").select(SIGNAL_COLUMNS).in("deal_id", ids)));
+  const failed = results.find((r) => r.error);
+  // Blank scores look like "no flags"; better to fail loudly than mislead.
+  if (failed?.error) throw new Error(`Loading deal signals: ${failed.error.message}`);
+  for (const row of results.flatMap((r) => r.data ?? []) as any[]) {
     const list = out.get(row.deal_id) ?? [];
     list.push(row);
     out.set(row.deal_id, list);

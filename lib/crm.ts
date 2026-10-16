@@ -222,10 +222,12 @@ export async function linkContactToDeal(input: {
   return data;
 }
 
-export async function unlinkContactFromDeal(linkId: string) {
+/** Removes one contact link from one deal; false when that link isn't on that deal. */
+export async function unlinkContactFromDeal(linkId: string, dealId: string): Promise<boolean> {
   const supabase = getServiceClient();
-  const { error } = await supabase.from("deal_contacts").delete().eq("id", linkId);
+  const { data, error } = await supabase.from("deal_contacts").delete().eq("id", linkId).eq("deal_id", dealId).select("id");
   if (error) throw error;
+  return (data?.length ?? 0) > 0;
 }
 
 export async function getDealContacts(dealId: string) {
