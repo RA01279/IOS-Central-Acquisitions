@@ -18,8 +18,12 @@ export default function DealEditForm({
   closingOn,
   contractPrice,
   closedPrice,
+  owner,
+  team,
 }: {
   dealId: string;
+  owner: string | null;
+  team: { email: string; name: string }[];
   assetClass: string | null;
   ddEndOn: string | null;
   closingOn: string | null;
@@ -80,6 +84,7 @@ export default function DealEditForm({
           closingOn: form.get("closingOn"),
           contractPrice: form.get("contractPrice"),
           closedPrice: form.get("closedPrice"),
+          assignedAnalyst: form.get("assignedAnalyst"),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Save failed");
@@ -119,6 +124,14 @@ export default function DealEditForm({
         <label>
           Submarket
           <input name="submarket" defaultValue={property.submarket ?? ""} />
+        </label>
+        <label>
+          Owner
+          <select name="assignedAnalyst" defaultValue={owner ?? ""}>
+            <option value="">Unassigned</option>
+            {team.map((t) => <option key={t.email} value={t.email}>{t.name}</option>)}
+            {owner && !team.some((t) => t.email === owner) && <option value={owner}>{owner}</option>}
+          </select>
         </label>
         <label>
           Pipeline

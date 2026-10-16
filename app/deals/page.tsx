@@ -1,4 +1,6 @@
 import { getServiceClient } from "@/lib/supabase";
+import { getCurrentUser } from "@/lib/auth";
+import { listTeam } from "@/lib/team";
 import { ACQUISITION_STAGES, ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
 import { ctToday, addDays } from "@/lib/summary";
 import { DEAL_CARD_SELECT, toDealCard, type DealCardData } from "@/lib/deal-view";
@@ -24,7 +26,7 @@ const SORTS: Record<string, string> = {
   stale: "Days in stage",
 };
 
-type Params = { asset?: string; market?: string; stage?: string; sort?: string; view?: string; q?: string };
+type Params = { asset?: string; market?: string; stage?: string; sort?: string; view?: string; q?: string; owner?: string };
 
 const list = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 
@@ -41,7 +43,11 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   const stages = list(sp.stage).filter((x) => (ACQUISITION_STAGES as readonly string[]).includes(x));
   const marketsPicked = list(sp.market);
   const q = (sp.q ?? "").trim();
-  const state: FilterState = { asset, markets: marketsPicked, stages, sort, view, q };
+  const [user, team] = await Promise.all([getCurrentUser(), listTeam()]);
+  const me = user?.email.toLowerCase() ?? "";
+  const ownerPick = sp.owner === "me" || sp.owner === "none" || team.some((t) => t.email === sp.owner) ? sp.owner! : "";
+  const ownerWanted = ownerPick === "me" ? me : ownerPick;
+  const state: FilterState = { asset, markets: marketsPicked, stages, sort, view, q, owner: ownerPick };
 
   const supabase = getServiceClient();
   let query = supabase
@@ -75,8 +81,9 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   const matchQ = (c: DealCardData) => !needle || [c.name, c.city, c.market, c.ref].some((v) => v?.toLowerCase().includes(needle));
   const matchM = (c: DealCardData) => !marketsPicked.length || marketsPicked.includes(c.market ?? "");
   const matchS = (c: DealCardData) => !stages.length || stages.includes(c.stage);
+  const matchO = (c: DealCardData) => !ownerWanted || (ownerWanted === "none" ? !c.owner : c.owner === ownerWanted);
   const marketCounts = new Map<string, number>();
-  for (const c of cards) if (c.market && matchS(c) && matchQ(c)) marketCounts.set(c.market, (marketCounts.get(c.market) ?? 0) + 1);
+  for (const c of cards) if (c.market && matchS(c) && matchQ(c) && matchO(c)) marketCounts.set(c.market, (marketCounts.get(c.market) ?? 0) + 1);
   for (const m of marketsPicked) if (!marketCounts.has(m)) marketCounts.set(m, 0);
   const marketOptions = [...marketCounts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -84,11 +91,18 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   const stageOptions = ACQUISITION_STAGES.map((st) => ({
     value: st,
     label: STAGE_LABELS[st],
-    count: cards.filter((c) => c.stage === st && matchM(c) && matchQ(c)).length,
+    count: cards.filter((c) => c.stage === st && matchM(c) && matchQ(c) && matchO(c)).length,
   }));
 
   // ---- filters
-  let shown = cards.filter((c) => matchM(c) && matchS(c) && matchQ(c));
+  let shown = cards.filter((c) => matchM(c) && matchS(c) && matchQ(c) && matchO(c));
+  const ownerCount = (o: string) => cards.filter((c) => matchM(c) && matchS(c) && matchQ(c) && (o === "none" ? !c.owner : c.owner === o)).length;
+  const ownerOptions = [
+    { value: "", label: "Anyone" },
+    ...(me ? [{ value: "me", label: "My deals", count: ownerCount(me) }] : []),
+    ...team.filter((t) => t.email !== me).map((t) => ({ value: t.email, label: t.name, count: ownerCount(t.email) })),
+    { value: "none", label: "Unassigned", count: ownerCount("none") },
+  ];
   const by: Record<string, (a: DealCardData, b: DealCardData) => number> = {
     score: (a, b) => (b.score ?? -1) - (a.score ?? -1),
     newest: (a, b) => b.createdAt.localeCompare(a.createdAt),
@@ -175,6 +189,7 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
           markets={marketOptions}
           stages={stageOptions}
           sorts={Object.entries(SORTS).map(([value, label]) => ({ value, label }))}
+          owners={ownerOptions}
           shown={totalShown}
           total={cards.length}
         />

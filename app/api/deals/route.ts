@@ -61,14 +61,15 @@ export async function POST(req: NextRequest) {
     // the same write. Checked: a site that silently missed its portfolio link
     // would vanish from the portfolio view while the import reported success.
     const dealId = (result as any).deal?.id;
-    const extra: Record<string, unknown> = {};
+    // Whoever creates the deal owns it until it's reassigned.
+    const extra: Record<string, unknown> = { assigned_analyst: user.email.toLowerCase() };
     if (askingPrice !== null) extra.asking_price = askingPrice;
     if (portfolioId) extra.deal_portfolio_id = portfolioId;
-    if (dealId && Object.keys(extra).length) {
+    if (dealId) {
       const { error: extraError } = await getServiceClient().from("deals").update(extra).eq("id", dealId);
       if (extraError) {
         return NextResponse.json(
-          { ...result, error: `Deal created, but saving its ${portfolioId ? "portfolio link and " : ""}asking price failed: ${extraError.message}. Open the deal to fix it.` },
+          { ...result, error: `Deal created, but saving its ${portfolioId ? "portfolio link, " : ""}owner and asking price failed: ${extraError.message}. Open the deal to fix it.` },
           { status: 500 }
         );
       }

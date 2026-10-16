@@ -20,6 +20,8 @@ export interface FilterState {
   sort: string;
   view: string;
   q: string;
+  /** "" anyone, "me", "none" (unassigned), or an owner's email. */
+  owner: string;
 }
 
 export const DEFAULTS = { asset: "ios", sort: "newest", view: "board" };
@@ -32,6 +34,7 @@ export function filterHref(s: FilterState): string {
   if (s.sort !== DEFAULTS.sort) p.set("sort", s.sort);
   if (s.view !== DEFAULTS.view) p.set("view", s.view);
   if (s.q) p.set("q", s.q);
+  if (s.owner) p.set("owner", s.owner);
   const qs = p.toString();
   return `/deals${qs ? `?${qs}` : ""}`;
 }
@@ -79,10 +82,12 @@ export default function DealFilters({
   markets,
   stages,
   sorts,
+  owners,
   shown,
   total,
 }: {
   state: FilterState;
+  owners: Option[];
   pipelines: Option[];
   markets: Option[];
   stages: Option[];
@@ -120,7 +125,7 @@ export default function DealFilters({
     </>
   );
 
-  const single = (opts: Option[], current: string, key: "asset" | "sort") => (close: () => void) => (
+  const single = (opts: Option[], current: string, key: "asset" | "sort" | "owner") => (close: () => void) => (
     <div className="fmenu-list">
       {opts.map((o) => (
         <button
@@ -143,6 +148,7 @@ export default function DealFilters({
   const chips = [
     ...state.markets.map((m) => ({ key: `m-${m}`, label: labelOf(markets, m), remove: () => go({ markets: state.markets.filter((x) => x !== m) }) })),
     ...state.stages.map((s) => ({ key: `s-${s}`, label: labelOf(stages, s), remove: () => go({ stages: state.stages.filter((x) => x !== s) }) })),
+    ...(state.owner ? [{ key: "o", label: labelOf(owners, state.owner), remove: () => go({ owner: "" }) }] : []),
     ...(state.q ? [{ key: "q", label: `"${state.q}"`, remove: () => { setQ(""); go({ q: "" }); } }] : []),
   ];
 
@@ -157,6 +163,9 @@ export default function DealFilters({
         </Pill>
         <Pill label="Stage" value={summary(state.stages, stages, "All")} active={state.stages.length > 0}>
           {() => multi(stages, state.stages, "stages")}
+        </Pill>
+        <Pill label="Owner" value={labelOf(owners, state.owner)} active={!!state.owner}>
+          {single(owners, state.owner, "owner")}
         </Pill>
         <Pill label="Sort" value={labelOf(sorts, state.sort)} active={false}>
           {single(sorts, state.sort, "sort")}
@@ -187,7 +196,7 @@ export default function DealFilters({
           </button>
         ))}
         {chips.length > 0 && (
-          <button type="button" className="link-caps" onClick={() => { setQ(""); go({ markets: [], stages: [], q: "" }); }}>
+          <button type="button" className="link-caps" onClick={() => { setQ(""); go({ markets: [], stages: [], q: "", owner: "" }); }}>
             Clear all
           </button>
         )}

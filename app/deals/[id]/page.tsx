@@ -19,6 +19,7 @@ import DeleteDealButton from "@/components/DeleteDealButton";
 import SignalsPanel from "@/components/SignalsPanel";
 import NextDates, { type DateRow } from "@/components/NextDates";
 import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
+import { listTeam, nameOf } from "@/lib/team";
 import { DemandBars, KpiCard } from "@/components/ui";
 
 function fmtUsd(v: number | null | undefined) {
@@ -28,11 +29,12 @@ function fmtUsd(v: number | null | undefined) {
 export default async function DealSummaryPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const [deal, site, user] = await Promise.all([getDeal(id), getSiteView(id), getCurrentUser()]);
-  const [dealContacts, allContacts, tasks, ownedAssets] = await Promise.all([
+  const [dealContacts, allContacts, tasks, ownedAssets, team] = await Promise.all([
     getDealContacts(deal.id),
     listContacts(),
     listOpenTasksForDeal(deal.id),
     getOwnedAssets(),
+    listTeam(),
   ]);
   const subject = subjectOf(deal);
 
@@ -158,6 +160,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         <h2>Property</h2>
         {deal.classification_basis && <p className="hint">Classification: {deal.classification_basis}</p>}
         <div className="metrics-grid">
+          <Metric label="Owner" value={nameOf(team, deal.assigned_analyst) ?? "Unassigned"} />
           <Metric label="City / Submarket" value={[p.city, p.submarket].filter(Boolean).join(" / ") || "—"} />
           <Metric label="Acres" value={p.lot_sf ? (p.lot_sf / 43560).toFixed(2) : "—"} />
           <Metric label="Building SF" value={p.building_sf ? Math.round(p.building_sf).toLocaleString() : "—"} />
@@ -204,6 +207,8 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
           closingOn={deal.closing_on ?? null}
           contractPrice={deal.contract_price ?? null}
           closedPrice={deal.closed_price ?? null}
+          owner={deal.assigned_analyst ? String(deal.assigned_analyst).toLowerCase() : null}
+          team={team}
         />
       </section>
 

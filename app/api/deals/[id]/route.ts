@@ -5,6 +5,7 @@ import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 import { canonicalMarket } from "@/lib/markets";
 import { generateSchedule, syncDealDates } from "@/lib/diligence-db";
+import { listTeam } from "@/lib/team";
 import { parseMoney } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
 import { geocodeAddress } from "@/lib/geocode";
@@ -334,6 +335,14 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     };
     // asset_class is NOT NULL -- only write it when a valid value came in, so a
     // caller that omits the field can't null out which pipeline a deal is in.
+    // Owner: one of Hopper's users, or blank for unassigned.
+    if ("assignedAnalyst" in body) {
+      const owner = String(body.assignedAnalyst ?? "").trim().toLowerCase();
+      if (owner && !(await listTeam()).some((t) => t.email === owner)) {
+        return NextResponse.json({ error: "The owner must be a Hopper user" }, { status: 400 });
+      }
+      dealUpdate.assigned_analyst = owner || null;
+    }
     if (body.assetClass === "ios" || body.assetClass === "industrial") {
       dealUpdate.asset_class = body.assetClass;
       if (body.assetClass !== deal.asset_class) dealUpdate.classification_basis = `User selected ${body.assetClass} on edit`;

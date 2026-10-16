@@ -45,7 +45,7 @@ export async function composeDigest() {
     fetchAll((from, to) => supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, asset_class, created_at, follow_up_on, pursuit_score, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), deal_events(created_at)"
+        "id, deal_type, stage, asset_class, assigned_analyst, created_at, follow_up_on, pursuit_score, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), deal_events(created_at)"
       )
       .eq("deal_type", "acquisition")
       .order("id")
@@ -110,6 +110,24 @@ export async function composeDigest() {
     .filter((d: any) => d.staleDays >= STALE_DAYS)
     .sort((a: any, b: any) => b.staleDays - a.staleDays);
 
+  // Per owner (deals.assigned_analyst): what each person is carrying and what
+  // is due on their deals this week.
+  const ownerOf = (dealId: string) => deals.find((d: any) => d.id === dealId)?.assigned_analyst ?? null;
+  const owners = new Map<string, { active: number; due: number; stale: number }>();
+  const bump = (owner: string | null, k: "active" | "due" | "stale") => {
+    const key = owner ? String(owner).toLowerCase() : "Unassigned";
+    const o = owners.get(key) ?? { active: 0, due: 0, stale: 0 };
+    o[k]++;
+    owners.set(key, o);
+  };
+  for (const d of active) if (d.stage !== "closed") bump(d.assigned_analyst, "active");
+  for (const m of milestones) bump(ownerOf(m.dealId), "due");
+  for (const m of diligence) bump(ownerOf(m.deal_id), "due");
+  for (const d of stale) bump(d.assigned_analyst, "stale");
+  const ownerLines = [...owners.entries()]
+    .sort((a, b) => (a[0] === "Unassigned" ? 1 : b[0] === "Unassigned" ? -1 : b[1].active - a[1].active))
+    .map(([who, o]) => `<li><strong>${esc(who === "Unassigned" ? who : who.split("@")[0])}</strong> — ${o.active} active · ${o.due} deadline${o.due === 1 ? "" : "s"} this week · ${o.stale} stale</li>`);
+
   // Bifurcated snapshot: one line per pipeline, so nobody has to mentally
   // separate IOS from Industrial before reading the numbers.
   const snapshotLine = (assetClass: string) => {
@@ -168,6 +186,7 @@ export async function composeDigest() {
       } ·
       <a href="${APP_URL}/" style="color:#2e6e62;">open home screen</a>
     </p>
+    ${section(`👤 By owner`, ownerLines, "No active deals.")}
     ${section(
       `⏳ DD expirations &amp; closings — next ${MILESTONE_WINDOW_DAYS} days (${milestones.length})`,
       milestones.map(milestoneLine),
