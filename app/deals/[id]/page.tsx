@@ -7,7 +7,7 @@ import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 import { ACQUISITION_ROLES, getDealContacts, listContacts, listOpenTasksForDeal, ROLE_LABELS } from "@/lib/crm";
 import { ACQUISITION_STAGES, STAGE_LABELS } from "@/lib/deals";
 import { ctToday } from "@/lib/summary";
-import { dealKpis, getDeal, getSiteView } from "@/lib/deal-workspace";
+import { dealKpis, getDeal, getOwnedAssets, getSiteView, subjectOf } from "@/lib/deal-workspace";
 import { scoreSummary } from "@/lib/site-score";
 import { hex, scoreState, signal } from "@/lib/hopper-tokens";
 import StageActions from "@/components/StageActions";
@@ -18,6 +18,7 @@ import RestoreDealButton from "@/components/RestoreDealButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
 import SignalsPanel from "@/components/SignalsPanel";
 import NextDates, { type DateRow } from "@/components/NextDates";
+import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
 import { DemandBars, KpiCard } from "@/components/ui";
 
 function fmtUsd(v: number | null | undefined) {
@@ -27,11 +28,13 @@ function fmtUsd(v: number | null | undefined) {
 export default async function DealSummaryPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const [deal, site, user] = await Promise.all([getDeal(id), getSiteView(id), getCurrentUser()]);
-  const [dealContacts, allContacts, tasks] = await Promise.all([
+  const [dealContacts, allContacts, tasks, ownedAssets] = await Promise.all([
     getDealContacts(deal.id),
     listContacts(),
     listOpenTasksForDeal(deal.id),
+    getOwnedAssets(),
   ]);
+  const subject = subjectOf(deal);
 
   const k = dealKpis(deal, site.snapshot, 3);
   const st = signal[site.score.state];
@@ -134,6 +137,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
               </p>
             )}
           </div>
+          <OwnedNearbyCard dealId={deal.id} assets={ownedAssets as OwnedAsset[]} lat={subject.lat} lng={subject.lng} />
           <NextDates
             dealId={deal.id}
             today={today}

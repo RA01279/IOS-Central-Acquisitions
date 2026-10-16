@@ -31,6 +31,21 @@ export const getSiteView = cache(async (id: string) => {
   return { flags, score: siteScore(flags), snapshot: snapshot as DemandSnapshot | null };
 });
 
+// Assets we own, located well enough to measure from -- the Summary tab's
+// "Owned nearby" card. Just the assets, so the summary doesn't pay for the
+// comp load the Demand Map and Financials tabs need.
+export const getOwnedAssets = cache(async () => {
+  const { data, error } = await getServiceClient()
+    .from("assets")
+    .select("id, address, city, state, status, occupancy, site_acres, building_sf, latitude, longitude")
+    .eq("status", "owned")
+    .in("geocode_precision", LOCATED_PRECISIONS)
+    .not("latitude", "is", null)
+    .limit(1000);
+  if (error) throw new Error(`Loading owned assets: ${error.message}`);
+  return data ?? [];
+});
+
 // Comps, our portfolio, and other live deals: the evidence panels on the
 // Demand Map (proximity) and Financials (comps) tabs.
 export const getEvidence = cache(async () => {
