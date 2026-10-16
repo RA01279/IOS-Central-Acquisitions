@@ -4,6 +4,7 @@ import { logDealEvent, isValidAcqStage, STAGE_LABELS } from "@/lib/deals";
 import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 import { canonicalMarket } from "@/lib/markets";
+import { generateSchedule, syncDealDates } from "@/lib/diligence-db";
 import { parseMoney } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
 import { geocodeAddress } from "@/lib/geocode";
@@ -65,7 +66,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     for (const field of ["contractPrice", "closedPrice"]) {
       if (field in body) body[field] = parseMoney(body[field]);
     }
-    for (const field of ["ddEndOn", "closingOn", "closedOn"]) {
+    for (const field of ["ddEndOn", "closingOn", "closedOn", "psaEffectiveOn"]) {
       if (body[field] && !validDate(body[field])) throw new Error("Enter a valid calendar date");
     }
   } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
@@ -121,6 +122,19 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       columns
     );
     if (error) return NextResponse.json({ error }, { status: 500 });
+    // With the PSA date in hand, lay out the diligence schedule (Diligence tab).
+    // The stage move has already happened; a schedule failure is reported, not fatal.
+    if (body.psaEffectiveOn) {
+      try {
+        await generateSchedule(
+          params.id,
+          { psaEffectiveOn: body.psaEffectiveOn, ddEndOn: body.ddEndOn ?? null, closingOn: body.closingOn ?? null },
+          user.email
+        );
+      } catch (err: any) {
+        return NextResponse.json({ ok: true, warning: `In Due Diligence, but the schedule wasn't created: ${err.message}` });
+      }
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -330,6 +344,8 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .update(dealUpdate)
       .eq("id", params.id);
     if (dealErr) return NextResponse.json({ error: dealErr.message }, { status: 500 });
+    // DD expiry and closing are also milestones on the Diligence tab.
+    await syncDealDates(params.id).catch(() => {});
 
     await logDealEvent(params.id, "details_edited", {}, user.email);
     return NextResponse.json({ ok: true });

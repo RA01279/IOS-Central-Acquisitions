@@ -40,7 +40,8 @@ export async function composeDigest() {
 
   // Throws on any failed query: a brief that says "nothing due" because the
   // database blipped is worse than no brief.
-  const [deals, tasksRes] = await Promise.all([
+  const horizon = new Date(Date.parse(`${today}T12:00:00Z`) + MILESTONE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const [deals, tasksRes, diligenceRes] = await Promise.all([
     fetchAll((from, to) => supabase
       .from("deals")
       .select(
@@ -53,8 +54,35 @@ export async function composeDigest() {
       .from("tasks")
       .select("id, title, due_date, assigned_to, deal_id, contact_id")
       .eq("status", "open"),
+    // Diligence deadlines (Diligence tab). DD expiry and closing are already
+    // in the milestone section, from the deal's own dates.
+    supabase
+      .from("deal_milestones")
+      .select("label, due_on, deal_id, deals!inner(stage, properties(address))")
+      .is("done_on", null)
+      .not("due_on", "is", null)
+      .lte("due_on", horizon)
+      // Hand-added milestones have no key; "not in" alone would drop them.
+      .or("key.is.null,key.not.in.(dd_end,closing)")
+      .not("deals.stage", "in", "(archived,closed)")
+      .order("due_on")
+      .limit(200),
   ]);
   if (tasksRes.error) throw new Error(`Loading tasks: ${tasksRes.error.message}`);
+  if (diligenceRes.error) throw new Error(`Loading diligence deadlines: ${diligenceRes.error.message}`);
+  const diligence = (diligenceRes.data ?? []) as any[];
+  const diligenceLine = (m: any) => {
+    const days = Math.round((Date.parse(`${m.due_on}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / DAY_MS);
+    const when =
+      days < 0
+        ? `<strong style="color:#b3261e;">${-days} day${days === -1 ? "" : "s"} OVERDUE</strong>`
+        : days === 0
+          ? `<strong style="color:#b3261e;">TODAY</strong>`
+          : `in ${days} day${days === 1 ? "" : "s"}`;
+    return `<li><a href="${APP_URL}/deals/${m.deal_id}/diligence" style="color:#2e6e62;">${esc(
+      m.deals?.properties?.address ?? "Untitled"
+    )}</a> — ${esc(m.label)} ${m.due_on}, ${when}</li>`;
+  };
   const tasks = tasksRes.data ?? [];
 
   const overdue = tasks.filter(
@@ -146,6 +174,11 @@ export async function composeDigest() {
       "No DD deadlines or closings in the next 7 days."
     )}
     ${section(
+      `📋 Diligence deadlines — next ${MILESTONE_WINDOW_DAYS} days (${diligence.length})`,
+      diligence.map(diligenceLine),
+      "No diligence deadlines in the next 7 days."
+    )}
+    ${section(
       `⚠ Overdue follow-ups (${overdue.length})`,
       overdue.map(
         (t: any) =>
@@ -177,6 +210,7 @@ export async function composeDigest() {
   // that has to survive being read on a phone lock screen.
   const subjectParts = [
     milestones.length ? `${milestones.length} DD/closing in 7d` : null,
+    diligence.length ? `${diligence.length} diligence due` : null,
     `${overdue.length} overdue`,
     `${targetsDue.length} targets due`,
     `${stale.length} stale`,
@@ -188,6 +222,7 @@ export async function composeDigest() {
     html,
     counts: {
       milestones: milestones.length,
+      diligence: diligence.length,
       overdue: overdue.length,
       targetsDue: targetsDue.length,
       stale: stale.length,

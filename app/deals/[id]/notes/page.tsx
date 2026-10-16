@@ -155,12 +155,16 @@ export default async function NotesPage(props: {
             <TaskAddForm dealId={id} defaultAssignee={user?.email} />
           </div>
           <div className="card">
-            <span className="overline">Documents</span>
+            <div className="card-head">
+              <span className="overline">Documents</span>
+              <a href={`/deals/${id}/diligence`} className="link-caps">Upload / manage</a>
+            </div>
             {deal.documents?.length ? (
               <ul className="doc-list">
                 {deal.documents.map((d: any) => (
                   <li key={d.id}>
-                    <span className="doc-type">{d.doc_type.toUpperCase()}</span> {d.storage_path.split("/").pop()}
+                    <span className="doc-type">{d.doc_type.toUpperCase()}</span>{" "}
+                    <a href={`/api/deals/${id}/vault?doc=${d.id}`}>{d.file_name || d.storage_path.split("/").pop()}</a>
                     <span className="muted"> · {d.uploaded_by}</span>
                   </li>
                 ))}

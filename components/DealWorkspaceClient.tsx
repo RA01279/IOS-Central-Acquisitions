@@ -15,6 +15,7 @@ export const DEAL_TABS = [
   { seg: "", label: "Summary", short: "Summary", icon: LayoutGrid },
   { seg: "demand-map", label: "Demand Map", short: "Map", icon: MapIcon },
   { seg: "financials", label: "Financials", short: "Financials", icon: null },
+  { seg: "diligence", label: "Diligence", short: "Diligence", icon: null },
   { seg: "notes", label: "Notes & History", short: "Notes", icon: NotebookPen },
   { seg: "ic-deck", label: "IC Deck", short: "IC Deck", icon: Presentation },
 ] as const;

@@ -53,6 +53,7 @@ export default function StageActions({
   // -> Due Diligence
   const [showDd, setShowDd] = useState(false);
   const [ddEnd, setDdEnd] = useState(ddEndOn ?? "");
+  const [psaOn, setPsaOn] = useState("");
   const [closing, setClosing] = useState(closingOn ?? "");
 
   // Shared by the PSA and DD forms -- both record the same field.
@@ -76,6 +77,8 @@ export default function StageActions({
         const body = await res.json();
         throw new Error(body.error ?? "Action failed");
       }
+      const out = await res.json().catch(() => ({}));
+      if (out.warning) setError(out.warning);
       setShowPsa(false);
       setShowDd(false);
       setShowClose(false);
@@ -178,10 +181,16 @@ export default function StageActions({
         ) : (
           <div className="inline-add-form" style={{ width: "100%" }}>
             <p className="hint">
-              These two dates drive the 7-day reminder in the morning brief. Leave either blank if
-              it isn't set yet — you can fill it in later from Edit details.
+              With the PSA effective date, the full diligence schedule (deposit, title, survey,
+              objections, Phase I/II, DD expiry, closing) is laid out on the Diligence tab from the
+              LOI terms. DD expiry and closing below override the computed dates; leave them blank
+              to use the LOI periods.
             </p>
             <div className="grid-2">
+              <label>
+                PSA effective date
+                <input type="date" value={psaOn} onChange={(e) => setPsaOn(e.target.value)} />
+              </label>
               <label>
                 DD expires
                 <input type="date" value={ddEnd} onChange={(e) => setDdEnd(e.target.value)} />
@@ -205,6 +214,7 @@ export default function StageActions({
               <button
                 onClick={() =>
                   callAction("move_to_due_diligence", {
+                    psaEffectiveOn: psaOn || null,
                     ddEndOn: ddEnd || null,
                     closingOn: closing || null,
                     contractPrice: contract || null,
