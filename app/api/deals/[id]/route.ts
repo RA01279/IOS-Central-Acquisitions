@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent, isValidAcqStage, STAGE_LABELS } from "@/lib/deals";
 import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
+import { canonicalMarket } from "@/lib/markets";
 import { parseMoney } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
 import { geocodeAddress } from "@/lib/geocode";
@@ -275,7 +276,10 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
 
     if (deal.property_id) {
-      const { data: existingProperty } = await supabase.from("properties").select("address,city,market").eq("id", deal.property_id).single();
+      const { data: existingProperty } = await supabase.from("properties").select("address,city,market,longitude").eq("id", deal.property_id).single();
+      // One spelling per metro, settled before the change check so retyping
+      // "DFW" for a deal already in Dallas isn't treated as a move.
+      if ("market" in body) body.market = canonicalMarket(body.market, body.city, body.longitude ?? existingProperty?.longitude);
       const locationChanged = existingProperty && ["address", "city", "market"].some(key => key in body && String(body[key] ?? "").trim() !== String((existingProperty as any)[key] ?? "").trim());
       let locationUpdate = {};
       if (locationChanged) {

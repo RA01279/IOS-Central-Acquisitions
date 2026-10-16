@@ -17,6 +17,7 @@ import { readAllCompPages } from "@/lib/comps/mapData";
 const NAME_FIELDS = ["tenant_name", "buyer", "seller", "landlord_name", "market", "submarket", "city"] as const;
 import { validCoordinates } from "@/lib/location";
 import { parseMoney } from "@/lib/money";
+import { canonicalMarket, escalationFraction } from "@/lib/markets";
 
 export const dynamic = "force-dynamic";
 
@@ -204,7 +205,7 @@ export async function POST(req: NextRequest) {
         const s = str(c.state);
         return s && /^[A-Za-z]{2}$/.test(s) ? s.toUpperCase() : null;
       })(),
-      market: str(c.market),
+      market: canonicalMarket(c.market, c.city, c.longitude),
       submarket: str(c.submarket),
       asset_class: c.assetClass === "industrial" ? "industrial" : c.assetClass === "ios" ? "ios" : null,
       building_sf: plain(c.buildingSf),
@@ -279,7 +280,7 @@ export async function POST(req: NextRequest) {
       row.landlord_name = str(c.landlordName);
       row.date_commenced = str(c.dateCommenced);
       row.lease_expires_on = str(c.leaseExpiresOn);
-      row.escalations_pct = plain(c.escalationsPct);
+      row.escalations_pct = escalationFraction(c.escalationsPct);
       row.free_rent_months = plain(c.freeRentMonths);
       row.ti_psf = plain(c.tiPsf);
       row.renewal_options = str(c.renewalOptions);

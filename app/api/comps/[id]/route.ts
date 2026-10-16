@@ -9,6 +9,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { geocodeAddress } from "@/lib/geocode";
 import { validCoordinates } from "@/lib/location";
+import { canonicalMarket, escalationFraction } from "@/lib/markets";
 
 export const dynamic = "force-dynamic";
 
@@ -122,7 +123,7 @@ const FIELDS: Record<string, { column: string; coerce: (v: unknown) => unknown }
   leaseTermMonths: { column: "lease_term_months", coerce: int },
   tenantName: { column: "tenant_name", coerce: str },
   landlordName: { column: "landlord_name", coerce: str },
-  escalationsPct: { column: "escalations_pct", coerce: plain },
+  escalationsPct: { column: "escalations_pct", coerce: escalationFraction },
   freeRentMonths: { column: "free_rent_months", coerce: plain },
   tiPsf: { column: "ti_psf", coerce: plain },
   renewalOptions: { column: "renewal_options", coerce: str },
@@ -166,6 +167,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   const update: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(FIELDS)) {
     if (key in body) update[spec.column] = spec.coerce(body[key]);
+  }
+
+  // One spelling per metro (lib/markets.ts); the city decides Dallas vs Fort Worth.
+  if ("market" in update) {
+    update.market = canonicalMarket(update.market, "city" in update ? update.city : existing.city, body.longitude ?? existing.longitude);
   }
 
   // COORDINATES TYPED BY A PERSON WIN, and are not re-geocoded over.

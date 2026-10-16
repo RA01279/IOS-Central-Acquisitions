@@ -11,6 +11,7 @@ import { fireStageChangeWebhook } from "./webhooks";
 import { geocodeAddress } from "./geocode";
 import { parseMoney } from "./money";
 import { validDate } from "./stage-rules";
+import { canonicalMarket } from "./markets";
 import { validCoordinates } from "./location";
 
 export type MlaStatus = "pending" | "requested" | "provided" | "assumed";
@@ -175,7 +176,7 @@ export async function createDeal(input: NewDealInput) {
       longitude: location?.lng ?? null,
       geocode_precision: location?.precision ?? null,
       geocoded_at: location ? new Date().toISOString() : null,
-      market: input.market ?? null,
+      market: canonicalMarket(input.market, input.city, location?.lng),
       submarket: input.submarket ?? null,
       city: input.city ?? null,
       asset_type: input.assetType,

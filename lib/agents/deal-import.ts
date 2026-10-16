@@ -51,7 +51,7 @@ export interface DealImport {
 export const DEAL_IMPORT_INSTRUCTIONS = `Read the supplied offering memorandum (OM) and/or broker email and extract ONE property for a new acquisition deal. The report field MUST be a serialized JSON object, nothing else, with exactly this shape:
 {"fields":{"address":string|null,"city":string|null,"state":string|null,"market":string|null,"acres":number|null,"buildingSf":number|null,"askingPrice":number|null,"occupancy":"vacant"|"occupied"|null,"waltYears":number|null,"tenancy":"single_tenant"|"multi_tenant"|null,"assetClass":"ios"|"industrial"|null,"acquisitionType":"standard"|"slb"|null,"marketingStatus":"marketed"|"off_market"|null,"sellerBroker":string|null,"currentOwner":string|null},"evidence":{"<fieldName>":"short verbatim quote"},"notes":[string]}
 Rules:
-- address = street address only (no city/state/zip). state = 2-letter code. market = the metro (e.g. "Houston", "DFW", "Austin", "San Antonio"), not the submarket.
+- address = street address only (no city/state/zip). state = 2-letter code. market = the metro (e.g. "Houston", "Dallas", "Fort Worth", "Austin", "San Antonio"; Dallas-Fort Worth is two markets), not the submarket.
 - acres = total land area in acres (convert from SF: divide by 43,560). buildingSf = total building square feet. Plain numbers, no units or commas.
 - askingPrice = the seller's stated asking/list price in dollars as a plain number. If the OM says "unpriced", "call for offers" or gives no price, use null. Never derive a price from cap rates or per-SF figures.
 - occupancy: "occupied" if there is a tenant or in-place lease, "vacant" if delivered vacant; waltYears = remaining lease term in years if stated.
