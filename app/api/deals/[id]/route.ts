@@ -6,6 +6,7 @@ import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 import { canonicalMarket } from "@/lib/markets";
 import { generateSchedule, syncDealDates } from "@/lib/diligence-db";
 import { listTeam } from "@/lib/team";
+import { createStageTasks } from "@/lib/stage-tasks-db";
 import { parseMoney } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
 import { geocodeAddress } from "@/lib/geocode";
@@ -41,6 +42,8 @@ async function advance(
   });
   if (error) return { error: error.message };
 
+  // Moving forward hands the deal that stage's checklist; corrections don't.
+  if (eventType !== "stage_corrected") await createStageTasks(dealId, toStage, actor);
   await fireStageChangeWebhook(dealId, { from: before?.stage ?? null, to: toStage, actor });
   return { error: null };
 }

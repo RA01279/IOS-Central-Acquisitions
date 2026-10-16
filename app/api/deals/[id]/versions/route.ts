@@ -4,6 +4,7 @@ import { logDealEvent } from "@/lib/deals";
 import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser } from "@/lib/auth";
 import { parseReturnsSummary } from "@/lib/excel-parser";
+import { createStageTasks } from "@/lib/stage-tasks-db";
 
 // POST /api/deals/[id]/versions
 // body: { storagePath, fileName } -- the browser has ALREADY uploaded the
@@ -123,6 +124,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     .select("id");
   if (advanced && advanced.length > 0) {
     await logDealEvent(params.id, "advanced_to_uw", { via: "model_upload" }, "system");
+    await createStageTasks(params.id, "uw", user.email);
     await fireStageChangeWebhook(params.id, {
       from: "prospect",
       to: "uw",
