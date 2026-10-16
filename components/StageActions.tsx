@@ -28,8 +28,11 @@ export default function StageActions({
   ddEndOn,
   closingOn,
   contractPrice,
+  icStatus,
 }: {
   dealId: string;
+  /** Standing IC decision, for the confirm-PSA form. */
+  icStatus?: { label: string; approved: boolean; required: boolean } | null;
   stage: string;
   canConfirmPsa: boolean;
   prevStage?: string | null;
@@ -144,6 +147,12 @@ export default function StageActions({
           </button>
         ) : (
           <div className="inline-add-form" style={{ width: "100%" }}>
+            {icStatus && (
+              <p className={icStatus.approved ? "hint" : icStatus.required ? "error" : "hint"} style={{ marginTop: 0 }}>
+                IC: {icStatus.label}
+                {!icStatus.approved && (icStatus.required ? " — record an approval on the IC Deck tab first." : " — no approval on record yet.")}
+              </p>
+            )}
             <label>
               Agreed contract price ($)
               <input

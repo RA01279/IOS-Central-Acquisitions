@@ -20,6 +20,7 @@ import SignalsPanel from "@/components/SignalsPanel";
 import NextDates, { type DateRow } from "@/components/NextDates";
 import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
 import { listTeam, nameOf } from "@/lib/team";
+import { IC_OUTCOME_LABELS, icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
 import { DemandBars, KpiCard } from "@/components/ui";
 
 function fmtUsd(v: number | null | undefined) {
@@ -29,13 +30,15 @@ function fmtUsd(v: number | null | undefined) {
 export default async function DealSummaryPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const [deal, site, user] = await Promise.all([getDeal(id), getSiteView(id), getCurrentUser()]);
-  const [dealContacts, allContacts, tasks, ownedAssets, team] = await Promise.all([
+  const [dealContacts, allContacts, tasks, ownedAssets, team, icDecisions] = await Promise.all([
     getDealContacts(deal.id),
     listContacts(),
     listOpenTasksForDeal(deal.id),
     getOwnedAssets(),
     listTeam(),
+    listIcDecisions(id),
   ]);
+  const icStanding = icDecisions[0] ?? null;
   const subject = subjectOf(deal);
 
   const k = dealKpis(deal, site.snapshot, 3);
@@ -76,6 +79,11 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         dealId={deal.id}
         stage={deal.stage}
         canConfirmPsa={userCanConfirmPsa}
+        icStatus={{
+          label: icStanding ? `${IC_OUTCOME_LABELS[icStanding.outcome]} ${icStanding.decided_on}` : "no decision",
+          approved: isApproval(icStanding),
+          required: icRequiredForPsa(),
+        }}
         prevStage={prevStage}
         prevStageLabel={prevStage ? STAGE_LABELS[prevStage] : null}
         ddEndOn={deal.dd_end_on ?? null}

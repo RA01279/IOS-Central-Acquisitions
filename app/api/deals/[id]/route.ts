@@ -7,6 +7,7 @@ import { canonicalMarket } from "@/lib/markets";
 import { generateSchedule, syncDealDates } from "@/lib/diligence-db";
 import { listTeam } from "@/lib/team";
 import { createStageTasks } from "@/lib/stage-tasks-db";
+import { icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
 import { parseMoney } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
 import { geocodeAddress } from "@/lib/geocode";
@@ -87,6 +88,10 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
         { error: "Only Rhett/John can confirm Moving to PSA" },
         { status: 403 }
       );
+    }
+    // Optionally (REQUIRE_IC_APPROVAL_FOR_PSA=1) IC must have approved first.
+    if (icRequiredForPsa() && !isApproval((await listIcDecisions(params.id))[0])) {
+      return NextResponse.json({ error: "Record an IC approval (IC Deck tab) before moving to PSA" }, { status: 400 });
     }
     // The PSA price is usually agreed by the time this is confirmed. Optional --
     // a missing price must not block the stage move -- and only written when

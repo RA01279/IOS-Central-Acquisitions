@@ -11,6 +11,8 @@ import { slideMap, slideMapImages, type SummarySlideModel } from "@/lib/ic-deck/
 import IcSlidePreview from "@/components/IcSlidePreview";
 import IcDeckBuilder from "@/components/IcDeckBuilder";
 import IcDeckPanel from "@/components/IcDeckPanel";
+import IcDecisionPanel from "@/components/IcDecisionPanel";
+import { icRequiredForPsa, listIcDecisions } from "@/lib/ic-decisions";
 
 export const metadata = { title: "IC Deck" };
 
@@ -19,7 +21,7 @@ export default async function IcDeckPage(props: {
   searchParams: Promise<{ r?: string; cats?: string }>;
 }) {
   const [{ id }, sp] = await Promise.all([props.params, props.searchParams]);
-  const [deal, site] = await Promise.all([getDeal(id), getSiteView(id)]);
+  const [deal, site, decisions] = await Promise.all([getDeal(id), getSiteView(id), listIcDecisions(id)]);
   const view = parseMapView(sp);
   const active = view.cats ?? DEMAND_CATEGORIES.map((c) => c.key);
   const k = dealKpis(deal, site.snapshot, view.radius, view.cats);
@@ -72,6 +74,7 @@ export default async function IcDeckPage(props: {
     <>
       <IcSlidePreview dealId={deal.id} model={model} missing={missing} />
       <div className="ws-body">
+        <IcDecisionPanel dealId={deal.id} decisions={decisions} icOn={deal.ic_on ?? null} requiredForPsa={icRequiredForPsa()} />
         <IcDeckBuilder dealId={deal.id} fileNameStem={stem} />
         <IcDeckPanel
           dealId={deal.id}

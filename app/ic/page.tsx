@@ -8,6 +8,7 @@ import { loadSignals } from "@/lib/site-signals";
 import { daysUntil, fmtShortDate } from "@/lib/format";
 import Nav from "@/components/Nav";
 import { Badge, ScoreTile, STAGE_TONES } from "@/components/ui";
+import { IC_OUTCOME_LABELS } from "@/lib/ic-decisions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "IC Decks" };
@@ -17,12 +18,18 @@ const HEADING_TO_IC = ["offered", "moving_to_psa", "due_diligence"];
 export default async function IcHubPage() {
   const supabase = getServiceClient();
   const today = ctToday();
-  const [{ data: rows }, { data: exports }] = await Promise.all([
+  const [{ data: rows }, { data: exports }, { data: decisions }] = await Promise.all([
     supabase.from("deals").select(DEAL_CARD_SELECT).eq("deal_type", "acquisition").not("stage", "in", "(archived,closed)"),
     supabase
       .from("deal_events")
       .select("id, deal_id, actor, created_at, detail, deals(properties(address))")
       .eq("event_type", "ic_deck_exported")
+      .order("created_at", { ascending: false })
+      .limit(15),
+    supabase
+      .from("ic_decisions")
+      .select("id, deal_id, decided_on, outcome, approved_price, conditions, deals(properties(address))")
+      .order("decided_on", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(15),
   ]);
@@ -94,6 +101,31 @@ export default async function IcHubPage() {
                 <p className="hint" style={{ margin: 0 }}>Summary slides you download will be listed here.</p>
               )}
             </div>
+          </div>
+          <div className="card">
+            <span className="overline">Recent decisions</span>
+            {decisions?.length ? (
+              <div className="list-rows">
+                {decisions.map((d: any) => (
+                  <a key={d.id} href={`/deals/${d.deal_id}/ic-deck`} className="list-row">
+                    <span className="grow">
+                      <b>{d.deals?.properties?.address ?? "Deal"}</b>
+                      <span>
+                        {[
+                          d.decided_on,
+                          IC_OUTCOME_LABELS[d.outcome] ?? d.outcome,
+                          d.approved_price ? `up to ${Math.round(Number(d.approved_price)).toLocaleString("en-US")}` : null,
+                          d.conditions,
+                        ].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    <span className="link-caps">Open</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="hint" style={{ margin: 0 }}>Record an outcome from a deal&apos;s IC Deck tab.</p>
+            )}
           </div>
           <div className="card">
             <span className="overline">Heading to IC, no date yet</span>
