@@ -61,6 +61,13 @@ export interface SyncDeal {
   createdBy: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  // Portfolio deals (2026-10-16): a site imported from a portfolio OM names
+  // its portfolio (the deal_portfolios row) and carries the OM's allocated
+  // price, so Prospector can group the sites the way our Deals page does.
+  dealPortfolioId: string | null;
+  portfolioName: string | null;
+  portfolioBroker: string | null;
+  askingPrice: number | null;
 }
 
 export interface SyncOffer {
@@ -173,6 +180,10 @@ export function shapeDeal(d: any): SyncDeal {
     createdBy: str(d.created_by),
     createdAt: str(d.created_at),
     updatedAt: str(d.updated_at),
+    dealPortfolioId: str(d.deal_portfolio_id),
+    portfolioName: str(d.deal_portfolios?.name),
+    portfolioBroker: str(d.deal_portfolios?.seller_broker),
+    askingPrice: num(d.asking_price),
   };
 }
 

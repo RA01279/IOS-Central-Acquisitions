@@ -27,10 +27,16 @@ const acq = {
 };
 const lease = { id: "d2", deal_type: "lease", stage: "tour", properties: { address: "2 Lease Rd" } };
 const legacy = { ...acq, id: "d3", stage: "uw_v1", properties: { ...acq.properties, geocode_precision: "approximate" } };
+// a site of a portfolio OM: names its portfolio and carries the allocated price
+const site = {
+  ...acq, id: "d4", stage: "prospect", deal_portfolio_id: "p1", asking_price: "2500000",
+  deal_portfolios: { name: "Project Empire IOS Portfolio", seller_broker: "CBRE, Inc." },
+  properties: { ...acq.properties, address: "4810 Cargo Rd" },
+};
 
 const payload = buildSyncPayload(
   {
-    deals: [acq, lease, legacy],
+    deals: [acq, lease, legacy, site],
     offers: [
       { id: "o1", deal_id: "d1", offered_at: "2026-08-15", price: "1000000", source: "loi", created_by: "r" },
       { id: "o2", deal_id: "d2", offered_at: "2026-08-15", price: 5 },
@@ -78,7 +84,7 @@ assert.equal(payload.schemaVersion, 2);
 assert.equal(payload.generatedAt, "2026-09-23T15:00:00.000Z");
 
 // Only acquisitions, every stage, uuids as ids.
-assert.deepEqual(payload.deals.map((d) => d.id), ["d1", "d3"]);
+assert.deepEqual(payload.deals.map((d) => d.id), ["d1", "d3", "d4"]);
 const d1 = payload.deals[0];
 assert.equal(d1.stage, "archived");
 assert.equal(d1.contractPrice, 1250000);
@@ -178,3 +184,16 @@ assert.equal(buildSyncPayload(
   { now, asOfDate: "2026-09-23" }).comps.length, 0);
 
 console.log("sync-export: ok");
+
+// Portfolio deals (2026-10-16): the site names its portfolio and carries
+// the OM's allocated price; a deal outside any portfolio sends nulls.
+const siteOut = payload.deals.find((d) => d.id === "d4");
+assert.equal(siteOut.dealPortfolioId, "p1");
+assert.equal(siteOut.portfolioName, "Project Empire IOS Portfolio");
+assert.equal(siteOut.portfolioBroker, "CBRE, Inc.");
+assert.equal(siteOut.askingPrice, 2500000);
+const lone = payload.deals.find((d) => d.id === "d1");
+assert.equal(lone.dealPortfolioId, null);
+assert.equal(lone.portfolioName, null);
+assert.equal(lone.askingPrice, null);
+console.log("portfolio fields ok");

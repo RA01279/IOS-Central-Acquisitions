@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
         supabase
           .from("deals")
           .select(
-            "id, deal_type, stage, asset_class, mla_status, marketing_status, acquisition_type, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, assigned_analyst, created_by, created_at, updated_at, properties(address, city, market, submarket, lot_sf, building_sf, latitude, longitude, geocode_precision, occupancy_status, walt_years, tenancy)"
+            "id, deal_type, stage, asset_class, mla_status, marketing_status, acquisition_type, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, assigned_analyst, created_by, created_at, updated_at, deal_portfolio_id, asking_price, deal_portfolios(name, seller_broker), properties(address, city, market, submarket, lot_sf, building_sf, latitude, longitude, geocode_precision, occupancy_status, walt_years, tenancy)"
           )
           .eq("deal_type", "acquisition")
           .order("created_at", { ascending: true })
