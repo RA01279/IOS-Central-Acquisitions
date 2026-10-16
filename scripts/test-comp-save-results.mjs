@@ -16,6 +16,7 @@ const dependencies = {
   "@/lib/geocode": { geocodeMany: async (rows) => rows.map(() => null) },
   "@/lib/location": load("../lib/location.ts"),
   "@/lib/money": load("../lib/money.ts"),
+  "@/lib/markets": load("../lib/markets.ts"),
   "@/lib/comps/intake-validation": load("../lib/comps/intake-validation.ts", { "../stage-rules": load("../lib/stage-rules.ts") }),
   "@/lib/comps/match": match,
   "@/lib/comps/review": load("../lib/comps/review.ts", { "./match": match }),
