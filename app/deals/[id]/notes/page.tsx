@@ -40,7 +40,7 @@ const EVENT_LABELS: Record<string, (e: any) => string> = {
   offer_logged: () => "Offer logged",
 };
 
-type Item = { at: string; kind: "visit" | "note" | "stage"; title: string; who: string; body?: string; photos?: string[]; type?: string };
+type Item = { at: string; kind: "visit" | "note" | "stage"; title: string; who: string; body?: string; photos?: string[]; type?: string; files?: { id: string; name: string }[] };
 
 export default async function NotesPage(props: {
   params: Promise<{ id: string }>;
@@ -63,6 +63,12 @@ export default async function NotesPage(props: {
     for (const s of data ?? []) if (s.signedUrl && s.path) signed.set(s.path, s.signedUrl);
   }
 
+  // Files attached to a note (filed in the vault with the note's id).
+  const filesFor = (activityId: string) =>
+    ((deal.documents ?? []) as any[])
+      .filter((d) => d.activity_id === activityId)
+      .map((d) => ({ id: d.id, name: d.file_name || String(d.storage_path).split("/").pop() }));
+
   const items: Item[] = [
     ...(activities as any[]).map((a) => ({
       at: a.occurred_at,
@@ -72,6 +78,7 @@ export default async function NotesPage(props: {
       who: a.created_by,
       body: a.body ?? undefined,
       photos: (a.photo_paths ?? []).map((p: string) => signed.get(p)).filter(Boolean),
+      files: filesFor(a.id),
     })),
     ...((deal.deal_events ?? []) as any[])
       .filter((e) => EVENT_LABELS[e.event_type])
@@ -122,6 +129,15 @@ export default async function NotesPage(props: {
                             </a>
                           ))}
                         </div>
+                      )}
+                      {!!i.files?.length && (
+                        <ul className="doc-list" style={{ margin: "6px 0 0" }}>
+                          {i.files.map((f) => (
+                            <li key={f.id}>
+                              <a href={`/api/deals/${id}/vault?doc=${f.id}`}>📎 {f.name}</a>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
                   </li>

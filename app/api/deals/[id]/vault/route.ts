@@ -4,7 +4,7 @@
 // on a signed URL (Vercel's ~4.5 MB body cap), then are registered here.
 //
 // POST   { action: "upload-url", fileName }            -> { path, token }
-// POST   { action: "register", path, fileName, docType, milestoneId?, markDone? }
+// POST   { action: "register", path, fileName, docType, milestoneId?, markDone?, activityId? }
 // GET    ?doc=<id>                                     -> redirect to a 5-minute signed link
 // PATCH  { docId, docType?, milestoneId? }
 // DELETE { docId }
@@ -76,6 +76,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     try { milestone = await milestoneOnDeal(id, body.milestoneId); } catch (err: any) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    // A file attached to a note on Notes & History: the note must be this deal's.
+    let activityId: string | null = null;
+    if (body.activityId) {
+      if (!UUID.test(String(body.activityId))) return NextResponse.json({ error: "Unknown note" }, { status: 400 });
+      const { data: act } = await db.from("activities").select("id").eq("id", body.activityId).eq("deal_id", id).maybeSingle();
+      if (!act) return NextResponse.json({ error: "That note isn't on this deal" }, { status: 400 });
+      activityId = act.id;
+    }
     // The file must really be there, and within the size limit.
     const { data: listed, error: listError } = await db.storage.from("documents").list(`deals/${id}`, { search: base, limit: 5 });
     const obj = listed?.find((o: any) => o.name === base);
@@ -88,7 +96,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const fileName = String(body.fileName ?? base).slice(0, 200);
     const { data: doc, error } = await db
       .from("documents")
-      .insert({ deal_id: id, doc_type: docType, storage_path: path, uploaded_by: user.email, file_name: fileName, size_bytes: size, milestone_id: milestone?.id ?? null })
+      .insert({ deal_id: id, doc_type: docType, storage_path: path, uploaded_by: user.email, file_name: fileName, size_bytes: size, milestone_id: milestone?.id ?? null, activity_id: activityId })
       .select("id")
       .single();
     if (error) {
@@ -98,7 +106,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (milestone && body.markDone === true && !milestone.done_on) {
       await db.from("deal_milestones").update({ done_on: ctToday(), updated_at: new Date().toISOString() }).eq("id", milestone.id);
     }
-    await logDealEvent(id, "document_uploaded", { type: docType, file: fileName, milestone: milestone?.label ?? null }, user.email);
+    await logDealEvent(id, "document_uploaded", { type: docType, file: fileName, milestone: milestone?.label ?? null, note: activityId }, user.email);
     return NextResponse.json({ ok: true, id: doc.id }, { status: 201 });
   }
 
