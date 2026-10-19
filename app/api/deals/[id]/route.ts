@@ -8,7 +8,7 @@ import { generateSchedule, syncDealDates } from "@/lib/diligence-db";
 import { listTeam } from "@/lib/team";
 import { createStageTasks } from "@/lib/stage-tasks-db";
 import { icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
-import { parseMoney } from "@/lib/money";
+import { parseMoney, parseRate } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
 import { geocodeAddress } from "@/lib/geocode";
 import { validCoordinates } from "@/lib/location";
@@ -244,7 +244,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       update[col] = body[k] || null;
     }
     if ("inPlaceRent" in body) {
-      const rent = parseMoney(body.inPlaceRent);
+      // A rate, not a price: ".80" and "$0.875" per SF are normal, so this
+      // takes a leading decimal point and up to four places (parseMoney
+      // wants a price and threw on ".80", which surfaced as an empty 500).
+      const rent = parseRate(body.inPlaceRent);
+      if (rent === undefined) return NextResponse.json({ error: "Enter the rent as a number, e.g. 0.80 or 18,500" }, { status: 400 });
       const basis = body.inPlaceRentBasis ?? null;
       const BASES = ["per_acre_monthly", "per_sf_bldg_monthly", "per_sf_bldg_annual", "per_sf_land_monthly", "total_monthly"];
       if (rent !== null && !BASES.includes(basis)) return NextResponse.json({ error: "Pick how the rent is quoted" }, { status: 400 });
@@ -254,7 +258,12 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     // The seller's ask -- for a portfolio site, the price allocated to it.
     // Blank clears it.
     if ("askingPrice" in body) {
-      const ask = parseMoney(body.askingPrice);
+      let ask: number | null;
+      try {
+        ask = parseMoney(body.askingPrice);
+      } catch (err) {
+        return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+      }
       if (ask !== null && !(ask > 0)) return NextResponse.json({ error: "Enter a positive price" }, { status: 400 });
       update.asking_price = ask;
     }

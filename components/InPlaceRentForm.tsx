@@ -42,7 +42,14 @@ export default function InPlaceRentForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "update_milestones", inPlaceRent: f.get("rent") || null, inPlaceRentBasis: f.get("basis") }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      // Read the reply as text first: a server error page isn't JSON, and
+      // "Unexpected end of JSON input" tells nobody what went wrong.
+      if (!res.ok) {
+        const text = await res.text();
+        let message = `Save failed (${res.status})`;
+        try { message = JSON.parse(text).error ?? message; } catch {}
+        throw new Error(message);
+      }
       await fetch(`/api/deals/${dealId}/signals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

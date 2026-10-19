@@ -12,6 +12,22 @@ export function parseMoney(value: unknown): number | null {
   return Math.round(amount * 100) / 100;
 }
 
+/**
+ * A rent or rate rather than a price: "$0.80", ".80", "0.875", "18,500".
+ * Up to four decimals and a leading decimal point are fine. Returns null for
+ * blank, undefined for anything that isn't a positive number.
+ */
+export function parseRate(value: unknown): number | null | undefined {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const text = value.trim().replace(/^\$\s*/, "").replace(/,/g, "");
+  if (!text) return null;
+  if (!/^(?:\d+(?:\.\d{1,4})?|\.\d{1,4})$/.test(text)) return undefined;
+  const n = Number(text);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 export function moneyPreview(value: unknown): string {
   try {
     const amount = parseMoney(value);
