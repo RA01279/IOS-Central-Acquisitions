@@ -257,3 +257,35 @@ const bare = buildSyncPayload(
 assert.equal(bare.icDecisions.length + bare.milestones.length + bare.assets.length + bare.leases.length, 0);
 assert.equal(bare.schemaVersion, 2);
 console.log("oct-19 collections ok");
+
+// Oct 20 2026: the deal's short ref, lease concessions on comps, closing
+// checklist items and site viability flags. All additive.
+assert.equal(shapeDeal({ id: "x", ref: 1042 }).ref, "1042");
+assert.equal(shapeDeal({ id: "x" }).ref, null);
+const concession = shapeComp({ id: "c1", comp_type: "lease", lease_term_months: 60, free_rent_months: "2", escalations_pct: "0.03", ti_psf: null });
+assert.equal(concession.leaseTermMonths, 60);
+assert.equal(concession.freeRentMonths, 2);
+assert.equal(concession.escalationsPct, 0.03);
+assert.equal(concession.tiPsf, null);
+const oct20 = buildSyncPayload(
+  {
+    deals: [{ id: "d1", deal_type: "acquisition", stage: "uw" }, { id: "L1", deal_type: "lease", stage: "prospect" }],
+    offers: [], tasks: [], companies: [], contacts: [], dealContacts: [], activities: [],
+    checklistItems: [
+      { id: "k1", deal_id: "d1", section: "TITLE", item: "Title commitment", status: "Received", done: true, sort_order: 10 },
+      { id: "k2", deal_id: "L1", item: "Lease item" },
+    ],
+    signals: [
+      { deal_id: "d1", key: "zoning", auto_state: "watch", auto_note: "IR; outdoor storage not confirmed", override_state: "strong", override_note: "SUP on file", override_by: "rhett@dalfen.com" },
+      { deal_id: "L1", key: "demand", auto_state: "weak" },
+    ],
+  },
+  { now, asOfDate: "2026-10-20" }
+);
+assert.equal(JSON.stringify(oct20.checklistItems.map((r) => r.id)), JSON.stringify(["k1"]));
+assert.equal(oct20.checklistItems[0].done, true);
+assert.equal(oct20.checklistItems[0].section, "TITLE");
+assert.equal(JSON.stringify(oct20.signals.map((r) => r.id)), JSON.stringify(["d1:zoning"]));
+assert.equal(oct20.signals[0].overrideState, "strong");
+assert.equal(bare.checklistItems.length + bare.signals.length, 0);
+console.log("oct-20 collections ok");

@@ -33,12 +33,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const supabase = getServiceClient();
-    const [deals, offers, tasks, companies, contacts, dealContacts, activities, comps, icDecisions, milestones, assets, leases] = await Promise.all([
+    const [deals, offers, tasks, companies, contacts, dealContacts, activities, comps, icDecisions, milestones, assets, leases, checklistItems, signals] = await Promise.all([
       fetchAll((from, to) =>
         supabase
           .from("deals")
           .select(
-            "id, deal_type, stage, asset_class, mla_status, marketing_status, acquisition_type, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, assigned_analyst, created_by, created_at, updated_at, deal_portfolio_id, asking_price, psa_effective_on, source_broker_id, deal_portfolios(name, seller_broker), properties(address, city, market, submarket, lot_sf, building_sf, latitude, longitude, geocode_precision, occupancy_status, walt_years, tenancy)"
+            "id, ref, deal_type, stage, asset_class, mla_status, marketing_status, acquisition_type, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, assigned_analyst, created_by, created_at, updated_at, deal_portfolio_id, asking_price, psa_effective_on, source_broker_id, deal_portfolios(name, seller_broker), properties(address, city, market, submarket, lot_sf, building_sf, latitude, longitude, geocode_precision, occupancy_status, walt_years, tenancy)"
           )
           .eq("deal_type", "acquisition")
           .order("created_at", { ascending: true })
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
         supabase
           .from("comps")
           .select(
-            "id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, geocode_precision, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, tenant_name, sale_price, closed_on, cap_rate, buyer, status, created_by, created_at, updated_at, source_ref"
+            "id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, geocode_precision, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, tenant_name, sale_price, closed_on, cap_rate, buyer, status, created_by, created_at, updated_at, source_ref, lease_term_months, free_rent_months, escalations_pct, ti_psf"
           )
           .order("created_at", { ascending: true })
           .order("id", { ascending: true })
@@ -137,10 +137,26 @@ export async function GET(req: NextRequest) {
           .order("id", { ascending: true })
           .range(from, to)
       ),
+      fetchAll((from, to) =>
+        supabase
+          .from("deal_checklist_items")
+          .select("id, deal_id, section, item, responsible, signatories, status, done, notes, sort_order, created_by, created_at, updated_at")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from("deal_signals")
+          .select("deal_id, key, auto_state, auto_note, auto_source, auto_at, override_state, override_note, override_by, override_at")
+          .order("deal_id", { ascending: true })
+          .order("key", { ascending: true })
+          .range(from, to)
+      ),
     ]);
     return NextResponse.json(
       buildSyncPayload(
-        { deals, offers, tasks, companies, contacts, dealContacts, activities, comps, icDecisions, milestones, assets, leases },
+        { deals, offers, tasks, companies, contacts, dealContacts, activities, comps, icDecisions, milestones, assets, leases, checklistItems, signals },
         { now: new Date(), asOfDate: ctToday() }
       )
     );

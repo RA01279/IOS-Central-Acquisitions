@@ -29,6 +29,9 @@ function str(v: unknown): string | null {
 
 export interface SyncDeal {
   id: string;
+  // Short reference as the deal workspace shows it ("D-1042"); Prospector
+  // prints it on mirrored deals so both apps say the same thing (2026-10-20).
+  ref: string | null;
   url: string;
   stage: string;
   assetClass: "ios" | "industrial";
@@ -225,6 +228,7 @@ export function shapeDeal(d: any): SyncDeal {
     );
   return {
     id: d.id,
+    ref: d.ref != null ? String(d.ref) : null,
     url: `${APP_URL}/deals/${d.id}`,
     stage: d.stage === "uw_v1" ? "uw" : d.stage,
     assetClass: d.asset_class === "industrial" ? "industrial" : "ios",
@@ -335,6 +339,74 @@ export function shapeAsset(a: any): SyncAsset {
     latitude: placed ? num(a.latitude) : null,
     longitude: placed ? num(a.longitude) : null,
     geocodePrecision: placed ? str(a.geocode_precision) : null,
+  };
+}
+
+// Closing checklist (2026-10-20): counsel's items per deal.
+export interface SyncChecklistItem {
+  id: string;
+  dealId: string;
+  section: string;
+  item: string;
+  responsible: string | null;
+  signatories: string | null;
+  status: string | null;
+  done: boolean;
+  notes: string | null;
+  sortOrder: number | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export function shapeChecklistItem(r: any): SyncChecklistItem {
+  return {
+    id: r.id,
+    dealId: r.deal_id,
+    section: String(r.section ?? "General"),
+    item: String(r.item ?? ""),
+    responsible: str(r.responsible),
+    signatories: str(r.signatories),
+    status: str(r.status),
+    done: r.done === true,
+    notes: str(r.notes),
+    sortOrder: num(r.sort_order),
+    createdBy: str(r.created_by),
+    createdAt: str(r.created_at),
+    updatedAt: str(r.updated_at),
+  };
+}
+
+// Site viability flags (2026-10-20): the six readings and any override.
+// The Places snapshot (auto_detail) stays home: it is large and Google's.
+// id is "<deal>:<key>" because the table has no id of its own.
+export interface SyncSignal {
+  id: string;
+  dealId: string;
+  key: string;
+  autoState: string | null;
+  autoNote: string | null;
+  autoSource: string | null;
+  autoAt: string | null;
+  overrideState: string | null;
+  overrideNote: string | null;
+  overrideBy: string | null;
+  overrideAt: string | null;
+}
+
+export function shapeSignal(r: any): SyncSignal {
+  return {
+    id: `${r.deal_id}:${r.key}`,
+    dealId: r.deal_id,
+    key: String(r.key ?? ""),
+    autoState: str(r.auto_state),
+    autoNote: str(r.auto_note),
+    autoSource: str(r.auto_source),
+    autoAt: str(r.auto_at),
+    overrideState: str(r.override_state),
+    overrideNote: str(r.override_note),
+    overrideBy: str(r.override_by),
+    overrideAt: str(r.override_at),
   };
 }
 
@@ -459,6 +531,12 @@ export interface SyncComp {
   // Where the comp came from, as typed ("User-provided (Rich Young Co. - ...)"):
   // Prospector's broker scorecard matches the firm name inside it.
   sourceRef: string | null;
+  // Lease concessions (2026-10-20): term, free rent, escalation, TI, so the
+  // market view can read an effective rent.
+  leaseTermMonths: number | null;
+  freeRentMonths: number | null;
+  escalationsPct: number | null;
+  tiPsf: number | null;
 }
 
 export function shapeComp(c: any): SyncComp {
@@ -498,6 +576,10 @@ export function shapeComp(c: any): SyncComp {
     createdAt: str(c.created_at),
     updatedAt: str(c.updated_at),
     sourceRef: str(c.source_ref),
+    leaseTermMonths: num(c.lease_term_months),
+    freeRentMonths: num(c.free_rent_months),
+    escalationsPct: num(c.escalations_pct),
+    tiPsf: num(c.ti_psf),
   };
 }
 
@@ -519,6 +601,9 @@ export interface SyncPayload {
   milestones: SyncMilestone[];
   assets: SyncAsset[];
   leases: SyncLease[];
+  // Added 2026-10-20, additive.
+  checklistItems: SyncChecklistItem[];
+  signals: SyncSignal[];
 }
 
 // The feed's key travels as "Authorization: Bearer <key>". Compared without
@@ -553,6 +638,8 @@ export function buildSyncPayload(
     milestones?: any[];
     assets?: any[];
     leases?: any[];
+    checklistItems?: any[];
+    signals?: any[];
   },
   opts: { now: Date; asOfDate: string }
 ): SyncPayload {
@@ -598,5 +685,7 @@ export function buildSyncPayload(
     milestones: (raw.milestones ?? []).filter((m) => known.has(m.deal_id)).map(shapeMilestone),
     assets,
     leases: (raw.leases ?? []).filter((l) => assetIds.has(l.asset_id)).map(shapeLease),
+    checklistItems: (raw.checklistItems ?? []).filter((r) => known.has(r.deal_id)).map(shapeChecklistItem),
+    signals: (raw.signals ?? []).filter((r) => known.has(r.deal_id)).map(shapeSignal),
   };
 }
