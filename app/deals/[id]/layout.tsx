@@ -40,18 +40,26 @@ export default async function DealLayout(props: { children: React.ReactNode; par
   }
   if (!UUID.test(id)) return notFound();
 
-  const { data: deal, error } = await supabase
-    .from("deals")
-    .select("id, ref, stage, asset_class, deal_type, properties(address, city, market, submarket, lot_sf, building_sf, asset_type)")
-    .eq("id", id)
-    .maybeSingle();
+  // The four reads only need the id, so they run together rather than one
+  // after another on every tab.
+  const [{ data: deal, error }, links, site, { data: pfRow }] = await Promise.all([
+    supabase
+      .from("deals")
+      .select("id, ref, stage, asset_class, deal_type, properties(address, city, market, submarket, lot_sf, building_sf, asset_type)")
+      .eq("id", id)
+      .maybeSingle(),
+    getDealContacts(id).catch(() => []) as Promise<any[]>,
+    getSiteView(id),
+    // Part of a portfolio package? Its own query, and a failure only hides the
+    // badge: the main select must never depend on a newer column.
+    supabase.from("deals").select("deal_portfolios(id, name)").eq("id", id).maybeSingle(),
+  ]);
   // A broken query must surface as an error, not masquerade as a missing deal
   // (a select of a nonexistent column once 404'd every deal page).
   if (error) throw new Error(`Loading deal: ${error.message}`);
   if (!deal) return notFound();
 
   const p: any = deal.properties ?? {};
-  const links = (await getDealContacts(deal.id).catch(() => [])) as any[];
   const broker = links.find((l) => l.role === "seller_broker")?.contacts;
   const ios = deal.asset_class !== "industrial";
   const facts = [
@@ -60,10 +68,6 @@ export default async function DealLayout(props: { children: React.ReactNode; par
     p.city || p.market,
     broker ? `Broker: ${broker.companies?.name ? `${broker.companies.name} (${broker.name})` : broker.name}` : null,
   ].filter(Boolean);
-  const site = await getSiteView(deal.id);
-  // Part of a portfolio package? Its own query, and a failure only hides the
-  // badge: the main select above must never depend on a newer column.
-  const { data: pfRow } = await supabase.from("deals").select("deal_portfolios(id, name)").eq("id", deal.id).maybeSingle();
   const portfolio = (pfRow as any)?.deal_portfolios as { id: string; name: string } | null | undefined;
   const name = p.address ?? "Untitled deal";
   const ref = dealRef(deal.ref);

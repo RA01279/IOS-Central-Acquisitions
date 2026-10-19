@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { geocodeAddress } from "@/lib/geocode";
 import { validCoordinates } from "@/lib/location";
 import { canonicalMarket, escalationFraction } from "@/lib/markets";
+import { invalidateComps } from "@/lib/comps/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -144,7 +145,7 @@ const FIELDS: Record<string, { column: string; coerce: (v: unknown) => unknown }
   },
 };
 
-export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -278,7 +279,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   return NextResponse.json({ comp: data, regeocoded: addressChanged });
 }
 
-export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+async function handleDELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -287,4 +288,22 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
   const { error } = await supabase.from("comps").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
+}
+
+// Any comp write clears the cached comp evidence (lib/comps/cache.ts).
+export async function PATCH(...args: Parameters<typeof handlePATCH>) {
+  try {
+    return await handlePATCH(...args);
+  } finally {
+    invalidateComps();
+  }
+}
+
+// Any comp write clears the cached comp evidence (lib/comps/cache.ts).
+export async function DELETE(...args: Parameters<typeof handleDELETE>) {
+  try {
+    return await handleDELETE(...args);
+  } finally {
+    invalidateComps();
+  }
 }

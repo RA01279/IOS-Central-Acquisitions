@@ -9,8 +9,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
+import { invalidateComps } from "@/lib/comps/cache";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -24,4 +25,13 @@ export async function POST(req: NextRequest) {
     .select("id");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ deleted: data?.length ?? 0 });
+}
+
+// Any comp write clears the cached comp evidence (lib/comps/cache.ts).
+export async function POST(...args: Parameters<typeof handlePOST>) {
+  try {
+    return await handlePOST(...args);
+  } finally {
+    invalidateComps();
+  }
 }

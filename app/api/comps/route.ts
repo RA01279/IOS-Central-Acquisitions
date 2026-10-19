@@ -18,6 +18,7 @@ const NAME_FIELDS = ["tenant_name", "buyer", "seller", "landlord_name", "market"
 import { validCoordinates } from "@/lib/location";
 import { parseMoney } from "@/lib/money";
 import { canonicalMarket, escalationFraction } from "@/lib/markets";
+import { invalidateComps } from "@/lib/comps/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
 // POST /api/comps  { comps: [...], source?, sourceRef? }
 // Each comp is the reviewed shape from the UI -- already corrected by a human,
 // so it saves as 'confirmed'.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -371,4 +372,13 @@ export async function POST(req: NextRequest) {
     // rather than quietly useless.
     geocoding: { centroidOnly: centroids, failed: ungeocoded, fromFile: supplied },
   });
+}
+
+// Any comp write clears the cached comp evidence (lib/comps/cache.ts).
+export async function POST(...args: Parameters<typeof handlePOST>) {
+  try {
+    return await handlePOST(...args);
+  } finally {
+    invalidateComps();
+  }
 }

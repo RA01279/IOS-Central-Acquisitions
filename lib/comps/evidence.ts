@@ -5,7 +5,9 @@
 // panel, the rent and basis flags and the IC deck can't disagree because one
 // of them read different rows or measured the property differently.
 
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase";
+import { COMPS_TAG, COMPS_TTL_SECONDS } from "./cache";
 import { readAllCompPages } from "./mapData";
 import type { CompRecord, Subject } from "./match";
 
@@ -18,17 +20,26 @@ export const COMP_EVIDENCE_COLUMNS =
  * market: the radius is the real constraint, and market labels are too
  * inconsistent to trust. Paged, because a row cap would drop comps silently.
  */
+const readCompEvidence = unstable_cache(
+  async (): Promise<CompRecord[]> => {
+    const db = getServiceClient();
+    return readAllCompPages<CompRecord>((from, to) =>
+      db
+        .from("comps")
+        .select(COMP_EVIDENCE_COLUMNS)
+        .eq("status", "confirmed")
+        .not("latitude", "is", null)
+        .order("id")
+        .range(from, to) as any
+    );
+  },
+  ["comp-evidence", COMP_EVIDENCE_COLUMNS],
+  { tags: [COMPS_TAG], revalidate: COMPS_TTL_SECONDS }
+);
+
+/** Cached (lib/comps/cache.ts); every comp write invalidates it. */
 export async function loadCompEvidence(): Promise<CompRecord[]> {
-  const db = getServiceClient();
-  return readAllCompPages<CompRecord>((from, to) =>
-    db
-      .from("comps")
-      .select(COMP_EVIDENCE_COLUMNS)
-      .eq("status", "confirmed")
-      .not("latitude", "is", null)
-      .order("id")
-      .range(from, to) as any
-  );
+  return readCompEvidence();
 }
 
 /** A deal (with its property) as the matcher's subject. */
