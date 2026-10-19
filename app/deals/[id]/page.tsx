@@ -20,6 +20,7 @@ import SignalsPanel from "@/components/SignalsPanel";
 import NextDates, { type DateRow } from "@/components/NextDates";
 import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
 import { listTeam, nameOf } from "@/lib/team";
+import { getServiceClient } from "@/lib/supabase";
 import { IC_OUTCOME_LABELS, icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
 import { DemandBars, KpiCard } from "@/components/ui";
 
@@ -38,6 +39,10 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
     listTeam(),
     listIcDecisions(id),
   ]);
+  // The firm credited with bringing the deal (chosen at intake).
+  const sourcedBy = deal.source_broker_id
+    ? (await getServiceClient().from("companies").select("id, name").eq("id", deal.source_broker_id).maybeSingle()).data
+    : null;
   const icStanding = icDecisions[0] ?? null;
   const subject = subjectOf(deal);
 
@@ -169,6 +174,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         {deal.classification_basis && <p className="hint">Classification: {deal.classification_basis}</p>}
         <div className="metrics-grid">
           <Metric label="Owner" value={nameOf(team, deal.assigned_analyst) ?? "Unassigned"} />
+          {sourcedBy && <Metric label="Sourced by" value={sourcedBy.name} />}
           <Metric label="City / Submarket" value={[p.city, p.submarket].filter(Boolean).join(" / ") || "—"} />
           <Metric label="Acres" value={p.lot_sf ? (p.lot_sf / 43560).toFixed(2) : "—"} />
           <Metric label="Building SF" value={p.building_sf ? Math.round(p.building_sf).toLocaleString() : "—"} />

@@ -20,6 +20,7 @@ import {
   Building2,
   Users,
   Bot,
+  Award,
   type LucideIcon,
 } from "lucide-react";
 
@@ -60,6 +61,7 @@ export const NAV_GROUPS: Array<{ label: string | null; links: NavLink[] }> = [
     label: "People & Tools",
     links: [
       { href: "/contacts", label: "Contacts", key: "contacts", icon: Users },
+      { href: "/contacts/brokers", label: "Brokers", key: "brokers", icon: Award },
       { href: "/agents", label: "Agents", key: "agents", icon: Bot },
     ],
   },

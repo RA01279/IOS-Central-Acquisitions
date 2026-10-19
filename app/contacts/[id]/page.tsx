@@ -10,6 +10,7 @@ import TaskDoneButton from "@/components/TaskDoneButton";
 import ActivityLogForm from "@/components/ActivityLogForm";
 import BackButton from "@/components/BackButton";
 import TruncatedList from "@/components/TruncatedList";
+import { loadBrokerScorecard } from "@/lib/broker-scorecard-db";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -34,8 +35,8 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
   const { contact, deals, activities, tasks } = data;
   if (!contact) return notFound();
 
-  const user = await getCurrentUser();
-  const companies = await listCompanies();
+  const [user, companies, scorecard] = await Promise.all([getCurrentUser(), listCompanies(), loadBrokerScorecard()]);
+  const asBroker = scorecard.people.find((p) => p.key === contact.id) ?? null;
   const openTasks = tasks.filter((t: any) => t.status === "open");
 
   return (
@@ -89,6 +90,13 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
 
         <section className="panel">
           <h2>Deals</h2>
+          {asBroker && (
+            <p className="hint" style={{ marginTop: 0 }}>
+              As broker: {asBroker.deals} deal{asBroker.deals === 1 ? "" : "s"} · {asBroker.offered} offered · {asBroker.lois} LOI ·{" "}
+              {asBroker.psa} to PSA · {asBroker.closed} closed{asBroker.comps ? ` · ${asBroker.comps} comps from ${asBroker.firm}` : ""} ·{" "}
+              <Link href="/contacts/brokers">scorecard</Link>
+            </p>
+          )}
           {deals.length === 0 ? (
             <p className="muted">Not linked to any deals yet.</p>
           ) : (

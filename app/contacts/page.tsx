@@ -99,6 +99,7 @@ export default async function ContactsPage(
             </p>
           </div>
           <div className="header-actions">
+            <a href="/contacts/brokers" className="button-link">Broker scorecard</a>
             <ContactForm
               companies={companies.map((c: any) => ({
                 id: c.id,
