@@ -97,6 +97,18 @@ function right(sheet: Sheet | null, label: RegExp, offset: number, opts: { after
 }
 const pct = (v: number | null, d = 2) => (v === null ? "—" : `${(v * 100).toFixed(d)}%`);
 const fmtRet = (r: Ret) => (r.irr === null || r.multiple === null ? null : `${(r.irr * 100).toFixed(2)}% / ${r.multiple.toFixed(1)}x`);
+/**
+ * Does a sensitivity cell ("15.0% / 1.9x") show this return? Compared as
+ * numbers at the cell's own precision -- the tables print one decimal, the
+ * deck two, and comparing the text made every deck warn about a stale table.
+ */
+function cellShows(cell: string | undefined, r: Ret): boolean {
+  const m = /^\s*(-?\d+(?:\.(\d+))?)%\s*\/\s*(-?\d+(?:\.(\d+))?)x\s*$/.exec(cell ?? "");
+  if (!m || r.irr === null || r.multiple === null) return false;
+  const irrStep = Math.pow(10, -(m[2]?.length ?? 0));
+  const mulStep = Math.pow(10, -(m[4]?.length ?? 0));
+  return Math.abs(Number(m[1]) - r.irr * 100) <= irrStep / 2 + 1e-9 && Math.abs(Number(m[3]) - r.multiple) <= mulStep / 2 + 1e-9;
+}
 
 export function extractModel(book: Workbook, fileName: string): ModelSummary {
   const warnings: string[] = [];
@@ -249,7 +261,7 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
       }
       return;
     }
-    if (row.cells[col] !== want) {
+    if (!cellShows(row.cells[col], expected)) {
       warnings.push(`The ${name} sensitivity shows ${row.cells[col]} at the base price and exit cap, but the model's base case is ${want}. Recalculate the data tables in Excel (F9) and save before building the deck.`);
     }
   };
@@ -266,7 +278,7 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
         if (cap !== null && Math.abs(cap - yields.exitCap) < 1e-6) {
           const shown = str(pf.at(irrRow.row, c));
           const want = fmtRet(returns.levered);
-          if (shown && want && shown !== want) warnings.push(`Pro Forma's "Base Case" exit-cap table (${numberToCol(c)}${irrRow.row}) shows ${shown}, but the base case is ${want}. It is not at the current price; the deck uses the price × exit cap tables instead.`);
+          if (shown && want && !cellShows(shown, returns.levered)) warnings.push(`Pro Forma's "Base Case" exit-cap table (${numberToCol(c)}${irrRow.row}) shows ${shown}, but the base case is ${want}. It is not at the current price; the deck uses the price × exit cap tables instead.`);
           break;
         }
       }

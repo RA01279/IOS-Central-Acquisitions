@@ -91,7 +91,7 @@ const w = m.warnings.join("\n");
 assert.match(w, /Site SF \(20,000\) doesn't match 4 acres/);
 assert.match(w, /MLA "\$9\.99 FSG", but the rent roll uses "\$1\.50\/Building SF\/mo"/);
 assert(!m.leasing.some((l) => l.label === "MLA Name"), "stale MLA name is dropped");
-assert.match(w, /"Base Case" exit-cap table \(D195\) shows 16\.0% \/ 1\.9x, but the base case is 18\.0% \/ 2\.1x/);
+assert.match(w, /"Base Case" exit-cap table \(D195\) shows 16\.0% \/ 1\.9x, but the base case is 18\.00% \/ 2\.1x/);
 assert(!/deal-level sensitivity shows/.test(w), "a matching support table raises no warning");
 assert(!/Memo Table|San Jose/.test(JSON.stringify(m)), "hidden leftover sheets are never read");
 assert.throws(() => model.extractModel({ sheetNames: [], sheet: () => null }, "x.xlsx"), /missing the ES Summary/);
@@ -103,6 +103,10 @@ assert.throws(() => model.validateModelSummary({ ...m, warnings: ["x".repeat(700
 assert.throws(() => model.validateModelSummary({ ...m, cashFlow: null }), /missing cashFlow/);
 
 // ---- render ------------------------------------------------------------------
+const evidenceFor = (from) => load("lib/comps/evidence.ts", {
+  "next/cache": { unstable_cache: (fn) => fn }, "@/lib/supabase": { getServiceClient: () => ({ from }) },
+  "./mapData": load("lib/comps/mapData.ts"), "./cache": { COMPS_TAG: "comps", COMPS_TTL_SECONDS: 300 },
+});
 const kit = load("lib/ic-deck/pptx-kit.ts");
 const deck = load("lib/ic-deck/deck.ts", { "./pptx-kit": kit });
 const out = deck.renderIcDeck({
@@ -120,7 +124,7 @@ for (const n of Object.keys(zip.files).filter((f) => /\.(xml|rels)$/.test(f))) {
   const text = zip.file(n).asText();
   assert(!/Golden Spike|Prominent Solar|\{\{PROPERTY\}\}/.test(text), `no reference-deal text or placeholder left in ${n}`);
 }
-assert(all.includes("18.0%") && all.includes("15.0%") && all.includes("11.0%"), "returns rendered");
+assert(all.includes("18.00%") && all.includes("15.00%") && all.includes("11.00%"), "returns rendered (two decimals)");
 assert(all.includes("1 Comp &lt;Way&gt; &amp; Co"), "text is XML-escaped");
 assert(zip.file("ppt/slides/slide10.xml").asText().includes("<a:tbl>"), "cash flow is a native table");
 assert(all.includes("Confirm which price IC is approving"), "model vs Hopper price mismatch is called out");
@@ -152,7 +156,7 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
   const NextResponse = class { constructor(body, init) { this.body = body; this.status = init?.status ?? 200; this.headers = new Map(Object.entries(init?.headers ?? {})); } static json(body, init) { return { body, status: init?.status ?? 200 }; } };
   const route = load("app/api/deals/[id]/ic-deck/route.ts", {
     "next/server": { NextResponse }, "@/lib/auth": { getCurrentUser: async () => user },
-    "@/lib/supabase": { getServiceClient: () => ({ from: query }) }, "@/lib/deals": { STAGE_LABELS: { offered: "Offered" } },
+    "@/lib/supabase": { getServiceClient: () => ({ from: query }) }, "@/lib/deals": { STAGE_LABELS: { offered: "Offered" } }, "@/lib/comps/evidence": evidenceFor(query),
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck,
     "@/lib/agents/ic-narrative": load("lib/agents/ic-narrative.ts"), "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
@@ -218,7 +222,7 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
   let who = { email: "A@example.com" };
   const route2 = load("app/api/deals/[id]/ic-deck/route.ts?narrative", {
     "next/server": { NextResponse: NR }, "@/lib/auth": { getCurrentUser: async () => who }, "@/lib/supabase": { getServiceClient: () => ({ from: q }) },
-    "@/lib/deals": { STAGE_LABELS: {} }, "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
+    "@/lib/deals": { STAGE_LABELS: {} }, "@/lib/comps/evidence": evidenceFor(q), "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck, "@/lib/agents/ic-narrative": nar, "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
   });
   const rid = "00000000-0000-4000-8000-000000000009", props2 = { params: Promise.resolve({ id: "d1" }) };

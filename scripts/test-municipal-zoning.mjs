@@ -36,6 +36,7 @@ const route=load("app/api/deals/[id]/zoning/route.ts",{require:n=>({
   "@/lib/supabase":{getServiceClient:()=>({from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>{dbReads++;return {data:{id:"deal",properties:{address:"3104 S Rigsbee",latitude:33.0138832,longitude:-96.6723418,geocode_precision:"rooftop"}}};}})})})})},
   "@/lib/zoning/research":{MunicipalResearchError:research.MunicipalResearchError,researchZoning:async(input,neighbors)=>{if(unsupported)throw new research.MunicipalResearchError("No instant coverage", "UNSUPPORTED_MUNICIPALITY");mode=neighbors;return {subject};}},
   "next/server":{NextResponse:{json:(data,options)=>({data,status:options?.status??200})}},
+  "@/lib/site-signals":{saveZoningSignal:async()=>{}},
 }[n])});
 const id="20059b5d-dacc-4bbf-90e6-04c93b96e273";
 const call=(body)=>route.POST({json:async()=>body},{params:{id}});

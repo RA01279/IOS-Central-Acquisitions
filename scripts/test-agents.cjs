@@ -8,8 +8,8 @@ function load(path, mocks = {}) {
  vm.runInNewContext(code, { module, exports: module.exports, require: name => mocks[name] || require(name), Date, URL, console });
  return module.exports;
 }
-const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts'), './ic-narrative': load('lib/agents/ic-narrative.ts'), './sourcing': load('lib/agents/sourcing.ts') });
-assert.equal(catalog.AGENTS.length, 8);
+const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts'), './ic-narrative': load('lib/agents/ic-narrative.ts'), './sourcing': load('lib/agents/sourcing.ts'), './deal-import': load('lib/agents/deal-import.ts'), './comp-import': load('lib/agents/comp-import.ts'), './portfolio-import': load('lib/agents/portfolio-import.ts') });
+assert.equal(catalog.AGENTS.length, 11); // 8 listed + 3 hidden import agents (deal, comp, portfolio)
 assert.match(catalog.buildPrompt('off-market-sourcing', [], '{}', '2026-10-02'), /sourcing-v1/);
 assert.match(catalog.buildPrompt('ic-narrative', [], '', '2026-10-01'), /ic-narrative-v1/);
 assert.equal(catalog.isAgentId('__proto__'), false);
