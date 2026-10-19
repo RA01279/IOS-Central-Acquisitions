@@ -100,7 +100,7 @@ const IN = (px: number) => px / 90;
 
 async function dataUrl(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) return null;
     const blob = await res.blob();
     return await new Promise((resolve) => {

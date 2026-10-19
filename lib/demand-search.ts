@@ -50,7 +50,7 @@ export async function searchNearby({
           url.searchParams.set("keyword", keyword);
           url.searchParams.set("key", apiKey);
 
-          const r = await fetch(url.toString(), { cache: "no-store" });
+          const r = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(10000) });
           const data = await r.json();
           if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
             console.error(`Places error for "${cat.label}" / "${keyword}":`, data.status, data.error_message);

@@ -4,6 +4,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { DEFAULT_CATEGORIES } from "@/lib/sourcing/yard-users";
 import { searchNearby } from "@/lib/demand-search";
 
+// Several Google calls in sequence; each has its own timeout, this caps the total.
+export const maxDuration = 60;
+
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_SERVER_KEY;
 
 type Tenant = {
@@ -53,7 +56,7 @@ async function enrichTenants(tenants: Tenant[]): Promise<Tenant[]> {
       u.searchParams.set("place_id", t.placeId);
       u.searchParams.set("fields", "website");
       u.searchParams.set("key", GOOGLE_KEY!);
-      const d = await (await fetch(u.toString())).json();
+      const d = await (await fetch(u.toString(), { signal: AbortSignal.timeout(10000) })).json();
       website = d.result?.website ?? null;
     } catch {
       // A missing website is not worth failing the map over.
@@ -63,7 +66,7 @@ async function enrichTenants(tenants: Tenant[]): Promise<Tenant[]> {
     if (website) {
       try {
         const host = new URL(website).hostname;
-        const r = await fetch(`https://www.google.com/s2/favicons?domain=${host}&sz=128`);
+        const r = await fetch(`https://www.google.com/s2/favicons?domain=${host}&sz=128`, { signal: AbortSignal.timeout(5000) });
         if (r.ok) {
           const buf = Buffer.from(await r.arrayBuffer());
           // The service answers with a generic globe when a site has no icon.
@@ -190,7 +193,7 @@ async function geocode(address: string): Promise<{ lat: number; lng: number }> {
   url.searchParams.set("address", address);
   url.searchParams.set("key", GOOGLE_KEY!);
 
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
   const data = await res.json();
   if (data.status !== "OK" || !data.results?.length) {
     throw new Error(`Geocoding failed for "${address}": ${data.status} ${data.error_message ?? ""}`);
@@ -237,7 +240,7 @@ async function fetchSatelliteImage({
   url.searchParams.set("format", "jpg");
   url.searchParams.set("key", GOOGLE_KEY!);
 
-  const r = await fetch(url.toString());
+  const r = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error(`Static Maps request failed: ${r.status} ${await r.text()}`);
 
   const buf = Buffer.from(await r.arrayBuffer());

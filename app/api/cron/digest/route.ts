@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: recipients.join(";"), subject, html }),
+      signal: AbortSignal.timeout(15000),
     });
     return NextResponse.json({ sent: res.ok, via: "webhook", status: res.status, counts });
   }
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
   if (process.env.RESEND_API_KEY) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
+      signal: AbortSignal.timeout(15000),
       headers: {
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         "Content-Type": "application/json",

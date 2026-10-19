@@ -102,7 +102,7 @@ export async function fetchDemandMap(
     categoriesParam
   )}`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Request failed: ${res.status}`);
