@@ -233,7 +233,7 @@ export default function AssetProximityPanel({
         lng: Number(asset.longitude),
         color: asset.occupancy === "available" ? ASSET_AVAIL_COLOR : ASSET_COLOR,
         title: `${asset.address} (ours)`,
-        href: `/assets#${asset.id}`,
+        href: `/assets/${asset.id}`,
         lines: [
           [
             asset.status === "sold" ? "SOLD" : asset.occupancy === "available" ? "Space available" : "Occupied",
@@ -467,7 +467,7 @@ export default function AssetProximityPanel({
               {inRadius.slice(0, 25).map(({ asset, distanceMi }) => (
                 <tr key={asset.id} style={{ opacity: asset.status === "sold" ? 0.5 : 1 }}>
                   <td>
-                    <Link href={`/assets#${asset.id}`}>{asset.address}</Link>
+                    <Link href={`/assets/${asset.id}`}>{asset.address}</Link>
                     <span className="muted">
                       {" "}
                       {[asset.city, asset.state].filter(Boolean).join(", ")}

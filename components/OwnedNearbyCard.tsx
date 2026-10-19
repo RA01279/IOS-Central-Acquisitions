@@ -63,7 +63,7 @@ export default function OwnedNearbyCard({
           Nothing we own within {RADIUS_MI} mi.
           {ranked[0] ? (
             <>
-              {" "}Nearest: <Link href={`/assets#${ranked[0].a.id}`}>{ranked[0].a.address}</Link>
+              {" "}Nearest: <Link href={`/assets/${ranked[0].a.id}`}>{ranked[0].a.address}</Link>
               {ranked[0].a.city ? `, ${ranked[0].a.city}` : ""} · {ranked[0].mi.toFixed(0)} mi
             </>
           ) : null}
@@ -82,7 +82,7 @@ export default function OwnedNearbyCard({
               {near.slice(0, SHOW).map(({ a, mi }) => (
                 <tr key={a.id}>
                   <td>
-                    <Link href={`/assets#${a.id}`}>{a.address}</Link>
+                    <Link href={`/assets/${a.id}`}>{a.address}</Link>
                     {a.city ? <span className="muted">, {a.city}</span> : null}
                   </td>
                   <td>{mi <= SAME_SITE_MI ? "Same site" : `${mi < 10 ? mi.toFixed(1) : mi.toFixed(0)} mi`}</td>

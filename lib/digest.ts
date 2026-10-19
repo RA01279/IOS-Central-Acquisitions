@@ -23,6 +23,7 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STALE_DAYS = 14;
 const MILESTONE_WINDOW_DAYS = 7;
+const LEASE_WINDOW_DAYS = 180;
 const APP_URL = "https://ios-central-acquisitions.vercel.app";
 
 // Stages shown in the header snapshot. 'closed' is excluded on purpose: closed
@@ -41,7 +42,7 @@ export async function composeDigest() {
   // Throws on any failed query: a brief that says "nothing due" because the
   // database blipped is worse than no brief.
   const horizon = new Date(Date.parse(`${today}T12:00:00Z`) + MILESTONE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const [deals, tasksRes, diligenceRes] = await Promise.all([
+  const [deals, tasksRes, diligenceRes, leasesRes] = await Promise.all([
     fetchAll((from, to) => supabase
       .from("deals")
       .select(
@@ -67,8 +68,25 @@ export async function composeDigest() {
       .not("deals.stage", "in", "(archived,closed)")
       .order("due_on")
       .limit(200),
+    // Leases on owned assets ending within 180 days (asset rent rolls).
+    supabase
+      .from("asset_leases")
+      .select("tenant, expires_on, asset_id, assets!inner(address, status)")
+      .eq("status", "active")
+      .not("expires_on", "is", null)
+      .lte("expires_on", new Date(Date.parse(`${today}T12:00:00Z`) + LEASE_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10))
+      .eq("assets.status", "owned")
+      .order("expires_on")
+      .limit(100),
   ]);
   if (tasksRes.error) throw new Error(`Loading tasks: ${tasksRes.error.message}`);
+  if (leasesRes.error) throw new Error(`Loading lease expirations: ${leasesRes.error.message}`);
+  const expiring = (leasesRes.data ?? []) as any[];
+  const leaseLine = (l: any) => {
+    const days = Math.round((Date.parse(`${l.expires_on}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / DAY_MS);
+    const when = days < 0 ? `<strong style="color:#b3261e;">expired ${-days} days ago</strong>` : days <= 90 ? `<strong style="color:#b3261e;">in ${days} days</strong>` : `in ${days} days`;
+    return `<li><a href="${APP_URL}/assets/${l.asset_id}" style="color:#2e6e62;">${esc(l.assets?.address ?? "Asset")}</a> — ${esc(l.tenant)} lease ends ${l.expires_on}, ${when}</li>`;
+  };
   if (diligenceRes.error) throw new Error(`Loading diligence deadlines: ${diligenceRes.error.message}`);
   const diligence = (diligenceRes.data ?? []) as any[];
   const diligenceLine = (m: any) => {
@@ -198,6 +216,11 @@ export async function composeDigest() {
       "No diligence deadlines in the next 7 days."
     )}
     ${section(
+      `🏢 Lease expirations — owned assets, next ${LEASE_WINDOW_DAYS} days (${expiring.length})`,
+      expiring.map(leaseLine),
+      "No leases ending in the next six months."
+    )}
+    ${section(
       `⚠ Overdue follow-ups (${overdue.length})`,
       overdue.map(
         (t: any) =>
@@ -242,6 +265,7 @@ export async function composeDigest() {
     counts: {
       milestones: milestones.length,
       diligence: diligence.length,
+      leaseExpirations: expiring.length,
       overdue: overdue.length,
       targetsDue: targetsDue.length,
       stale: stale.length,

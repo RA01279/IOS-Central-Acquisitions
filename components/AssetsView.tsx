@@ -242,7 +242,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                 // straight to it with /assets#<id>.
                 <tr key={a.id} id={a.id}>
                   <td data-label="Address">
-                    {a.address}
+                    <a href={`/assets/${a.id}`}>{a.address}</a>
                     {a.latitude == null && (
                       <span className="muted" title="No coordinates, so it can't be mapped or measured">
                         {" "}
