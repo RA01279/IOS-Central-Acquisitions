@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
-import { assetClassOf, closedDate, ctToday, rangeStart } from "@/lib/summary";
+import { assetClassOf, closedDate, ctDate, ctToday, rangeStart } from "@/lib/summary";
 import Nav from "@/components/Nav";
 import CardDeleteButton from "@/components/CardDeleteButton";
 import AutoRefresh from "@/components/AutoRefresh";
 import TruncatedList from "@/components/TruncatedList";
+import ActivityChart from "@/components/ActivityChart";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
 
 const STALE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEKS = 12;
 // The funnel covers live pipeline only. 'closed' is a terminus that
 // accumulates forever, so it's reported as a count, not a funnel step.
 const FUNNEL_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
@@ -22,17 +22,6 @@ function daysAgo(iso: string) {
 }
 function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
-}
-// Bucket dates into trailing weeks, oldest first.
-function weeklyCounts(dates: (string | null)[], weeks = WEEKS): number[] {
-  const now = Date.now();
-  const buckets = Array(weeks).fill(0);
-  for (const d of dates) {
-    if (!d) continue;
-    const idx = Math.floor((now - new Date(d).getTime()) / (7 * DAY_MS));
-    if (idx >= 0 && idx < weeks) buckets[weeks - 1 - idx]++;
-  }
-  return buckets;
 }
 
 // Horizontal funnel: one centered bar per stage, width proportional to count.
@@ -67,39 +56,6 @@ function Funnel({
 }
 
 // 12-week bar chart, server-rendered SVG. Single hue, direct labels.
-function WeeklyBars({ values, color = "var(--accent-2)" }: { values: number[]; color?: string }) {
-  const W = 300;
-  const H = 72;
-  const max = Math.max(1, ...values);
-  const bw = W / values.length;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="weekly-bars" role="img">
-      {values.map((v, i) => {
-        const h = (v / max) * (H - 20);
-        const y = H - 4 - h;
-        return (
-          <g key={i}>
-            <rect
-              x={i * bw + 3}
-              y={v > 0 ? y : H - 6}
-              width={bw - 6}
-              height={v > 0 ? h : 2}
-              rx={3}
-              fill={color}
-              opacity={v > 0 ? 0.9 : 0.25}
-            />
-            {v > 0 && (
-              <text x={i * bw + bw / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="var(--muted)">
-                {v}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      <line x1="0" y1={H - 4} x2={W} y2={H - 4} stroke="var(--border)" strokeWidth="1" />
-    </svg>
-  );
-}
 
 export default async function DashboardPage() {
   const supabase = getServiceClient();
@@ -117,7 +73,7 @@ export default async function DashboardPage() {
     supabase.from("activities").select("activity_type").gte("occurred_at", thirtyDaysAgo),
     supabase
       .from("offers")
-      .select("id, price, offered_at, created_at, source, deals(id, deal_type, properties(address, lot_sf))")
+      .select("id, price, offered_at, created_at, source, deals(id, deal_type, asset_class, properties(address, lot_sf))")
       .order("offered_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false }),
   ]);
@@ -146,8 +102,17 @@ export default async function DashboardPage() {
   const closedYtd = closed.filter((d: any) => closedDate(d) >= ytdStart);
 
   // Weekly velocity (all deals entered, incl. since-archived ones).
-  const intakeWeekly = weeklyCounts(deals.map((d: any) => d.created_at));
-  const offersWeekly = weeklyCounts(allOffers.map((o: any) => o.offered_at));
+  // Points for the two charts (the chart buckets them by week or month and
+  // filters by pipeline in the browser). Two years back covers both the
+  // window and the "vs the 12 before" comparison.
+  const chartSince = new Date(Date.now() - 2 * 366 * DAY_MS).toISOString().slice(0, 10);
+  const clsOf = (c: unknown): "ios" | "industrial" => (c === "industrial" ? "industrial" : "ios");
+  const intakePoints = deals
+    .map((d: any) => ({ date: ctDate(d.created_at), cls: clsOf(d.asset_class) }))
+    .filter((x) => x.date >= chartSince);
+  const offerPoints = allOffers
+    .filter((o: any) => o.offered_at && o.offered_at >= chartSince)
+    .map((o: any) => ({ date: o.offered_at as string, amount: o.price ?? 0, cls: clsOf(o.deals?.asset_class) }));
   const newThisWeek = deals.filter((d: any) => daysAgo(d.created_at) < 7).length;
   const offersThisWeek = allOffers.filter(
     (o: any) => o.offered_at && daysAgo(o.offered_at) < 7
@@ -264,18 +229,8 @@ export default async function DashboardPage() {
         </div>
 
         <div className="dash-cols">
-          <section className="panel">
-            <h2>Deal intake · last {WEEKS} weeks</h2>
-            <WeeklyBars values={intakeWeekly} />
-            <p className="hint">New acquisition deals entered per week.</p>
-          </section>
-          <section className="panel">
-            <h2>Offers made · last {WEEKS} weeks</h2>
-            <WeeklyBars values={offersWeekly} color="var(--accent)" />
-            <p className="hint">
-              Offers logged per week · {fmtUsd(offers30dTotal)} offered in the last 30 days.
-            </p>
-          </section>
+          <ActivityChart title="Deal intake" noun="new deal" points={intakePoints} today={ctToday()} />
+          <ActivityChart title="Offers made" noun="offer" points={offerPoints} today={ctToday()} hasAmounts />
         </div>
 
         <section className="panel">
