@@ -117,6 +117,8 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         exitCap={dealExitCap ?? returns?.exitCapPct ?? null}
         holdYears={returns?.holdPeriodYears ?? null}
         cost={returns?.allInCost ?? returns?.purchasePrice ?? k.price ?? null}
+        baseIrr={returns?.irrPct ?? null}
+        baseMultiple={returns?.equityMultiple ?? null}
       />
 
       <section className="panel">

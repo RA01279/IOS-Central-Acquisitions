@@ -53,7 +53,12 @@ export default function SensitivityPanel({
   exitCap,
   holdYears,
   cost,
+  baseIrr,
+  baseMultiple,
 }: {
+  /** The model's own base-case returns, shown above the tables. */
+  baseIrr?: number | null;
+  baseMultiple?: number | null;
   model: { sensitivities?: { deal: Grid | null; lp: Grid | null }; warnings?: string[] } | null;
   basePrice: number | null;
   modelExitCap: number | null;
@@ -66,6 +71,17 @@ export default function SensitivityPanel({
   cost: number | null;
 }) {
   const grids = [model?.sensitivities?.deal, model?.sensitivities?.lp].filter(Boolean) as Grid[];
+  // A table is only usable if it covers the deal: the purchase price inside
+  // its price rows and the exit cap among its columns. A template whose price
+  // rows are typed numbers keeps answering for another deal's price.
+  const covers = (g: Grid) => {
+    const keys = g.rows.map((r) => r.key);
+    const priceOk = basePrice == null || (basePrice >= Math.min(...keys) - 1 && basePrice <= Math.max(...keys) + 1);
+    const capOk = modelExitCap == null || g.cols.some((c) => Math.abs(c - modelExitCap) < 1e-6);
+    return priceOk && capOk;
+  };
+  const stale = grids.filter((g) => !covers(g));
+  const keysOf = (g: Grid) => g.rows.map((r) => r.key);
 
   // Comp screen: annual rent at comp low / mid / high, grown at the comp
   // escalation to the exit, capped, net of selling costs.
@@ -86,11 +102,35 @@ export default function SensitivityPanel({
   return (
     <section className="panel">
       <h2>Sensitivities</h2>
+      {(baseIrr != null || baseMultiple != null) && (
+        <p style={{ marginTop: 0 }}>
+          Model base case: <strong>{baseIrr != null ? pct(baseIrr, 1) : "—"} IRR / {baseMultiple != null ? `${baseMultiple.toFixed(2)}x` : "—"}</strong>
+          {basePrice != null ? ` at ${usdM(basePrice)}` : ""}{modelExitCap != null ? `, ${pct(modelExitCap)} exit cap` : ""}
+        </p>
+      )}
       {grids.length ? (
         <>
-          {grids.map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+          {stale.length > 0 && (
+            <div className="warning">
+              <p style={{ margin: 0 }}>
+                <strong>The model&apos;s sensitivity table{stale.length > 1 ? "s don't" : " doesn't"} cover this deal.</strong>{" "}
+                {basePrice != null && stale.some((g) => { const k = keysOf(g); return basePrice < Math.min(...k) || basePrice > Math.max(...k); })
+                  ? <>Its price rows run {usdM(Math.min(...keysOf(stale[0])))}–{usdM(Math.max(...keysOf(stale[0])))}, but the purchase price is {usdM(basePrice)}. </>
+                  : <>Its exit-cap columns don&apos;t include {modelExitCap != null ? pct(modelExitCap) : "the base exit cap"}. </>}
+                The rows are most likely typed-in numbers left from the template or another deal. In the workbook, make the
+                data table&apos;s price rows formulas off the purchase price, recalculate (F9), save and upload again.
+              </p>
+            </div>
+          )}
+          {grids.filter(covers).map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+          {stale.length > 0 && (
+            <details>
+              <summary className="hint">Show the out-of-range table{stale.length > 1 ? "s" : ""} anyway</summary>
+              {stale.map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+            </details>
+          )}
           <p className="hint">From the latest model upload, exactly as the workbook last calculated them. The base case (price and exit cap) is outlined.</p>
-          {model?.warnings?.length ? <div className="warning"><ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div> : null}
+          {model?.warnings?.length && stale.length < grids.length ? <div className="warning"><ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div> : null}
         </>
       ) : (
         <p className="hint">No model sensitivity tables yet. They appear here after the next model upload (standard acquisition model).</p>
