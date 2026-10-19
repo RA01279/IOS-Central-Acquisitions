@@ -14,6 +14,7 @@ import DealCompsPanel from "@/components/DealCompsPanel";
 import InPlaceRentForm from "@/components/InPlaceRentForm";
 import { KpiCard } from "@/components/ui";
 import CompUnderwritingPanel from "@/components/CompUnderwritingPanel";
+import SensitivityPanel from "@/components/SensitivityPanel";
 import type { CompRecord } from "@/lib/comps/match";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
 
@@ -35,6 +36,8 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
   const rentFlag = site.flags.find((f) => f.key === "rent");
   const versionsDesc = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
   const latestVersion = versionsDesc[0];
+  const dealExitCap = deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null;
+  const uw = compUnderwriting(evidence.comps as UwComp[], subjectOf(deal), { exitCap: dealExitCap ?? returns?.exitCapPct ?? null });
 
   return (
     <div className="ws-body">
@@ -97,14 +100,23 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
       </section>
 
       <CompUnderwritingPanel
-        uw={compUnderwriting(evidence.comps as UwComp[], subjectOf(deal), {
-          exitCap: deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : returns?.exitCapPct ?? null,
-        })}
+        uw={uw}
         ios={deal.asset_class !== "industrial"}
         modelHoldYears={returns?.holdPeriodYears ?? null}
         dealId={deal.id}
         exitCap={deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null}
         modelExitCap={returns?.exitCapPct ?? null}
+      />
+
+      <SensitivityPanel
+        model={latestVersion?.model_detail ?? null}
+        basePrice={returns?.purchasePrice ?? null}
+        modelExitCap={latestVersion?.model_detail?.exitCap ?? returns?.exitCapPct ?? null}
+        uw={uw}
+        ios={deal.asset_class !== "industrial"}
+        exitCap={dealExitCap ?? returns?.exitCapPct ?? null}
+        holdYears={returns?.holdPeriodYears ?? null}
+        cost={returns?.allInCost ?? returns?.purchasePrice ?? k.price ?? null}
       />
 
       <section className="panel">

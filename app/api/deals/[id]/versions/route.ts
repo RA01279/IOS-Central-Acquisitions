@@ -5,6 +5,8 @@ import { fireStageChangeWebhook } from "@/lib/webhooks";
 import { getCurrentUser } from "@/lib/auth";
 import { parseReturnsSummary } from "@/lib/excel-parser";
 import { createStageTasks } from "@/lib/stage-tasks-db";
+import { openWorkbook } from "@/lib/ic-deck/xlsx-lite";
+import { extractModel } from "@/lib/ic-deck/model";
 
 // POST /api/deals/[id]/versions
 // body: { storagePath, fileName } -- the browser has ALREADY uploaded the
@@ -54,6 +56,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     return NextResponse.json({ error: `Could not read workbook: ${err.message}` }, { status: 422 });
   }
 
+  // The sensitivity tables, for the Financials tab. Best effort: a workbook
+  // that isn't the standard model still saves its version.
+  let modelDetail: Record<string, unknown> | null = null;
+  try {
+    const m = extractModel(openWorkbook(buffer), String(body.fileName ?? storagePath.split("/").pop()));
+    if (m.sensitivities.deal || m.sensitivities.lp) {
+      modelDetail = { sensitivities: m.sensitivities, exitCap: m.yields.exitCap, warnings: m.warnings.filter((w) => /sensitivity/i.test(w)) };
+    }
+  } catch {
+    modelDetail = null;
+  }
+
   const { data: doc, error: docError } = await supabase
     .from("documents")
     .insert({
@@ -89,6 +103,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         version_number: nextVersion,
         excel_document_id: doc.id,
         returns_summary: returnsSummary,
+        model_detail: modelDetail,
         created_by: user.email,
       })
       .select()
