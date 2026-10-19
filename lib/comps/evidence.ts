@@ -20,26 +20,36 @@ export const COMP_EVIDENCE_COLUMNS =
  * market: the radius is the real constraint, and market labels are too
  * inconsistent to trust. Paged, because a row cap would drop comps silently.
  */
-const readCompEvidence = unstable_cache(
-  async (): Promise<CompRecord[]> => {
-    const db = getServiceClient();
-    return readAllCompPages<CompRecord>((from, to) =>
-      db
-        .from("comps")
-        .select(COMP_EVIDENCE_COLUMNS)
-        .eq("status", "confirmed")
-        .not("latitude", "is", null)
-        .order("id")
-        .range(from, to) as any
-    );
-  },
-  ["comp-evidence", COMP_EVIDENCE_COLUMNS],
-  { tags: [COMPS_TAG], revalidate: COMPS_TTL_SECONDS }
-);
+async function readFresh(): Promise<CompRecord[]> {
+  const db = getServiceClient();
+  return readAllCompPages<CompRecord>((from, to) =>
+    db
+      .from("comps")
+      .select(COMP_EVIDENCE_COLUMNS)
+      .eq("status", "confirmed")
+      .not("latitude", "is", null)
+      .order("id")
+      .range(from, to) as any
+  );
+}
 
-/** Cached (lib/comps/cache.ts); every comp write invalidates it. */
+const readCompEvidence = unstable_cache(readFresh, ["comp-evidence", COMP_EVIDENCE_COLUMNS], {
+  tags: [COMPS_TAG],
+  revalidate: COMPS_TTL_SECONDS,
+});
+
+/**
+ * Cached (lib/comps/cache.ts); every comp write invalidates it. Outside a
+ * Next request -- scripts such as backfill-signals -- there is no cache, so
+ * it reads directly.
+ */
 export async function loadCompEvidence(): Promise<CompRecord[]> {
-  return readCompEvidence();
+  try {
+    return await readCompEvidence();
+  } catch (err: any) {
+    if (/incrementalCache missing/i.test(String(err?.message))) return readFresh();
+    throw err;
+  }
 }
 
 /** A deal (with its property) as the matcher's subject. */

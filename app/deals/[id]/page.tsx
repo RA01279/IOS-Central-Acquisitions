@@ -21,6 +21,7 @@ import NextDates, { type DateRow } from "@/components/NextDates";
 import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
 import OmCompsCard, { type OmDoc } from "@/components/OmCompsCard";
 import SplitPortfolio from "@/components/SplitPortfolio";
+import MarketContextCard, { type ContextNarrative } from "@/components/MarketContextCard";
 import { looksMultiSite } from "@/lib/split-sites";
 import { listTeam, nameOf } from "@/lib/team";
 import { getServiceClient } from "@/lib/supabase";
@@ -55,6 +56,14 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
     name: omName(d),
     comps: (omComps ?? []).filter((c: any) => c.source_ref === `OM: ${omName(d)}`).length,
   }));
+  // Market narrative for this deal's submarket (by submarket or city), else its market.
+  const dp: any = deal.properties ?? {};
+  const { data: areaNarratives } = dp.market
+    ? await getServiceClient().from("market_narratives").select("market, submarket, headline, narrative, generated_at, sources").ilike("market", dp.market)
+    : { data: [] as any[] };
+  const lcx = (v: unknown) => String(v ?? "").trim().toLowerCase();
+  const contextNarrative = ((areaNarratives ?? []) as ContextNarrative[]).find((n) => n.submarket && [lcx(dp.submarket), lcx(dp.city)].includes(lcx(n.submarket)))
+    ?? ((areaNarratives ?? []) as ContextNarrative[]).find((n) => !n.submarket) ?? null;
   // The firm credited with bringing the deal (chosen at intake).
   const sourcedBy = deal.source_broker_id
     ? (await getServiceClient().from("companies").select("id, name").eq("id", deal.source_broker_id).maybeSingle()).data
@@ -168,6 +177,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
               </p>
             )}
           </div>
+          <MarketContextCard narrative={contextNarrative} market={dp.market ?? null} />
           <OmCompsCard dealId={deal.id} oms={oms} />
           <OwnedNearbyCard dealId={deal.id} assets={ownedAssets as OwnedAsset[]} lat={subject.lat} lng={subject.lng} />
           <NextDates

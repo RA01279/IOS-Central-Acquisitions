@@ -4,6 +4,10 @@ import Nav from "@/components/Nav";
 import { readAllCompPages } from "@/lib/comps/mapData";
 import { marketView, monthsBefore, type MarketClass, type MarketComp, type MarketRow } from "@/lib/comps/market";
 import type { CompType } from "@/lib/comps/match";
+import MarketReportUpload from "@/components/MarketReportUpload";
+import MarketNarrativePanel, { type Area, type SavedNarrative } from "@/components/MarketNarrativePanel";
+import MarketReportDelete from "@/components/MarketReportDelete";
+import { listMetrics, listReports } from "@/lib/market-reports";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -61,6 +65,43 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
   );
   const { count: held } = await supabase.from("comps").select("id", { count: "exact", head: true }).eq("status", "draft");
 
+  // Broker market reports, their headline statistics, and the narratives.
+  const [reports, narrativeRows] = await Promise.all([
+    listReports(),
+    supabase.from("market_narratives").select("market, submarket, headline, narrative, points, conflicts, gaps, sources, generated_at").then(({ data, error }) => {
+      if (error) throw new Error(`Loading narratives: ${error.message}`);
+      return (data ?? []) as SavedNarrative[];
+    }),
+  ]);
+  const reportMetrics = await listMetrics(reports.map((r: any) => r.id));
+  const areaMap = new Map<string, Area>();
+  for (const r of reports as any[]) {
+    const add = (sub: string | null) => {
+      const k = `${r.market.toLowerCase()}|${(sub ?? "").toLowerCase()}`;
+      const a = areaMap.get(k) ?? { market: r.market, submarket: sub, reports: 0 };
+      a.reports++;
+      areaMap.set(k, a);
+    };
+    add(null);
+    for (const sub of r.submarkets ?? []) add(sub);
+  }
+  const areas = [...areaMap.values()].sort((a, b) => a.market.localeCompare(b.market) || (a.submarket ?? "").localeCompare(b.submarket ?? ""));
+  const headline = (reportId: string, metric: string) =>
+    reportMetrics.find((m: any) => m.report_id === reportId && m.metric === metric && m.basis === "current" && !m.segment);
+  const statLine = (r: any) =>
+    [
+      ["vacancy_pct", (v: number) => `vacancy ${v}%`],
+      ["availability_pct", (v: number) => `availability ${v}%`],
+      ["asking_rent_psf_annual", (v: number) => `rent ${v.toFixed(2)}/SF/yr`],
+      ["asking_rent_psf_monthly", (v: number) => `rent ${v.toFixed(2)}/SF/mo`],
+      ["net_absorption_sf", (v: number) => `absorption ${Math.round(v).toLocaleString()} SF`],
+      ["leasing_sf", (v: number) => `leasing ${Math.round(v).toLocaleString()} SF`],
+      ["under_construction_sf", (v: number) => `under construction ${Math.round(v).toLocaleString()} SF`],
+    ]
+      .map(([k, f]: any) => { const m = headline(r.id, k); return m ? f(Number(m.value)) : null; })
+      .filter(Boolean)
+      .join(" · ");
+
   const today = new Date().toISOString().slice(0, 10);
   const view = marketView(comps, compType, assetClass, { today, face, market });
   const unit = view.unit;
@@ -109,6 +150,37 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
             </p>
           </div>
         </div>
+
+        <section className="panel" id="market-reports">
+          <h2>Market narrative</h2>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Written from the broker market reports on file and Hopper&apos;s own comps for the area, with every point cited.
+          </p>
+          <MarketNarrativePanel areas={areas} narratives={narrativeRows} initial={market} />
+        </section>
+
+        <section className="panel">
+          <h2>Broker market reports ({reports.length})</h2>
+          <MarketReportUpload />
+          {reports.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="summary-table">
+                <thead><tr><th>Report</th><th>Period</th><th>Area</th><th>Headline figures</th><th></th></tr></thead>
+                <tbody>
+                  {(reports as any[]).filter((r) => !market || r.market.toLowerCase() === market.toLowerCase()).map((r) => (
+                    <tr key={r.id}>
+                      <td><a href={`/api/market-reports?doc=${r.id}`} target="_blank" rel="noreferrer">{r.publisher}</a>{r.title ? <><br /><span className="muted">{r.title}</span></> : null}</td>
+                      <td>{r.period ?? "—"}</td>
+                      <td>{(r.submarkets ?? []).length ? `${r.submarkets.join(", ")} (${r.market})` : r.market}</td>
+                      <td className="muted">{statLine(r) || "—"}</td>
+                      <td><MarketReportDelete id={r.id} label={`${r.publisher} ${r.period ?? ""}`} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         <div className="filter-chips">
           {chip("Leases", compType === "lease", href({ type: "lease" }))}

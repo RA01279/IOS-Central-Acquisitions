@@ -3,6 +3,8 @@ import { parseNarrative } from "@/lib/agents/ic-narrative";
 import { parseSourcing } from "@/lib/agents/sourcing";
 import { parseDealImport } from "@/lib/agents/deal-import";
 import { parsePortfolioImport } from "@/lib/agents/portfolio-import";
+import { parseMarketReport } from "@/lib/agents/market-report";
+import { parseMarketNarrative } from "@/lib/agents/market-narrative";
 import { parseCompImport } from "@/lib/agents/comp-import";
 import { NextRequest } from "next/server";
 import { workerContext, json, reap } from "@/lib/agents/server";
@@ -55,6 +57,12 @@ export async function POST(req: NextRequest) {
   }
   if (!body.error && job.data.agent === "portfolio-import" && !parsePortfolioImport(r.report)) {
     body.error = "Could not read a property schedule from that section of the OM. Try again.";
+  }
+  if (!body.error && job.data.agent === "market-report" && !parseMarketReport(r.report)) {
+    body.error = "Could not read that market report (no market or statistics found). Check it is a broker market report, then try again.";
+  }
+  if (!body.error && job.data.agent === "market-narrative" && !parseMarketNarrative(r.report)) {
+    body.error = "The narrative didn't match the expected format (every point needs a source). Please run it again.";
   }
   const update = await db.from("agent_runs").update({ status: body.error ? "failed" : "completed",
     result: body.error ? null : { report: r.report, limitations: r.limitations }, model: body.error ? null : r.model,
