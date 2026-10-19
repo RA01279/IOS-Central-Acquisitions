@@ -143,7 +143,7 @@ export default async function AssetPage(props: { params: Promise<{ id: string }>
           </p>
         </section>
 
-        <LeasesPanel assetId={asset.id} leases={(leases ?? []) as Lease[]} today={today} ios={ios} />
+        <LeasesPanel assetId={asset.id} leases={(leases ?? []) as Lease[]} today={today} ios={ios} address={asset.address} city={asset.city ?? null} />
       </main>
     </>
   );

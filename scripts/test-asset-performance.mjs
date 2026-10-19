@@ -41,4 +41,9 @@ assert.equal(m.annualInPlaceRent(2, "per_sf_bldg_annual", null, 1000), 2000); n+
 assert.equal(m.annualInPlaceRent(5, "per_sf_bldg_annual", null, null), null, "needs building SF"); n++;
 const exp = m.expiringLeases([lease({ expires_on: "2027-03-01" }), lease({ expires_on: "2027-06-01" }), lease({ expires_on: "2026-12-01", status: "expired" })], "2026-10-19");
 assert.equal(exp.length, 1, "180-day window, active only"); n++;
+near(m.monthlyRent(9, "per_sf_bldg_annual", { buildingSf: 6250 }), 4687.5, "$/SF/yr x SF / 12");
+near(m.monthlyRent(0.85, "per_sf_bldg_monthly", { buildingSf: 10000 }), 8500, "$/SF/mo x SF");
+near(m.monthlyRent(8000, "per_acre_monthly", { acres: 3 }), 24000, "$/AC/mo x acres");
+near(m.monthlyRent(18500, "total_monthly", {}), 18500, "total monthly as is");
+assert.equal(m.monthlyRent(9, "per_sf_bldg_annual", {}), null, "needs SF"); n++;
 console.log(`asset-performance: ${n} checks passed`);

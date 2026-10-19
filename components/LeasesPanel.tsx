@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LEASE_TYPE_LABELS, type Lease } from "@/lib/asset-performance";
+import RentRollImport from "./RentRollImport";
 
 const usd = (v: number | null) => (v == null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
 function daysTo(today: string, iso: string) {
@@ -29,7 +30,7 @@ const toForm = (l: Lease): Form => ({
   notes: l.notes ?? "",
 });
 
-export default function LeasesPanel({ assetId, leases, today, ios }: { assetId: string; leases: Lease[]; today: string; ios: boolean }) {
+export default function LeasesPanel({ assetId, leases, today, ios, address, city }: { assetId: string; leases: Lease[]; today: string; ios: boolean; address: string; city: string | null }) {
   const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null); // lease id or "new"
   const [form, setForm] = useState<Form>(EMPTY);
@@ -92,6 +93,7 @@ export default function LeasesPanel({ assetId, leases, today, ios }: { assetId: 
   return (
     <section className="panel">
       <h2>Rent roll</h2>
+      <RentRollImport assetId={assetId} address={address} city={city} existing={leases.map((l) => `${l.tenant.toLowerCase()}|${(l.suite ?? "").toLowerCase()}`)} />
       {sorted.length === 0 ? (
         <p className="hint">No leases yet. Add each lease to track rent, expirations and actual yield.</p>
       ) : (

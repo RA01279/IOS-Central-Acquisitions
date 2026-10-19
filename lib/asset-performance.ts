@@ -117,3 +117,21 @@ export function expiringLeases<T extends { status: string; expires_on: string | 
     .filter((l) => l.status === "active" && l.expires_on && l.expires_on <= horizon)
     .sort((a, b) => String(a.expires_on).localeCompare(String(b.expires_on)));
 }
+
+/**
+ * A rent-roll row's rent as dollars per month, from how the roll quotes it.
+ * Null when the basis needs a size the row doesn't give.
+ */
+export function monthlyRent(rent: unknown, basis: string | null | undefined, sizes: { buildingSf?: unknown; acres?: unknown; lotSf?: unknown }): number | null {
+  const r = n(rent);
+  if (r == null) return null;
+  const sf = n(sizes.buildingSf), ac = n(sizes.acres), lot = n(sizes.lotSf) ?? (ac ? ac * AC : null);
+  switch (basis) {
+    case "total_monthly": return r;
+    case "per_sf_bldg_monthly": return sf ? r * sf : null;
+    case "per_sf_bldg_annual": return sf ? (r * sf) / 12 : null;
+    case "per_acre_monthly": return ac ? r * ac : lot ? r * (lot / AC) : null;
+    case "per_sf_land_monthly": return lot ? r * lot : null;
+    default: return null;
+  }
+}
