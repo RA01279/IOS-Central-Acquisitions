@@ -31,6 +31,7 @@ Rules:
 - Dates as YYYY-MM-DD; a month-only date as YYYY-MM. Commencement is the lease start date, Sale Date the closing date.
 - State as the 2-letter code. Market is the metro (e.g. "Houston", "Dallas"), not the submarket.
 - Acres = total land acres; Yard Acres only when usable yard acreage is stated separately. Building SF = total building square feet.
+- Offering memorandum pages: extract only the broker's comparable transactions (lease comps, sale comps, land sales). NEVER the subject property itself -- not its rent roll, in-place or pro forma rents, asking or guidance price, or projections -- even when the page presents them in a table. If a comp table mixes in the subject, skip that row and say so in notes.
 - Notes: flag anything a reviewer should check (conflicting figures, unclear units, rows you skipped).`;
 
 const cell = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/[\t\r\n]+/g, " ").trim();

@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 const OutlookCompPicker = dynamic(() => import("./OutlookCompPicker"), { ssr: false });
+const OmCompPicker = dynamic(() => import("./OmCompPicker"), { ssr: false });
 import type { CompSourcePart } from "./OutlookCompPicker";
 import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
@@ -101,7 +102,10 @@ export default function CompIntakeForm({
   markets,
   defaultMarket,
   defaultCity,
+  omDoc,
 }: {
+  /** Open on the OM tab and read this deal OM straight away. */
+  omDoc?: { dealId: string; docId: string; name: string } | null;
   markets: string[];
   defaultMarket?: string | null;
   defaultCity?: string | null;
@@ -132,7 +136,7 @@ export default function CompIntakeForm({
   const [result, setResult] = useState<any>(null);
   const [dragging, setDragging] = useState(false);
   const [plainText, setPlainText] = useState("");
-  const [entryMode, setEntryMode] = useState<"outlook" | "paste" | "file" | "single">("outlook");
+  const [entryMode, setEntryMode] = useState<"outlook" | "om" | "paste" | "file" | "single">(omDoc ? "om" : "outlook");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const context = () => ({
@@ -457,11 +461,13 @@ export default function CompIntakeForm({
       <p>Select an Outlook email, paste broker text, upload a spreadsheet, or enter one transaction. Nothing is saved until you review the extracted rows.</p>
       <div className="comp-entry-modes" role="group" aria-label="Choose how to add comps">
         <button type="button" className={entryMode === "outlook" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("outlook")}>Select from Outlook</button>
+        <button type="button" className={entryMode === "om" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("om")}>From an OM</button>
         <button type="button" className={entryMode === "paste" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("paste")}>Paste email or table</button>
         <button type="button" className={entryMode === "file" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("file")}>Upload spreadsheet</button>
         <button type="button" className={entryMode === "single" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("single")}>Enter one comp</button>
       </div>
       {entryMode === "outlook" && <OutlookCompPicker disabled={busy} hasDrafts={Boolean(drafts?.length)} onSelect={sendParts} />}
+      {entryMode === "om" && <OmCompPicker disabled={busy} onSelect={sendParts} initialDoc={omDoc ?? null} />}
       <div className="stage-actions">
         {entryMode === "single" && <>
           <button type="button" disabled={busy} onClick={() => addManual("lease")}>Add lease comp</button>

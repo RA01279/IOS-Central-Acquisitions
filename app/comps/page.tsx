@@ -37,8 +37,16 @@ function unitRate(c: any): string {
   return rateSummary(c);
 }
 
-export default async function CompsPage() {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function CompsPage(pageProps: { searchParams: Promise<{ om?: string }> }) {
   const supabase = getServiceClient();
+  // ?om=<dealId>:<documentId> -- "Pull comps from this OM" on a deal.
+  const [omDeal, omDocId] = String((await pageProps.searchParams).om ?? "").split(":");
+  const omDoc = UUID.test(omDeal ?? "") && UUID.test(omDocId ?? "")
+    ? await supabase.from("documents").select("id, deal_id, file_name, storage_path").eq("id", omDocId).eq("deal_id", omDeal).maybeSingle()
+        .then(({ data }) => (data ? { dealId: data.deal_id, docId: data.id, name: data.file_name || String(data.storage_path).split("/").pop()!.replace(/^(om|doc)-\d+-/, "") } : null))
+    : null;
 
   // TWO queries, because the map and the editable list want different things.
   //
@@ -168,7 +176,8 @@ export default async function CompsPage() {
 
         <CompsMap comps={mapRows as CompMapRow[]} />
 
-        <CompIntakeForm markets={markets} />
+        <div id="add-comps" />
+        <CompIntakeForm markets={markets} omDoc={omDoc} />
 
         {/* The full table is collapsed by default -- the map is the way in, and
             this is here for the detail and the Edit buttons. */}

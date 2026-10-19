@@ -19,6 +19,7 @@ import DeleteDealButton from "@/components/DeleteDealButton";
 import SignalsPanel from "@/components/SignalsPanel";
 import NextDates, { type DateRow } from "@/components/NextDates";
 import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
+import OmCompsCard, { type OmDoc } from "@/components/OmCompsCard";
 import { listTeam, nameOf } from "@/lib/team";
 import { getServiceClient } from "@/lib/supabase";
 import { IC_OUTCOME_LABELS, icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
@@ -39,6 +40,19 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
     listTeam(),
     listIcDecisions(id),
   ]);
+  // OMs on the deal, and how many comps have already been pulled from each
+  // (the comp's source note is "OM: <file name>").
+  const omDocs = (deal.documents ?? []).filter((d: any) => d.doc_type === "om" && /\.pdf$/i.test(d.storage_path));
+  const omName = (d: any) => d.file_name || String(d.storage_path).split("/").pop()!.replace(/^(om|doc)-\d+-/, "");
+  const omRefs = omDocs.map((d: any) => `OM: ${omName(d)}`);
+  const { data: omComps } = omRefs.length
+    ? await getServiceClient().from("comps").select("source_ref").in("source_ref", omRefs)
+    : { data: [] as { source_ref: string }[] };
+  const oms: OmDoc[] = omDocs.map((d: any) => ({
+    id: d.id,
+    name: omName(d),
+    comps: (omComps ?? []).filter((c: any) => c.source_ref === `OM: ${omName(d)}`).length,
+  }));
   // The firm credited with bringing the deal (chosen at intake).
   const sourcedBy = deal.source_broker_id
     ? (await getServiceClient().from("companies").select("id, name").eq("id", deal.source_broker_id).maybeSingle()).data
@@ -152,6 +166,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
               </p>
             )}
           </div>
+          <OmCompsCard dealId={deal.id} oms={oms} />
           <OwnedNearbyCard dealId={deal.id} assets={ownedAssets as OwnedAsset[]} lat={subject.lat} lng={subject.lng} />
           <NextDates
             dealId={deal.id}

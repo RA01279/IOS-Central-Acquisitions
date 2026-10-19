@@ -166,6 +166,11 @@ export async function POST(req: NextRequest) {
       result.warnings.push("Review the full email against these rows. Unsupported wording may not produce a comp; add any missing transactions manually.");
       if (body.emailHasAttachments && !body.attachmentsRead) result.warnings.push("This email has attachments. Only its body was read; upload any comp spreadsheets separately.");
     }
+    // Comps read out of an OM keep the OM as their source.
+    if (body.source === "import" && typeof body.sourceRef === "string") {
+      for (const comp of result.comps) comp.sourceRef = body.sourceRef.slice(0, 12000);
+    }
+    const sourceOut = body.source === "import" ? "import" : body.source === "email" || body.html ? "email" : "manual";
     // A pasted property report gets the same treatment as a dropped one.
     const asProperties = asPropertyReport(result.comps);
     if (asProperties) {
@@ -178,10 +183,10 @@ export async function POST(req: NextRequest) {
             `Its ${asProperties.length} building${asProperties.length === 1 ? "" : "s"} can fill in ` +
             `the address and market for a rent roll instead; pick one below.`,
         ],
-        source: body.source === "email" || body.html ? "email" : "manual",
+        source: sourceOut,
       });
     }
-    return NextResponse.json({ ...result, properties: [], source: body.source === "email" || body.html ? "email" : "manual" });
+    return NextResponse.json({ ...result, properties: [], source: sourceOut });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

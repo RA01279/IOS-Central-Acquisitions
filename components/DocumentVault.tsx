@@ -145,7 +145,12 @@ export default function DocumentVault({ dealId, docs, milestones }: { dealId: st
               <tbody>
                 {shown.map((d) => (
                   <tr key={d.id}>
-                    <td><a href={`/api/deals/${dealId}/vault?doc=${d.id}`}>{d.name}</a> <span className="muted">{size(d.size_bytes)}</span></td>
+                    <td>
+                      <a href={`/api/deals/${dealId}/vault?doc=${d.id}`}>{d.name}</a> <span className="muted">{size(d.size_bytes)}</span>
+                      {(d.doc_type === "om" || /comp/i.test(d.name)) && /\.pdf$/i.test(d.name) && (
+                        <> · <a href={`/comps?om=${dealId}:${d.id}#add-comps`} className="link-caps">Pull comps</a></>
+                      )}
+                    </td>
                     <td>{DOC_TYPE_LABELS[d.doc_type] ?? d.doc_type}</td>
                     <td>{d.milestone_label ?? <span className="muted">—</span>}</td>
                     <td><span className="muted">{new Date(d.uploaded_at).toLocaleDateString("en-US")} · {d.uploaded_by.split("@")[0]}</span></td>
