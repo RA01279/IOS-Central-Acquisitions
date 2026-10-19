@@ -16,7 +16,7 @@ function load(path) {
   return exports;
 }
 
-const { buildSyncPayload, shapeDeal, shapeComp, bearerMatches } = load("../lib/sync-export.ts");
+const { buildSyncPayload, shapeDeal, shapeOffer, shapeComp, bearerMatches } = load("../lib/sync-export.ts");
 const now = new Date("2026-09-23T15:00:00Z");
 
 const acq = {
@@ -197,3 +197,63 @@ assert.equal(lone.dealPortfolioId, null);
 assert.equal(lone.portfolioName, null);
 assert.equal(lone.askingPrice, null);
 console.log("portfolio fields ok");
+
+// Oct 19 2026: diligence, sourcing, the seller's response, IC decisions,
+// milestones, owned assets and leases. All additive.
+assert.equal(shapeDeal({ id: "x", psa_effective_on: "2026-11-01", source_broker_id: "co1" }).psaEffectiveOn, "2026-11-01");
+assert.equal(shapeDeal({ id: "x", source_broker_id: "co1" }).sourceBrokerId, "co1");
+assert.equal(shapeDeal({ id: "x" }).psaEffectiveOn, null);
+const plainOffer = shapeOffer({ id: "o9", deal_id: "d1", price: "100" });
+assert.equal(plainOffer.status, "sent");
+assert.equal(plainOffer.counterPrice, null);
+const countered = shapeOffer({ id: "o9", deal_id: "d1", price: "100", status: "countered", counter_price: "120", responded_on: "2026-10-18" });
+assert.equal(countered.status, "countered");
+assert.equal(countered.counterPrice, 120);
+assert.equal(countered.respondedOn, "2026-10-18");
+assert.equal(shapeOffer({ id: "o9", deal_id: "d1", status: "bogus" }).status, "sent");
+assert.equal(shapeComp({ id: "c1", comp_type: "lease", source_ref: "User-provided (Rich Young Co.)" }).sourceRef, "User-provided (Rich Young Co.)");
+const extra = buildSyncPayload(
+  {
+    deals: [{ id: "d1", deal_type: "acquisition", stage: "uw" }, { id: "L1", deal_type: "lease", stage: "prospect" }],
+    offers: [], tasks: [], companies: [], contacts: [], dealContacts: [], activities: [],
+    icDecisions: [
+      { id: "i1", deal_id: "d1", decided_on: "2026-10-17", outcome: "conditional", approved_price: "2500000", conditions: "Phase II clean" },
+      { id: "i2", deal_id: "L1", decided_on: "2026-10-17", outcome: "approved" },
+      { id: "i3", deal_id: "nope", decided_on: "2026-10-17", outcome: "approved" },
+    ],
+    milestones: [
+      { id: "m1", deal_id: "d1", key: "dd_end", label: "DD expiry", due_on: "2026-12-31", sort_order: 90 },
+      { id: "m2", deal_id: "L1", key: "closing", label: "Closing" },
+    ],
+    assets: [
+      { id: "a1", address: "100 Yard Rd", city: "Houston", state: "TX", status: "owned", occupancy: "occupied", site_acres: "4.2", latitude: "29.7", longitude: "-95.3", geocode_precision: "rooftop" },
+      { id: "a2", address: "200 Approx St", latitude: "29.7", longitude: "-95.3", geocode_precision: "approximate" },
+    ],
+    leases: [
+      { id: "l1", asset_id: "a1", tenant: "Acme Trucking", expires_on: "2027-03-31", base_rent_monthly: "18000", escalation_pct: "0.03", status: "active" },
+      { id: "l2", asset_id: "a1", tenant: "Gone Inc", status: "nonsense" },
+      { id: "l3", asset_id: "zzz", tenant: "Orphan" },
+    ],
+  },
+  { now, asOfDate: "2026-10-19" }
+);
+assert.equal(JSON.stringify(extra.icDecisions.map((r) => r.id)), JSON.stringify(["i1"]));
+assert.equal(extra.icDecisions[0].approvedPrice, 2500000);
+assert.equal(extra.icDecisions[0].conditions, "Phase II clean");
+assert.equal(JSON.stringify(extra.milestones.map((m) => m.id)), JSON.stringify(["m1"]));
+assert.equal(extra.milestones[0].sortOrder, 90);
+assert.equal(extra.assets.length, 2);
+assert.equal(extra.assets[0].siteAcres, 4.2);
+assert.equal(extra.assets[0].latitude, 29.7);
+assert.equal(extra.assets[1].latitude, null, "an approximate pin does not travel");
+assert.equal(JSON.stringify(extra.leases.map((l) => l.id)), JSON.stringify(["l1", "l2"]), "a lease without its asset is dropped");
+assert.equal(extra.leases[0].baseRentMonthly, 18000);
+assert.equal(extra.leases[0].escalationPct, 0.03);
+assert.equal(extra.leases[1].status, "active", "an unknown lease status reads active");
+const bare = buildSyncPayload(
+  { deals: [], offers: [], tasks: [], companies: [], contacts: [], dealContacts: [], activities: [] },
+  { now, asOfDate: "2026-10-19" }
+);
+assert.equal(bare.icDecisions.length + bare.milestones.length + bare.assets.length + bare.leases.length, 0);
+assert.equal(bare.schemaVersion, 2);
+console.log("oct-19 collections ok");

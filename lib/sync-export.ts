@@ -68,6 +68,10 @@ export interface SyncDeal {
   portfolioName: string | null;
   portfolioBroker: string | null;
   askingPrice: number | null;
+  // Diligence and sourcing (2026-10-19): the PSA effective date the milestone
+  // schedule hangs off, and the firm credited at intake (a companies id).
+  psaEffectiveOn: string | null;
+  sourceBrokerId: string | null;
 }
 
 export interface SyncOffer {
@@ -79,6 +83,79 @@ export interface SyncOffer {
   source: string;
   createdBy: string | null;
   createdAt: string | null;
+  // Seller's response (2026-10-16): status, their counter and when they answered.
+  status: string;
+  counterPrice: number | null;
+  respondedOn: string | null;
+}
+
+const OFFER_STATUSES = new Set(["sent", "countered", "accepted", "rejected", "withdrawn", "expired"]);
+
+// IC decision record (2026-10-16): the newest row per deal stands.
+export interface SyncIcDecision {
+  id: string;
+  dealId: string;
+  decidedOn: string | null;
+  outcome: string;
+  approvedPrice: number | null;
+  conditions: string | null;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+}
+
+// Diligence milestone (2026-10-16): a dated row of the PSA/DD schedule.
+export interface SyncMilestone {
+  id: string;
+  dealId: string;
+  key: string | null;
+  label: string;
+  dueOn: string | null;
+  doneOn: string | null;
+  notes: string | null;
+  sortOrder: number | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+// Owned asset (2026-10-19): enough to match Prospector's own asset rows by
+// address or pin, so leases can hang off them.
+export interface SyncAsset {
+  id: string;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  market: string | null;
+  submarket: string | null;
+  status: string | null;
+  occupancy: string | null;
+  siteAcres: number | null;
+  buildingSf: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  geocodePrecision: string | null;
+}
+
+// Lease on an owned asset (2026-10-19): the rent roll.
+export interface SyncLease {
+  id: string;
+  assetId: string;
+  tenant: string;
+  suite: string | null;
+  leasedSf: number | null;
+  leasedAcres: number | null;
+  commencedOn: string | null;
+  expiresOn: string | null;
+  baseRentMonthly: number | null;
+  escalationPct: number | null;
+  leaseType: string | null;
+  options: string | null;
+  status: string;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface SyncTask {
@@ -184,6 +261,8 @@ export function shapeDeal(d: any): SyncDeal {
     portfolioName: str(d.deal_portfolios?.name),
     portfolioBroker: str(d.deal_portfolios?.seller_broker),
     askingPrice: num(d.asking_price),
+    psaEffectiveOn: str(d.psa_effective_on),
+    sourceBrokerId: str(d.source_broker_id),
   };
 }
 
@@ -197,6 +276,87 @@ export function shapeOffer(o: any): SyncOffer {
     source: o.source === "loi" ? "loi" : "manual",
     createdBy: str(o.created_by),
     createdAt: str(o.created_at),
+    status: OFFER_STATUSES.has(o.status) ? o.status : "sent",
+    counterPrice: num(o.counter_price),
+    respondedOn: str(o.responded_on),
+  };
+}
+
+export function shapeIcDecision(r: any): SyncIcDecision {
+  return {
+    id: r.id,
+    dealId: r.deal_id,
+    decidedOn: str(r.decided_on),
+    outcome: String(r.outcome ?? ""),
+    approvedPrice: num(r.approved_price),
+    conditions: str(r.conditions),
+    notes: str(r.notes),
+    createdBy: str(r.created_by),
+    createdAt: str(r.created_at),
+  };
+}
+
+export function shapeMilestone(m: any): SyncMilestone {
+  return {
+    id: m.id,
+    dealId: m.deal_id,
+    key: str(m.key),
+    label: String(m.label ?? ""),
+    dueOn: str(m.due_on),
+    doneOn: str(m.done_on),
+    notes: str(m.notes),
+    sortOrder: num(m.sort_order),
+    createdBy: str(m.created_by),
+    createdAt: str(m.created_at),
+    updatedAt: str(m.updated_at),
+  };
+}
+
+// Same placement rule as a deal: an approximate pin would put the asset on
+// the wrong block and look authoritative on Prospector's map.
+const PLACED = new Set(["rooftop", "range_interpolated", "geometric_center", "manual", "supplied"]);
+export function shapeAsset(a: any): SyncAsset {
+  const placed =
+    num(a.latitude) !== null &&
+    num(a.longitude) !== null &&
+    !(num(a.latitude) === 0 && num(a.longitude) === 0) &&
+    PLACED.has(a.geocode_precision ?? "");
+  return {
+    id: a.id,
+    address: str(a.address),
+    city: str(a.city),
+    state: str(a.state),
+    market: str(a.market),
+    submarket: str(a.submarket),
+    status: str(a.status),
+    occupancy: str(a.occupancy),
+    siteAcres: num(a.site_acres),
+    buildingSf: num(a.building_sf),
+    latitude: placed ? num(a.latitude) : null,
+    longitude: placed ? num(a.longitude) : null,
+    geocodePrecision: placed ? str(a.geocode_precision) : null,
+  };
+}
+
+export function shapeLease(l: any): SyncLease {
+  return {
+    id: l.id,
+    assetId: l.asset_id,
+    tenant: String(l.tenant ?? ""),
+    suite: str(l.suite),
+    leasedSf: num(l.leased_sf),
+    leasedAcres: num(l.leased_acres),
+    commencedOn: str(l.commenced_on),
+    expiresOn: str(l.expires_on),
+    baseRentMonthly: num(l.base_rent_monthly),
+    escalationPct: num(l.escalation_pct),
+    leaseType: str(l.lease_type),
+    options: str(l.options),
+    status: ["active", "expired", "terminated"].includes(l.status) ? l.status : "active",
+    notes: str(l.notes),
+    createdBy: str(l.created_by),
+    createdAt: str(l.created_at),
+    updatedAt: str(l.updated_at),
   };
 }
 
@@ -296,6 +456,9 @@ export interface SyncComp {
   createdBy: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  // Where the comp came from, as typed ("User-provided (Rich Young Co. - ...)"):
+  // Prospector's broker scorecard matches the firm name inside it.
+  sourceRef: string | null;
 }
 
 export function shapeComp(c: any): SyncComp {
@@ -334,6 +497,7 @@ export function shapeComp(c: any): SyncComp {
     createdBy: str(c.created_by),
     createdAt: str(c.created_at),
     updatedAt: str(c.updated_at),
+    sourceRef: str(c.source_ref),
   };
 }
 
@@ -350,6 +514,11 @@ export interface SyncPayload {
   dealContacts: SyncDealContact[];
   activities: SyncActivity[];
   comps: SyncComp[];
+  // Added 2026-10-19, all additive: a consumer that ignores them is unaffected.
+  icDecisions: SyncIcDecision[];
+  milestones: SyncMilestone[];
+  assets: SyncAsset[];
+  leases: SyncLease[];
 }
 
 // The feed's key travels as "Authorization: Bearer <key>". Compared without
@@ -380,6 +549,10 @@ export function buildSyncPayload(
     dealContacts: any[];
     activities: any[];
     comps?: any[];
+    icDecisions?: any[];
+    milestones?: any[];
+    assets?: any[];
+    leases?: any[];
   },
   opts: { now: Date; asOfDate: string }
 ): SyncPayload {
@@ -404,6 +577,8 @@ export function buildSyncPayload(
       .map((r) => (r.dealId && !known.has(r.dealId) ? { ...r, dealId: null } : r));
   const tasks = forMirror(raw.tasks.map(shapeTask));
   const activities = forMirror(raw.activities.map(shapeActivity));
+  const assets = (raw.assets ?? []).map(shapeAsset);
+  const assetIds = new Set(assets.map((a) => a.id));
   return {
     source: "hopper",
     schemaVersion: 2,
@@ -417,5 +592,11 @@ export function buildSyncPayload(
     dealContacts,
     activities,
     comps: (raw.comps ?? []).map(shapeComp),
+    // Children of a deal follow the offers rule; a lease never travels
+    // without its asset.
+    icDecisions: (raw.icDecisions ?? []).filter((r) => known.has(r.deal_id)).map(shapeIcDecision),
+    milestones: (raw.milestones ?? []).filter((m) => known.has(m.deal_id)).map(shapeMilestone),
+    assets,
+    leases: (raw.leases ?? []).filter((l) => assetIds.has(l.asset_id)).map(shapeLease),
   };
 }

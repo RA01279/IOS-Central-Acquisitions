@@ -2,7 +2,9 @@
 // Read-only mirror feed for Prospector (Dalfen's sourcing app), which pulls
 // it every few minutes and keeps its own copy of our deals, offers, tasks and
 // contact book so the two teams see one pipeline while both apps are in use.
-// Comps (sale and lease) travel too, so Prospector holds the same repository.
+// Comps (sale and lease) travel too, so Prospector holds the same repository,
+// and since Oct 19 2026 so do IC decisions, diligence milestones, owned
+// assets and their leases.
 //
 // Its own key, not /api/export's: the caller sends
 // "Authorization: Bearer <PROSPECTOR_SYNC_TOKEN>". This feed carries emails
@@ -31,12 +33,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const supabase = getServiceClient();
-    const [deals, offers, tasks, companies, contacts, dealContacts, activities, comps] = await Promise.all([
+    const [deals, offers, tasks, companies, contacts, dealContacts, activities, comps, icDecisions, milestones, assets, leases] = await Promise.all([
       fetchAll((from, to) =>
         supabase
           .from("deals")
           .select(
-            "id, deal_type, stage, asset_class, mla_status, marketing_status, acquisition_type, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, assigned_analyst, created_by, created_at, updated_at, deal_portfolio_id, asking_price, deal_portfolios(name, seller_broker), properties(address, city, market, submarket, lot_sf, building_sf, latitude, longitude, geocode_precision, occupancy_status, walt_years, tenancy)"
+            "id, deal_type, stage, asset_class, mla_status, marketing_status, acquisition_type, dd_end_on, closing_on, closed_on, contract_price, closed_price, death_stage, death_reason, disposition, pursuit_score, follow_up_on, assigned_analyst, created_by, created_at, updated_at, deal_portfolio_id, asking_price, psa_effective_on, source_broker_id, deal_portfolios(name, seller_broker), properties(address, city, market, submarket, lot_sf, building_sf, latitude, longitude, geocode_precision, occupancy_status, walt_years, tenancy)"
           )
           .eq("deal_type", "acquisition")
           .order("created_at", { ascending: true })
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
       fetchAll((from, to) =>
         supabase
           .from("offers")
-          .select("id, deal_id, offered_at, price, notes, source, created_by, created_at")
+          .select("id, deal_id, offered_at, price, notes, source, created_by, created_at, status, counter_price, responded_on")
           .order("created_at", { ascending: true })
           .order("id", { ascending: true })
           .range(from, to)
@@ -97,8 +99,40 @@ export async function GET(req: NextRequest) {
         supabase
           .from("comps")
           .select(
-            "id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, geocode_precision, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, tenant_name, sale_price, closed_on, cap_rate, buyer, status, created_by, created_at, updated_at"
+            "id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, geocode_precision, building_sf, lot_sf, yard_acres, coverage_pct, year_built, clear_height_ft, rent, rent_basis, lease_type, cam_psf_annual, date_commenced, date_estimated, tenant_name, sale_price, closed_on, cap_rate, buyer, status, created_by, created_at, updated_at, source_ref"
           )
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from("ic_decisions")
+          .select("id, deal_id, decided_on, outcome, approved_price, conditions, notes, created_by, created_at")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from("deal_milestones")
+          .select("id, deal_id, key, label, due_on, done_on, notes, sort_order, created_by, created_at, updated_at")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from("assets")
+          .select("id, address, city, state, market, submarket, status, occupancy, site_acres, building_sf, latitude, longitude, geocode_precision")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from("asset_leases")
+          .select("id, asset_id, tenant, suite, leased_sf, leased_acres, commenced_on, expires_on, base_rent_monthly, escalation_pct, lease_type, options, status, notes, created_by, created_at, updated_at")
           .order("created_at", { ascending: true })
           .order("id", { ascending: true })
           .range(from, to)
@@ -106,7 +140,7 @@ export async function GET(req: NextRequest) {
     ]);
     return NextResponse.json(
       buildSyncPayload(
-        { deals, offers, tasks, companies, contacts, dealContacts, activities, comps },
+        { deals, offers, tasks, companies, contacts, dealContacts, activities, comps, icDecisions, milestones, assets, leases },
         { now: new Date(), asOfDate: ctToday() }
       )
     );
