@@ -10,6 +10,7 @@ import { locationReady } from "@/lib/location";
 import Nav from "@/components/Nav";
 import MapView, { type MapPoint } from "@/components/MapView";
 import { DarkKpi } from "@/components/ui";
+import { fetchAll } from "@/lib/fetch-all";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portfolio Map" };
@@ -21,13 +22,16 @@ export default async function PortfolioMapPage(props: { searchParams: Promise<{ 
   const by = sp.by === "stage" ? "stage" : "score";
   const asset = (ASSET_CLASSES as readonly string[]).includes(sp.asset ?? "") ? sp.asset! : "all";
 
-  let q = getServiceClient()
-    .from("deals")
-    .select(DEAL_CARD_SELECT)
-    .eq("deal_type", "acquisition")
-    .not("stage", "in", "(archived,closed)");
-  if (asset !== "all") q = q.eq("asset_class", asset);
-  const { data: rows } = await q;
+  // Paged: one request stops at 1000 rows without saying so.
+  const rows = await fetchAll((f, t) => {
+    let q = getServiceClient()
+      .from("deals")
+      .select(DEAL_CARD_SELECT)
+      .eq("deal_type", "acquisition")
+      .not("stage", "in", "(archived,closed)");
+    if (asset !== "all") q = q.eq("asset_class", asset);
+    return q.order("id").range(f, t);
+  });
   const signals = await loadSignals((rows ?? []).map((d: any) => d.id));
   const cards = (rows ?? []).map((d: any) => toDealCard(d, signals.get(d.id)));
   const mappable = cards.filter((c) => locationReady({ latitude: c.lat, longitude: c.lng, geocode_precision: c.geocodePrecision }));

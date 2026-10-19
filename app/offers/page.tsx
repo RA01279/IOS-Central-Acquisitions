@@ -5,6 +5,7 @@ import { ctToday, isRangeKey, RANGE_KEYS, RANGE_LABELS, rangeStart } from "@/lib
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import { OFFER_STATUSES, OFFER_STATUS_LABELS, bidAskGap } from "@/lib/offer-status";
+import { fetchAll } from "@/lib/fetch-all";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -33,14 +34,17 @@ export default async function OffersPage(
   const start = rangeStart(range, today);
 
   const supabase = getServiceClient();
-  const { data } = await supabase
+  // Paged: a YTD offer log passes 1000 rows within the year.
+  const data = await fetchAll((f, t) => supabase
     .from("offers")
     .select(
       "id, price, offered_at, notes, source, status, counter_price, responded_on, created_by, created_at, deals(id, deal_type, stage, asset_class, properties(address, city, market, lot_sf))"
     )
     .gte("offered_at", start)
     .order("offered_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id")
+    .range(f, t));
 
   const rows = (data ?? []).filter((o: any) => {
     if (!o.deals || o.deals.deal_type === "lease") return false;

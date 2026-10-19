@@ -12,6 +12,7 @@ import CardDeleteButton from "@/components/CardDeleteButton";
 import DealGrid from "@/components/DealGrid";
 import DealFilters, { type FilterState } from "@/components/DealFilters";
 import { DarkKpi } from "@/components/ui";
+import { fetchAll } from "@/lib/fetch-all";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -50,16 +51,18 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   const state: FilterState = { asset, markets: marketsPicked, stages, sort, view, q, owner: ownerPick };
 
   const supabase = getServiceClient();
-  let query = supabase
-    .from("deals")
-    .select(DEAL_CARD_SELECT)
-    .eq("deal_type", "acquisition")
-    .neq("stage", "archived")
-    .order("created_at", { ascending: false });
-  // Portfolio sites of the other class come too: a portfolio card stands for
-  // the whole package, and Project Empire's three warehouses are Industrial.
-  if (asset !== "all") query = query.or(`asset_class.eq.${asset},deal_portfolio_id.not.is.null`);
-  const { data: rows } = await query;
+  // Paged: one request stops at 1000 rows without saying so.
+  const rows = await fetchAll((f, t) => {
+    let query = supabase
+      .from("deals")
+      .select(DEAL_CARD_SELECT)
+      .eq("deal_type", "acquisition")
+      .neq("stage", "archived");
+    // Portfolio sites of the other class come too: a portfolio card stands for
+    // the whole package, and Project Empire's three warehouses are Industrial.
+    if (asset !== "all") query = query.or(`asset_class.eq.${asset},deal_portfolio_id.not.is.null`);
+    return query.order("created_at", { ascending: false }).order("id").range(f, t);
+  });
   const deals = rows ?? [];
   const signals = await loadSignals(deals.map((d: any) => d.id));
   const allCards: DealCardData[] = deals.map((d: any) => toDealCard(d, signals.get(d.id)));

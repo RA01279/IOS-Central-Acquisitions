@@ -13,6 +13,7 @@
 
 import { getServiceClient } from "./supabase";
 import { IN_CONTRACT_STAGES, type AssetClass } from "./deals";
+import { fetchAll } from "./fetch-all";
 
 const TZ = "America/Chicago";
 
@@ -254,13 +255,16 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
   const today = ctToday();
   const start = rangeStart(range, today);
 
-  const [dealsRes, uwEventsRes] = await Promise.all([
-    supabase
+  // Paged (fetchAll): one request stops at 1000 rows without saying so.
+  const [deals, uwEvents] = await Promise.all([
+    fetchAll((f, t) => supabase
       .from("deals")
       .select(
         "id, stage, asset_class, created_at, updated_at, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address, market), offers(price, offered_at)"
       )
-      .eq("deal_type", "acquisition"),
+      .eq("deal_type", "acquisition")
+      .order("id")
+      .range(f, t)),
     // "Deals underwritten" = deals that entered UW in the window. The event
     // trail is the only place that's recorded; a deal now sitting at Offered
     // was still underwritten this month. The gte() is a coarse prefilter (it
@@ -271,9 +275,11 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
       .select("deal_id, event_type, detail, created_at")
       .in("event_type", ["advanced_to_uw", "stage_corrected"])
       .gte("created_at", addDays(start, -1)),
-  ]);
+  ]).then(([d, e]) => {
+    if (e.error) throw new Error(`Loading UW events: ${e.error.message}`);
+    return [d, e.data ?? []] as const;
+  });
 
-  const deals = (dealsRes.data ?? []) as any[];
   const byId = new Map(deals.map((d) => [d.id, d]));
 
   const summary: Summary = {
@@ -323,7 +329,7 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
   // Distinct deals that entered UW in the window (a deal corrected back and
   // forth shouldn't count twice).
   const uwDealIds = new Set<string>();
-  for (const e of (uwEventsRes.data ?? []) as any[]) {
+  for (const e of uwEvents as any[]) {
     if (ctDate(e.created_at) < start) continue;
     if (e.event_type === "stage_corrected" && e.detail?.to !== "uw") continue;
     if (byId.has(e.deal_id)) uwDealIds.add(e.deal_id);

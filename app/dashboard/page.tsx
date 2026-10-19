@@ -7,6 +7,7 @@ import CardDeleteButton from "@/components/CardDeleteButton";
 import AutoRefresh from "@/components/AutoRefresh";
 import TruncatedList from "@/components/TruncatedList";
 import ActivityChart from "@/components/ActivityChart";
+import { fetchAll } from "@/lib/fetch-all";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -62,26 +63,31 @@ export default async function DashboardPage() {
   const thirtyDaysAgo = new Date(Date.now() - 30 * DAY_MS).toISOString();
   const today = new Date().toISOString().slice(0, 10);
 
-  const [dealsRes, tasksRes, activitiesRes, offersRes] = await Promise.all([
-    supabase
+  // Deals and offers are paged (fetchAll): one request stops at 1000 rows
+  // without saying so, and every count on this page would quietly go wrong.
+  const [deals, tasksRes, activitiesRes, offersAll] = await Promise.all([
+    fetchAll((f, t) => supabase
       .from("deals")
       .select(
         "id, stage, asset_class, created_at, updated_at, closed_on, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(event_type, created_at)"
       )
-      .eq("deal_type", "acquisition"),
+      .eq("deal_type", "acquisition")
+      .order("id")
+      .range(f, t)),
     supabase.from("tasks").select("id, due_date").eq("status", "open"),
     supabase.from("activities").select("activity_type").gte("occurred_at", thirtyDaysAgo),
-    supabase
+    fetchAll((f, t) => supabase
       .from("offers")
       .select("id, price, offered_at, created_at, source, deals(id, deal_type, asset_class, properties(address, lot_sf))")
       .order("offered_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(f, t)),
   ]);
 
-  const deals = dealsRes.data ?? [];
   const openTasks = tasksRes.data ?? [];
   const recentActivities = activitiesRes.data ?? [];
-  const allOffers = (offersRes.data ?? []).filter(
+  const allOffers = offersAll.filter(
     (o: any) => !o.deals || o.deals.deal_type !== "lease"
   );
 

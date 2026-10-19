@@ -4,6 +4,7 @@ import { STAGE_LABELS } from "@/lib/deals";
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import TruncatedList from "@/components/TruncatedList";
+import { fetchAll } from "@/lib/fetch-all";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -29,17 +30,20 @@ export default async function TargetsPage(
   const showAll = searchParams.all === "1";
   const supabase = getServiceClient();
 
-  let query = supabase
-    .from("deals")
-    .select(
-      "id, disposition, pursuit_score, follow_up_on, death_stage, death_reason, created_at, properties(address, city, market), offers(price, offered_at)"
-    )
-    .eq("deal_type", "acquisition")
-    .eq("stage", "archived");
-  if (!showAll) {
-    query = query.or("disposition.not.is.null,pursuit_score.not.is.null,follow_up_on.not.is.null");
-  }
-  const { data: deals } = await query;
+  // Paged: archived deals are the largest set and grow fastest.
+  const deals = await fetchAll((f, t) => {
+    let query = supabase
+      .from("deals")
+      .select(
+        "id, disposition, pursuit_score, follow_up_on, death_stage, death_reason, created_at, properties(address, city, market), offers(price, offered_at)"
+      )
+      .eq("deal_type", "acquisition")
+      .eq("stage", "archived");
+    if (!showAll) {
+      query = query.or("disposition.not.is.null,pursuit_score.not.is.null,follow_up_on.not.is.null");
+    }
+    return query.order("id").range(f, t);
+  });
 
   const today = new Date().toISOString().slice(0, 10);
   // 0-star = "never a target": permanently excluded from the target lists
