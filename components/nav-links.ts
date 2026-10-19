@@ -21,6 +21,7 @@ import {
   Users,
   Bot,
   Award,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,6 +46,7 @@ export const NAV_GROUPS: Array<{ label: string | null; links: NavLink[] }> = [
       { href: "/offers", label: "Offers", key: "offers", icon: Handshake },
       { href: "/targets", label: "Targets", key: "targets", icon: Target },
       { href: "/dashboard", label: "Dashboard", key: "dashboard", icon: BarChart3 },
+      { href: "/reports/weekly", label: "Weekly Report", key: "report", icon: FileText },
     ],
   },
   {
