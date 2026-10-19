@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { pdfText } from "@/lib/pdf-text";
 import { runAgent, helperOnline } from "@/lib/agent-client";
-import { METRIC_LABELS, parseMarketReport, type MarketReport } from "@/lib/agents/market-report";
+import { MARKET_METRICS, METRIC_LABELS, parseMarketReport, type MarketMetric, type MarketReport } from "@/lib/agents/market-report";
 
 const BASIS_LABELS: Record<string, string> = { current: "Current", average: "Average", prior_period: "Prior period", year_ago: "Year ago", forecast: "Forecast", peak: "Peak" };
 
@@ -124,20 +124,42 @@ export default function MarketReportUpload() {
           )}
           <div style={{ overflowX: "auto" }}>
             <table className="summary-table">
-              <thead><tr><th></th><th>Statistic</th><th>Value</th><th>Submarket</th><th>Segment</th><th>Basis</th></tr></thead>
+              <thead><tr><th></th><th>Label</th><th>Type</th><th>Value</th><th>Submarket</th><th>Segment</th><th>Basis</th></tr></thead>
               <tbody>
                 {draft.metrics.map((m, i) => (
                   <tr key={i} style={{ opacity: keep[i] ? 1 : 0.45 }}>
                     <td><input type="checkbox" checked={keep[i]} onChange={(e) => setKeep((k) => k.map((v, j) => (j === i ? e.target.checked : v)))} aria-label={`Keep ${m.label}`} /></td>
-                    <td>{m.label}<br /><span className="muted">{METRIC_LABELS[m.metric] ?? m.metric}</span></td>
-                    <td><input value={String(m.value)} style={{ width: 110 }} onChange={(e) => { const v = Number(e.target.value.replace(/[$,%\s]/g, "")); if (Number.isFinite(v)) setMetric(i, { value: v }); }} /></td>
-                    <td>{m.submarket ?? "—"}</td>
-                    <td>{m.segment ?? "All"}</td>
-                    <td>{BASIS_LABELS[m.basis] ?? m.basis}</td>
+                    <td><input value={m.label} style={{ minWidth: 200 }} onChange={(e) => setMetric(i, { label: e.target.value })} aria-label="Label" /></td>
+                    <td>
+                      <select value={m.metric} onChange={(e) => setMetric(i, { metric: e.target.value as MarketMetric })} aria-label="Statistic type">
+                        {MARKET_METRICS.map((k) => <option key={k} value={k}>{METRIC_LABELS[k] ?? k}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      {/* Parsed when you leave the box, so "0." or a cleared box can be typed through. */}
+                      <input key={`${i}-${m.value}`} defaultValue={String(m.value)} style={{ width: 110 }} aria-label="Value"
+                        onBlur={(e) => { const v = Number(e.target.value.replace(/[$,%\s]/g, "")); if (Number.isFinite(v) && e.target.value.trim() !== "") setMetric(i, { value: v }); else e.target.value = String(m.value); }} />
+                    </td>
+                    <td><input value={m.submarket ?? ""} placeholder="All" style={{ width: 110 }} onChange={(e) => setMetric(i, { submarket: e.target.value || null })} aria-label="Submarket" /></td>
+                    <td><input value={m.segment ?? ""} placeholder="All" style={{ width: 110 }} onChange={(e) => setMetric(i, { segment: e.target.value || null })} aria-label="Segment" /></td>
+                    <td>
+                      <select value={m.basis} onChange={(e) => setMetric(i, { basis: e.target.value as MarketReport["metrics"][number]["basis"] })} aria-label="Basis">
+                        {Object.entries(BASIS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="stage-actions" style={{ marginBottom: 0 }}>
+            <button type="button" className="secondary"
+              onClick={() => {
+                setDraft((d) => d ? { ...d, metrics: [...d.metrics, { metric: "other", label: "New statistic", value: 0, submarket: d.submarkets.length === 1 ? d.submarkets[0] : null, segment: null, basis: "current", period: d.period || null }] } : d);
+                setKeep((k) => [...k, true]);
+              }}>
+              + Add statistic
+            </button>
           </div>
           {draft.transactions.length > 0 && <p className="hint" style={{ margin: 0 }}>Deals named: {draft.transactions.map((t) => `${t.party}${t.sf ? ` (${t.sf.toLocaleString()} SF)` : ""}`).join("; ")}</p>}
           {draft.notes.length > 0 && <div className="warning"><ul>{draft.notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>}

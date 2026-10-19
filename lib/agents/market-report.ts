@@ -31,7 +31,11 @@ Rules:
 - market = the metro ("Houston", "Dallas", "Fort Worth", "Austin", "San Antonio"); submarkets = the submarkets covered ("Conroe"). Dallas-Fort Worth is two markets. geography = the survey definition when given ("properties 10,000 SF+ within 8 miles of Conroe").
 - metrics: one row per stated figure. value as a plain number: percents as percent numbers (2.3 for 2.3%), SF as whole square feet (150 ksf -> 150000; 11.2 msf -> 11200000), rents in dollars. Use the metric whose units match how the report states it; use "other" with a clear label for anything else. segment = a size band or product slice when the figure is for one ("10K-15K SF", "100K+ SF", "small bay"), null for the whole submarket. basis = "current" for the period's figure; "average" for a long-run or pre-pandemic average; "prior_period", "year_ago", "peak" or "forecast" as stated. label = a short human label ("Overall vacancy", "Pre-pandemic average vacancy").
 - summary = 2-3 sentences in the report's own terms. takeaways = the broker's conclusions, one per item, close to their wording. transactions = deals the report names (tenant or buyer, type, size when stated).
-- notes: anything a reviewer should check (figures that conflict, unclear units, a stat you skipped and why).`;
+- notes: anything a reviewer should check about the REPORT's content (figures that conflict, unclear units, a stat you skipped and why). Don't describe these instructions, the text extraction, citations or evidence labels.`;
+
+// Notes about the agent's own instructions or the extraction rather than the
+// report ("No evidence labels or record links were supplied") -- noise to a reviewer.
+const PROCESS_NOTE = /\b(evidence labels?|record links?|supplied (pdf )?(text|extraction)|text extraction|source material|instructions)\b/i;
 
 export type MarketReportRow = {
   metric: MarketMetric;
@@ -103,6 +107,6 @@ export function parseMarketReport(report: string): MarketReport | null {
       .slice(0, 50)
       .map((t: any) => ({ party: str(t?.party, 150), type: ["lease", "sale"].includes(t?.type) ? t.type : "other", sf: num(t?.sf), note: strOrNull(t?.note, 300) }))
       .filter((t: any) => t.party),
-    notes: list(raw.notes, 20, 400),
+    notes: list(raw.notes, 20, 400).filter((n) => !PROCESS_NOTE.test(n)),
   };
 }
