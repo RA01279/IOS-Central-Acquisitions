@@ -5,6 +5,9 @@ import AutoRefresh from "@/components/AutoRefresh";
 import ContactForm from "@/components/ContactForm";
 import CompanyForm from "@/components/CompanyForm";
 import { ContactTypeSelect, ContactDeleteButton } from "@/components/ContactRowActions";
+import ContactSplitter, { type SplitProposal } from "@/components/ContactSplitter";
+import { splitContact } from "@/lib/contact-split";
+import { getServiceClient } from "@/lib/supabase";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -40,7 +43,28 @@ export default async function ContactsPage(
   const searchParams = await props.searchParams;
   const q = searchParams.q?.trim()?.toLowerCase() || undefined;
   const typeFilter = searchParams.type || undefined;
-  const [contacts, companies] = await Promise.all([listContacts(), listCompanies()]);
+  const [contacts, companies, { data: linkRows }] = await Promise.all([
+    listContacts(),
+    listCompanies(),
+    getServiceClient().from("deal_contacts").select("contact_id").limit(5000),
+  ]);
+  // Records holding a broker team, or details typed into the name.
+  const dealCount = new Map<string, number>();
+  for (const l of linkRows ?? []) dealCount.set(l.contact_id, (dealCount.get(l.contact_id) ?? 0) + 1);
+  const norm = (x: string) => x.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9&]+/g, " ").trim();
+  const splitProposals: SplitProposal[] = (contacts as any[])
+    .map((c) => ({ c, s: splitContact(c.name) }))
+    .filter(({ c, s }) => s.people.length > 1 || (s.people.length === 1 && s.people[0].name !== String(c.name).trim()))
+    .map(({ c, s }) => {
+      const match = s.firm ? (companies as any[]).find((k) => norm(k.name) === norm(s.firm!) || norm(k.name).startsWith(norm(s.firm!) + " ")) : null;
+      return {
+        id: c.id,
+        raw: c.name,
+        deals: dealCount.get(c.id) ?? 0,
+        firm: s.firm ? { companyId: match?.id ?? c.companies?.id ?? null, name: match?.name ?? s.firm } : c.companies ? { companyId: c.companies.id, name: c.companies.name } : null,
+        people: s.people.map((p) => ({ name: p.name, email: p.email ?? "", phone: p.phone ?? "" })),
+      };
+    });
 
   const companyType = (c: any) => COMPANY_TO_CONTACT_TYPE[c.company_type] ?? "other";
 
@@ -110,6 +134,8 @@ export default async function ContactsPage(
             <CompanyForm />
           </div>
         </div>
+
+        <ContactSplitter proposals={splitProposals} companies={(companies as any[]).map((c) => ({ id: c.id, name: c.name }))} />
 
         <div className="filter-chips">
           {chips.map((chip) => (
