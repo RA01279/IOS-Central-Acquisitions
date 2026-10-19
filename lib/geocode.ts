@@ -170,11 +170,21 @@ export async function geocodeAddress(
     if (opts.requirePrecise) {
       const component = (type: string) => best.address_components?.find((c: any) => c.types?.includes(type))?.long_name;
       const number = String(parts[0] ?? "").match(/^\s*(\d+[A-Za-z]?)\b/)?.[1];
-      const city = String(parts[1] ?? "").trim().toLowerCase();
+      // "Schertz/Selma" or "Schertz-Selma": either city is a match.
+      const cities = String(parts[1] ?? "").toLowerCase().split(/\s*[\/]\s*|\s+-\s+/).map((c) => c.trim()).filter(Boolean);
+      const city = cities[0] ?? "";
       const locality = String(component("locality") ?? component("postal_town") ?? "").toLowerCase();
+      // The street's NAME, compared without its type and in one spelling of
+      // highways: "Highway 114" = "TX-114" = "SH 114", "FM 3083" = "Farm to
+      // Market Road 3083", and "Bonnie View Dr" = "Bonnie View Rd" (the house
+      // number and a building-level match already pin the place).
       const street = (value: string) => value.toLowerCase().replace(/[.,]/g, " ")
-        .replace(/\b(lane|road|street|drive|boulevard|avenue|court|parkway|highway|north|south|east|west)\b/g,
-          (word) => ({ lane: "ln", road: "rd", street: "st", drive: "dr", boulevard: "blvd", avenue: "ave", court: "ct", parkway: "pkwy", highway: "hwy", north: "n", south: "s", east: "e", west: "w" }[word]!))
+        .replace(/\b(?:state highway|state hwy|texas|tx|sh|highway|hwy)\s*-?\s*(\d+)/g, "hwy $1")
+        .replace(/\b(?:us highway|us hwy|us)\s*-?\s*(\d+)/g, "us $1")
+        .replace(/\b(?:farm to market(?: road)?|fm road|fm)\s*-?\s*(\d+)/g, "fm $1")
+        .replace(/\b(?:interstate|ih|i)\s*-?\s*(\d+)/g, "i $1")
+        .replace(/\b(north|south|east|west)\b/g, (w) => w[0])
+        .replace(/\b(lane|ln|road|rd|street|st|drive|dr|boulevard|blvd|avenue|ave|court|ct|parkway|pkwy|circle|cir|way|place|pl|trail|trl|freeway|fwy|expressway|expy)\b\s*$/g, "")
         .replace(/\s+/g, " ").trim();
       const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?(?:\s*[-–&]\s*\d+[A-Za-z]?)?\s+/, "");
       const exactPremise = best.geometry.location_type === "GEOMETRIC_CENTER" &&
@@ -182,7 +192,7 @@ export async function geocodeAddress(
       if (data.results.length !== 1 || best.partial_match || (!exactPremise && best.geometry.location_type !== "ROOFTOP") ||
           !number || String(component("street_number")).toLowerCase() !== number.toLowerCase() ||
           street(requestedStreet) !== street(String(component("route") ?? "")) ||
-          (city && city !== locality)) return null;
+          (city && !cities.includes(locality))) return null;
     }
     return {
       lat: best.geometry.location.lat,

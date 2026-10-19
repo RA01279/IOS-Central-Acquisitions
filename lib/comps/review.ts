@@ -18,11 +18,12 @@
 
 import { haversineMiles, unitValue, type CompRecord } from "./match";
 
-export type ReviewFlag = "possible_duplicate" | "rate_outlier";
+export type ReviewFlag = "possible_duplicate" | "rate_outlier" | "future_date";
 
 export const REVIEW_FLAG_LABELS: Record<ReviewFlag, string> = {
   possible_duplicate: "Possible duplicate",
   rate_outlier: "Rate far outside its market",
+  future_date: "Dated in the future (proposed, not executed?)",
 };
 
 const SQFT_PER_ACRE = 43560;
