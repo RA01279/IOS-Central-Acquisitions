@@ -20,6 +20,8 @@ import SignalsPanel from "@/components/SignalsPanel";
 import NextDates, { type DateRow } from "@/components/NextDates";
 import OwnedNearbyCard, { type OwnedAsset } from "@/components/OwnedNearbyCard";
 import OmCompsCard, { type OmDoc } from "@/components/OmCompsCard";
+import SplitPortfolio from "@/components/SplitPortfolio";
+import { looksMultiSite } from "@/lib/split-sites";
 import { listTeam, nameOf } from "@/lib/team";
 import { getServiceClient } from "@/lib/supabase";
 import { IC_OUTCOME_LABELS, icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
@@ -187,6 +189,9 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
       <section className="panel">
         <h2>Property</h2>
         {deal.classification_basis && <p className="hint">Classification: {deal.classification_basis}</p>}
+        {!deal.deal_portfolio_id && looksMultiSite(p.address) && (
+          <SplitPortfolio dealId={deal.id} address={p.address} city={p.city ?? null} ios={deal.asset_class !== "industrial"} />
+        )}
         <div className="metrics-grid">
           <Metric label="Owner" value={nameOf(team, deal.assigned_analyst) ?? "Unassigned"} />
           {sourcedBy && <Metric label="Sourced by" value={sourcedBy.name} />}
