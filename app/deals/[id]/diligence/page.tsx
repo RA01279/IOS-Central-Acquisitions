@@ -8,12 +8,24 @@ import { DEFAULT_CLOSING_DAYS, DEFAULT_DD_DAYS, parseDays } from "@/lib/diligenc
 import { ctToday } from "@/lib/summary";
 import DiligencePanel, { type MilestoneRow } from "@/components/DiligencePanel";
 import DocumentVault, { type VaultDoc } from "@/components/DocumentVault";
+import ClosingChecklist, { type ChecklistRow } from "@/components/ClosingChecklist";
+import { getServiceClient } from "@/lib/supabase";
 
 export const metadata = { title: "Diligence" };
 
 export default async function DiligencePage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
-  const [deal, milestones] = await Promise.all([getDeal(id), listMilestones(id)]);
+  const [deal, milestones, { data: checklist, error: checklistError }] = await Promise.all([
+    getDeal(id),
+    listMilestones(id),
+    getServiceClient()
+      .from("deal_checklist_items")
+      .select("id, section, item, responsible, signatories, status, done, notes, sort_order")
+      .eq("deal_id", id)
+      .order("sort_order")
+      .order("created_at"),
+  ]);
+  if (checklistError) throw new Error(`Loading the closing checklist: ${checklistError.message}`);
   const terms = (deal.loi_terms ?? {}) as Record<string, unknown>;
   const docs = [...(deal.documents ?? [])].sort((a: any, b: any) => String(b.uploaded_at).localeCompare(String(a.uploaded_at)));
   const labelOf = new Map(milestones.map((m: any) => [m.id, m.label]));
@@ -49,6 +61,7 @@ export default async function DiligencePage(props: { params: Promise<{ id: strin
         closingDaysDefault={parseDays(terms.closingDays) ?? DEFAULT_CLOSING_DAYS}
         milestones={rows}
       />
+      <ClosingChecklist dealId={deal.id} items={(checklist ?? []) as ChecklistRow[]} />
       <DocumentVault
         dealId={deal.id}
         docs={vault}

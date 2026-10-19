@@ -12,6 +12,7 @@ export type TemplateMilestone = { key: string; label: string; due_on: string; so
 
 export const DOC_TYPES: { value: string; label: string }[] = [
   { value: "psa", label: "PSA / amendment" },
+  { value: "checklist", label: "Critical dates / closing checklist" },
   { value: "loi", label: "LOI" },
   { value: "om", label: "OM" },
   { value: "title", label: "Title commitment / exceptions" },
