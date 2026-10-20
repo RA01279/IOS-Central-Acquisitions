@@ -11,9 +11,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronLeft, Share, LayoutGrid, Map as MapIcon, NotebookPen, Presentation } from "lucide-react";
 import { pushRecent } from "@/lib/recent";
 
-// The Underwriting tab (Hopper engine, sample inputs) is behind a flag until it
-// runs on real deal inputs. The route 404s without it too.
-const UW_ENGINE_TAB = process.env.NEXT_PUBLIC_UW_ENGINE_TAB === "sample";
+// The Underwriting tab (Hopper's screening engine) is behind a flag until it
+// is turned on deliberately. The route 404s without it too.
+const UW_ENGINE_TAB = process.env.NEXT_PUBLIC_UW_ENGINE_TAB === "screen";
 
 export const DEAL_TABS = [
   { seg: "", label: "Summary", short: "Summary", icon: LayoutGrid },

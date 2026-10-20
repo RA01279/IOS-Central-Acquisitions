@@ -7,6 +7,7 @@ import { parseReturnsSummary } from "@/lib/excel-parser";
 import { createStageTasks } from "@/lib/stage-tasks-db";
 import { openWorkbook } from "@/lib/ic-deck/xlsx-lite";
 import { extractModel } from "@/lib/ic-deck/model";
+import { modelDetailOf } from "@/lib/uw/model-snapshot";
 
 // POST /api/deals/[id]/versions
 // body: { storagePath, fileName } -- the browser has ALREADY uploaded the
@@ -56,14 +57,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     return NextResponse.json({ error: `Could not read workbook: ${err.message}` }, { status: 422 });
   }
 
-  // The sensitivity tables, for the Financials tab. Best effort: a workbook
+  // The sensitivity tables for the Financials tab, and the rent roll, debt
+  // and returns the Underwriting tab starts from. Best effort: a workbook
   // that isn't the standard model still saves its version.
   let modelDetail: Record<string, unknown> | null = null;
   try {
-    const m = extractModel(openWorkbook(buffer), String(body.fileName ?? storagePath.split("/").pop()));
-    if (m.sensitivities.deal || m.sensitivities.lp) {
-      modelDetail = { sensitivities: m.sensitivities, exitCap: m.yields.exitCap, warnings: m.warnings.filter((w) => /sensitivity/i.test(w)) };
-    }
+    modelDetail = modelDetailOf(extractModel(openWorkbook(buffer), String(body.fileName ?? storagePath.split("/").pop())));
   } catch {
     modelDetail = null;
   }
