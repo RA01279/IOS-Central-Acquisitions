@@ -25,7 +25,7 @@ export interface DealUwInputs extends UwInputs {
 /** The inputs a source label can attach to. Levers are labelled once for all three scenarios. */
 export const SOURCE_KEYS = [
   "PurchPrice", "Acres", "CloseCost", "SaleCost", "Hold", "TgtUnlev", "TgtLev", "MinDSCR",
-  "ExitCap", "RentGrowth", "Vacancy", "CapexOverrun", "LeaseDelay", "RenewProb",
+  "ExitCap", "ExitNoi", "RentGrowth", "Vacancy", "CapexOverrun", "LeaseDelay", "RenewProb",
   "NnnRecovered", "TaxSwitch", "TaxRate", "SellerTax", "Insurance", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
   "LevOn", "LoanLTV", "LoanRate", "AmortYrs", "IOYrs", "LoanFee", "rentRoll", "capex",
 ] as const;
@@ -216,6 +216,19 @@ function tenantsFromModel(model: UwModelSnapshot, acres: number | null): Tenant[
     });
 }
 
+/**
+ * Does the Excel model recover its opex? True when its Yr-1 NOI is the
+ * in-place rent less vacancy & credit loss, within 1% -- nothing left for the
+ * landlord, management included.
+ */
+function modelRecoversOpex(model: UwModelSnapshot | null): boolean {
+  if (!model || model.year1Noi === null || model.vacancyPct === null) return false;
+  const rent = model.rentRoll
+    .filter((r) => !r.start || !model.acquisition || r.start <= model.acquisition)
+    .reduce((s, r) => s + (r.rentAnnual ?? 0), 0);
+  return rent > 0 && Math.abs(rent * (1 - model.vacancyPct) - model.year1Noi) <= 0.01 * rent;
+}
+
 /** A rent per acre per month for the whole site, from the comps for its size. */
 const compMonthlyRent = (comps: CompContext, acres: number | null) =>
   comps.rent?.median && acres ? Math.round(comps.rent.median * acres) : null;
@@ -287,8 +300,9 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
 
   // Levers.
   let exitCap: number;
-  if (facts.exitCap) exitCap = set("ExitCap", facts.exitCap, "deal", "Exit cap set on the Financials tab");
-  else if (model?.exitCap) exitCap = set("ExitCap", model.exitCap, "model", "Excel model exit cap");
+  // The Excel model is the main source; the deal's own exit cap only fills in without one.
+  if (model?.exitCap) exitCap = set("ExitCap", model.exitCap, "model", "Excel model exit cap");
+  else if (facts.exitCap) exitCap = set("ExitCap", facts.exitCap, "deal", "Exit cap set on the Financials tab");
   else if (comps.exitCap.source === "comps") exitCap = set("ExitCap", comps.exitCap.base, "comps", `Median sale-comp cap rate (n ${comps.exitCap.n})`);
   else {
     exitCap = set("ExitCap", DEFAULTS.ExitCap, "default", "Placeholder: enter an exit cap");
@@ -351,7 +365,12 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
     TaxRate: taxRate ? set("TaxRate", taxRate, "default", `Typical effective rate, ${facts.state}`) : set("TaxRate", DEFAULTS.TaxRate, "default", "Typical effective rate"),
     SellerTax: set("SellerTax", 0, "default", "Seller's current tax unknown; used only if reassessment is off"),
     Insurance: set("Insurance", Math.round(DEFAULTS.InsurancePerAcre * Acres), "default", `${usd(DEFAULTS.InsurancePerAcre)}/ac`),
-    MgmtPct: set("MgmtPct", DEFAULTS.MgmtPct, "default", "Management fee on collected revenue, not recovered"),
+    MgmtPct: modelRecoversOpex(model)
+      ? set("MgmtPct", 0, "model", "Excel model: Yr-1 NOI is rent less vacancy, so management and opex are recovered")
+      : set("MgmtPct", DEFAULTS.MgmtPct, "default", "Management fee on collected revenue, not recovered"),
+    ExitNoi: model
+      ? set("ExitNoi", "stabilized" as const, "model", "Exit capped on stabilized NOI (full year at in-lease or market rent, no rollover gap), as the Excel model sells")
+      : set("ExitNoi", "stabilized" as const, "default", "Exit capped on stabilized NOI (full year at in-lease or market rent, no rollover gap)"),
     ReservePerAcre: reserves ? set("ReservePerAcre", reserves, "model", "Excel model Yr-1 capex reserves / acres") : set("ReservePerAcre", DEFAULTS.ReservePerAcre, "default", "Default reserves"),
     OtherOpex: set("OtherOpex", 0, "default", "None"),
     ExpGrowth: set("ExpGrowth", DEFAULTS.ExpGrowth, "default", "Default"),
@@ -420,12 +439,12 @@ export function checkAgainstComps(inputs: DealUwInputs, comps: CompContext): Ran
 }
 
 /**
- * The exit is priced on the NOI of the year after the sale. A lease that ends
- * within a year either side of the sale puts its expected downtime and
- * renewal mix into that NOI, which lowers the exit value -- a model that sells
- * on stabilized NOI will show a higher return.
+ * Only with the exit on forward NOI: a lease that ends within a year either
+ * side of the sale puts its downtime and renewal mix into the NOI being
+ * capped, which lowers the exit value. On stabilized NOI there is no gap.
  */
 export function exitRolloverWarnings(inputs: UwInputs): string[] {
+  if ((inputs.ExitNoi ?? "forward") === "stabilized") return [];
   const H = inputs.Hold;
   return inputs.rentRoll
     .filter((t) => t.leaseEndMonth !== null && t.leaseEndMonth > 12 * (H - 1) && t.leaseEndMonth <= 12 * (H + 1))
@@ -500,6 +519,7 @@ export function sanitizeInputs(x: any): DealUwInputs | string {
     ["StepG", finite(x.StepG, 0, 0.1)],
     ["StepCap", finite(x.StepCap, 0, 0.05)],
     ["NnnRecovered", typeof x.NnnRecovered === "boolean"],
+    ["ExitNoi", x.ExitNoi === undefined || x.ExitNoi === "forward" || x.ExitNoi === "stabilized"],
     ["SellerTax", finite(x.SellerTax, 0, 1e8)],
     ["Insurance", finite(x.Insurance, 0, 1e8)],
     ["TaxSwitch", x.TaxSwitch === 0 || x.TaxSwitch === 1],
@@ -550,7 +570,7 @@ export function sanitizeInputs(x: any): DealUwInputs | string {
   const pick = <K extends keyof DealUwInputs>(...keys: K[]) => Object.fromEntries(keys.map((k) => [k, x[k]])) as Pick<DealUwInputs, K>;
   return {
     ...pick("property", "scenario", "RollMethod", "Acres", "PurchPrice", "CompPerAcre", "CloseCost", "SaleCost", "Hold", "TgtUnlev", "TgtLev", "MinDSCR",
-      "StepG", "StepCap", "NnnRecovered", "SellerTax", "Insurance", "TaxSwitch", "TaxRate", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
+      "StepG", "StepCap", "NnnRecovered", "ExitNoi", "SellerTax", "Insurance", "TaxSwitch", "TaxRate", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
       "LevOn", "LoanLTV", "LoanRate", "AmortYrs", "IOYrs", "LoanFee"),
     levers: {
       RentGrowth: [...lv.RentGrowth] as unknown as ByScenario<number>,

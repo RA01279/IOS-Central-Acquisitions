@@ -73,9 +73,11 @@ describe("buildDealInputs from the Excel model", () => {
     expect(b.inputs.levers.ExitCap[1]).toBeCloseTo(0.06, 10);
     expect(b.inputs.levers.ExitCap[2]).toBeCloseTo(0.0725, 10);
   });
-  it("defaults follow the build plan: reassessed taxes, management and reserves above zero", () => {
-    expect(b.inputs.TaxSwitch).toBe(1);
-    expect(b.inputs.MgmtPct).toBeGreaterThan(0);
+  it("defaults follow the build plan where the model is silent: reassessed taxes, management and reserves above zero", () => {
+    const none = buildDealInputs(facts, null, comps);
+    expect(none.inputs.TaxSwitch).toBe(1);
+    expect(none.inputs.MgmtPct).toBeGreaterThan(0);
+    expect(none.inputs.ReservePerAcre).toBeGreaterThan(0);
     expect(b.inputs.ReservePerAcre).toBeGreaterThan(0);
   });
   it("labels every input", () => {
@@ -124,10 +126,13 @@ describe("buildDealInputs without a model", () => {
     expect(b.sources.ExitCap.source).toBe("default");
     expect(b.warnings.some((w) => /placeholder/.test(w))).toBe(true);
   });
-  it("the deal's own exit cap wins over the model's", () => {
-    const b = buildDealInputs({ ...facts, exitCap: 0.07 }, kennedale, comps);
-    expect(b.inputs.levers.ExitCap[0]).toBe(0.07);
-    expect(b.sources.ExitCap.source).toBe("deal");
+  it("the Excel model's exit cap wins over the deal's; the deal's fills in without a model", () => {
+    const withModel = buildDealInputs({ ...facts, exitCap: 0.07 }, kennedale, comps);
+    expect(withModel.inputs.levers.ExitCap[0]).toBe(0.065);
+    expect(withModel.sources.ExitCap.source).toBe("model");
+    const noModel = buildDealInputs({ ...facts, exitCap: 0.07 }, null, comps);
+    expect(noModel.inputs.levers.ExitCap[0]).toBe(0.07);
+    expect(noModel.sources.ExitCap.source).toBe("deal");
   });
 });
 
@@ -152,9 +157,37 @@ describe("exitRolloverWarnings", () => {
   it("carries the model's stated bump", () => {
     expect(b.inputs.rentRoll[0].bump).toBe(0.04);
   });
-  it("warns when a lease ends around the sale", () => {
-    expect(exitRolloverWarnings(b.inputs)).toHaveLength(1);
-    expect(exitRolloverWarnings({ ...b.inputs, Hold: 3 })).toHaveLength(0);
+  it("warns about a lease ending around the sale only when the exit is on forward NOI", () => {
+    expect(b.inputs.ExitNoi).toBe("stabilized");
+    expect(exitRolloverWarnings(b.inputs)).toHaveLength(0);
+    expect(exitRolloverWarnings({ ...b.inputs, ExitNoi: "forward" })).toHaveLength(1);
+    expect(exitRolloverWarnings({ ...b.inputs, ExitNoi: "forward", Hold: 3 })).toHaveLength(0);
+  });
+  it("management follows the model when its opex is recovered", () => {
+    expect(b.inputs.MgmtPct).toBe(0);
+    expect(b.sources.MgmtPct.source).toBe("model");
+  });
+});
+
+describe("stabilized exit", () => {
+  const b = buildDealInputs(facts, kennedale, compContext(ROWS, "Fort Worth", 8.7, AS_OF));
+  const stab = runUnderwriting(engineInputs(b.inputs));
+  const fwd = runUnderwriting(engineInputs({ ...b.inputs, ExitNoi: "forward" }));
+  it("caps a full year of market rent, not the rollover year", () => {
+    // Lease ends month 60 at a 5-year sale: Yr-6 is a full year at $660k market rent grown 4%.
+    const expected = 660_000 * 1.04 ** 5 * (1 - b.inputs.levers.Vacancy[0]);
+    expect(stab.cashFlow.forwardNoi[5]).toBeCloseTo(expected, 4);
+    expect(stab.returns.grossExitValue).toBeCloseTo(expected / 0.065, 2);
+    expect(fwd.cashFlow.forwardNoi[5]).toBeLessThan(expected);
+    expect(stab.returns.unleveredIrr!).toBeGreaterThan(fwd.returns.unleveredIrr!);
+  });
+  it("leaves the hold cash flows alone", () => {
+    expect(stab.cashFlow.noi).toEqual(fwd.cashFlow.noi);
+  });
+  it("the solved price still returns the target IRR", () => {
+    const at = runUnderwriting(engineInputs({ ...b.inputs, PurchPrice: stab.returns.solvedPrice, LevOn: 0 }));
+    // Price feeds only debt sizing and the (recovered) reassessed tax, so the solve is exact.
+    expect(at.returns.unleveredIrr!).toBeCloseTo(b.inputs.TgtUnlev, 6);
   });
 });
 

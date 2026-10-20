@@ -305,6 +305,13 @@ export default function UwScreen(props: {
           </table>
         </div>
         <p className="hint">Exit cap stays a manual input until the market has at least 5 sale comps with a cap rate.</p>
+        <label className="stack" style={{ gap: 2, maxWidth: 420 }}>
+          <span className="label" style={{ display: "flex", gap: 6 }}>Exit capped on <Chip s={sources.ExitNoi} /></span>
+          <select value={inputs.ExitNoi ?? "forward"} onChange={(e) => edit("ExitNoi", { ExitNoi: e.target.value as "forward" | "stabilized" })}>
+            <option value="stabilized">Stabilized NOI (full year at in-lease or market rent)</option>
+            <option value="forward">Next year&apos;s NOI as modelled (rollover downtime included)</option>
+          </select>
+        </label>
 
         <h3 style={{ marginTop: 18 }}>Operating expenses & debt</h3>
         <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -517,7 +524,11 @@ export default function UwScreen(props: {
         <section className="panel">
           <h2>Model notes</h2>
           <ul className="hint" style={{ paddingLeft: 18 }}>
-            <li>The exit is priced on the NOI of the year after the sale, as the source workbook does; a lease rolling near the sale lowers it.</li>
+            <li>
+              {(inputs.ExitNoi ?? "forward") === "stabilized"
+                ? "The exit is capped on stabilized NOI for the year after the sale: every tenant pays a full year at its in-lease rent, or market rent once its lease has ended -- a rollover with no cash flow is never capitalised."
+                : "The exit is capped on the year after the sale as modelled, so a lease rolling near the sale lowers it."}
+            </li>
             <li>Renewal and new-deal rents grow from Year 1 at the tenant&apos;s bump (or market growth), like current rent.</li>
             {computed.view.modelNotes.map((n) => <li key={n}>{n}</li>)}
           </ul>

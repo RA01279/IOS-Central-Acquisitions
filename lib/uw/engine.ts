@@ -381,7 +381,26 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
   // Capex, reserves and leasing costs, in hold. Feeds unlevered and levered
   // cash flow, the price solve and the sensitivities.
   const capexInHold = YEARS.map((t) => (capex[t] + reserves[t] + leasingCosts[t]) * inHold[t]);
-  const forwardNoi = ops((t) => noiAt(t + 1));
+  // Exit NOI. "forward" (the workbook): next year's NOI as modelled, so a
+  // lease rolling around the sale caps its downtime into the price.
+  // "stabilized": next year with every tenant paying a full year -- current
+  // rent if still in lease, else market (new-deal, else renewal, else current)
+  // rent -- no downtime or free rent; vacancy and opex as usual.
+  const stabilized = (y: number) => {
+    const rev = sum(
+      inputs.rentRoll.map((tn) => {
+        const end = tn.leaseEndMonth ?? NO_EXPIRY;
+        const rent = end < 12 * y ? annualized(tn, tn.newDealRent ?? tn.renewalRent) : annualRent(tn);
+        const Q = effectiveBump(tn, lv.RentGrowth, overrides.growthShift ?? 0);
+        return activeIncl(tn, inputs.scenario) * rent * (1 + Q) ** (y - 1);
+      })
+    );
+    const egrY = rev * (1 - lv.Vacancy);
+    const noiY = egrY - (taxBase + Insurance + OtherOpex) * grow(y) - MgmtPct * egrY;
+    return { noi: noiY, ex: noiY + (TaxSwitch === 1 ? PurchPrice * TaxRate * grow(y) : 0) };
+  };
+  const stab = (inputs.ExitNoi ?? "forward") === "stabilized";
+  const forwardNoi = ops((t) => (stab ? stabilized(t + 1).noi : noiAt(t + 1)));
   const grossExit = ops((t) => (exitFlag[t] * forwardNoi[t]) / ExitCap);
   const saleCosts = grossExit.map((g) => -g * SaleCost);
   const netSale = grossExit.map((g, t) => g + saleCosts[t]);
@@ -411,7 +430,7 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
 
   // Rows 61-63 (price-solve helpers). Row 62/63 forward terms read year t+1.
   const discountFactor = ops((t) => 1 / (1 + TgtUnlev) ** t);
-  const exAt = (t: number) => (t <= LAST_YEAR ? noiExReassessedTax[t] : 0);
+  const exAt = (t: number) => (stab ? stabilized(t).ex : t <= LAST_YEAR ? noiExReassessedTax[t] : 0);
   const taxAt = (t: number) => (t <= LAST_YEAR ? reassessedTaxPerDollar[t] : 0);
   const priceSolveCF = ops((t) => noiExReassessedTax[t] * inHold[t] + capexInHold[t] + (exitFlag[t] * (1 - SaleCost) * exAt(t + 1)) / ExitCap);
   const priceSolveTaxCost = ops((t) => reassessedTaxPerDollar[t] * inHold[t] + (exitFlag[t] * (1 - SaleCost) * taxAt(t + 1)) / ExitCap);

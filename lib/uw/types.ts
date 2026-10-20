@@ -145,6 +145,13 @@ export interface UwInputs {
    */
   RollMethod?: 1 | 2;
 
+  /**
+   * NOI the exit is capped on. "forward" (default, the workbook): year Hold+1
+   * as modelled, downtime and all. "stabilized": year Hold+1 with every tenant
+   * paying a full year at its in-lease or market rent -- no rollover gap.
+   */
+  ExitNoi?: "forward" | "stabilized";
+
   rentRoll: Tenant[];
   capex: CapexItem[];
 }
