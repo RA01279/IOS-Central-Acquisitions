@@ -18,6 +18,8 @@ export interface GeocodeResult {
   lng: number;
   precision: GeocodePrecision;
   formatted: string;
+  /** Google's result types (route, street_address, premise, locality...). */
+  types?: string[];
 }
 
 const PRECISION: Record<string, GeocodePrecision> = {
@@ -126,6 +128,29 @@ export function isUsableForDistance(precision: string | null | undefined): boole
 }
 
 /**
+ * A street name in one spelling, for comparing what was asked with what
+ * Google matched: "Highway 114" = "TX-114" = "SH 114", "FM 3083" = "Farm to
+ * Market Road 3083", directions as one letter, and street types dropped
+ * wherever they sit -- "N FM 3083 Rd E" is Google's "North Farm to Market 3083
+ * Road East", and a type left in the middle ("rd" vs "road") rejected that
+ * exact building-level match. The house number and the city already pin the
+ * place, so "Bonnie View Dr" = "Bonnie View Rd" is acceptable.
+ */
+export function streetKey(value: string): string {
+  return value.toLowerCase().replace(/[.,]/g, " ")
+    .replace(/\b(?:state highway|state hwy|texas|tx|sh|highway|hwy)\s*-?\s*(\d+)/g, "hwy $1")
+    .replace(/\b(?:us highway|us hwy|us)\s*-?\s*(\d+)/g, "us $1")
+    .replace(/\b(?:farm to market(?: road)?|fm road|fm)\s*-?\s*(\d+)/g, "fm $1")
+    .replace(/\b(?:interstate|ih|i)\s*-?\s*(\d+)/g, "i $1")
+    .replace(/\b(north|south|east|west)\b/g, (w) => w[0])
+    .replace(/\b(lane|ln|road|rd|street|st|drive|dr|boulevard|blvd|avenue|ave|court|ct|parkway|pkwy|circle|cir|way|place|pl|trail|trl|freeway|fwy|expressway|expy)\b/g, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+/** A geocode, or why there isn't one -- in words a person can act on. */
+export type GeocodeOutcome = { result: GeocodeResult; reason: null } | { result: null; reason: string };
+
+/**
  * Geocode an address from its parts. Blank parts are dropped, so callers can
  * pass address/city/market without checking which they have -- broker comp
  * tables carry a bare street address and the city comes from context.
@@ -134,8 +159,16 @@ export async function geocodeAddress(
   parts: (string | null | undefined)[],
   opts: { state?: string | null; requirePrecise?: boolean } = {}
 ): Promise<GeocodeResult | null> {
+  return (await geocodeDetailed(parts, opts)).result;
+}
+
+/** geocodeAddress, with the reason when it finds nothing usable. */
+export async function geocodeDetailed(
+  parts: (string | null | undefined)[],
+  opts: { state?: string | null; requirePrecise?: boolean } = {}
+): Promise<GeocodeOutcome> {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY;
-  if (!key) return null;
+  if (!key) return { result: null, reason: "Location lookup isn't configured (no Google key)." };
 
   // The state is DERIVED, never assumed.
   //
@@ -165,46 +198,59 @@ export async function geocodeAddress(
   try {
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
     const data = await res.json();
-    if (data.status !== "OK" || !data.results?.length) return null;
+    if (data.status !== "OK" || !data.results?.length) {
+      return { result: null, reason: data.status === "ZERO_RESULTS" ? "Google found no place at that address." : `Google lookup failed (${data.status ?? "no answer"}).` };
+    }
     const best = data.results[0];
     if (opts.requirePrecise) {
-      const component = (type: string) => best.address_components?.find((c: any) => c.types?.includes(type))?.long_name;
-      const number = String(parts[0] ?? "").match(/^\s*(\d+[A-Za-z]?)\b/)?.[1];
-      // "Schertz/Selma" or "Schertz-Selma": either city is a match.
-      const cities = String(parts[1] ?? "").toLowerCase().split(/\s*[\/]\s*|\s+-\s+/).map((c) => c.trim()).filter(Boolean);
-      const city = cities[0] ?? "";
-      const locality = String(component("locality") ?? component("postal_town") ?? "").toLowerCase();
-      // The street's NAME, compared without its type and in one spelling of
-      // highways: "Highway 114" = "TX-114" = "SH 114", "FM 3083" = "Farm to
-      // Market Road 3083", and "Bonnie View Dr" = "Bonnie View Rd" (the house
-      // number and a building-level match already pin the place).
-      const street = (value: string) => value.toLowerCase().replace(/[.,]/g, " ")
-        .replace(/\b(?:state highway|state hwy|texas|tx|sh|highway|hwy)\s*-?\s*(\d+)/g, "hwy $1")
-        .replace(/\b(?:us highway|us hwy|us)\s*-?\s*(\d+)/g, "us $1")
-        .replace(/\b(?:farm to market(?: road)?|fm road|fm)\s*-?\s*(\d+)/g, "fm $1")
-        .replace(/\b(?:interstate|ih|i)\s*-?\s*(\d+)/g, "i $1")
-        .replace(/\b(north|south|east|west)\b/g, (w) => w[0])
-        .replace(/\b(lane|ln|road|rd|street|st|drive|dr|boulevard|blvd|avenue|ave|court|ct|parkway|pkwy|circle|cir|way|place|pl|trail|trl|freeway|fwy|expressway|expy)\b\s*$/g, "")
-        .replace(/\s+/g, " ").trim();
-      const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?(?:\s*[-–&]\s*\d+[A-Za-z]?)?\s+/, "");
-      const exactPremise = best.geometry.location_type === "GEOMETRIC_CENTER" &&
-        best.types?.includes("premise") && best.types?.includes("street_address");
-      if (data.results.length !== 1 || best.partial_match || (!exactPremise && best.geometry.location_type !== "ROOFTOP") ||
-          !number || String(component("street_number")).toLowerCase() !== number.toLowerCase() ||
-          street(requestedStreet) !== street(String(component("route") ?? "")) ||
-          (city && !cities.includes(locality))) return null;
+      const reason = preciseMismatch(best, data.results.length, parts);
+      if (reason) return { result: null, reason };
     }
     return {
-      lat: best.geometry.location.lat,
-      lng: best.geometry.location.lng,
-      precision: PRECISION[best.geometry.location_type] ?? "approximate",
-      formatted: best.formatted_address,
+      result: {
+        lat: best.geometry.location.lat,
+        lng: best.geometry.location.lng,
+        precision: PRECISION[best.geometry.location_type] ?? "approximate",
+        formatted: best.formatted_address,
+        types: Array.isArray(best.types) ? best.types : [],
+      },
+      reason: null,
     };
   } catch {
     // A comp that can't be geocoded is still a comp worth keeping -- it just
     // can't take part in distance scoring.
-    return null;
+    return { result: null, reason: "Google didn't answer (timeout or network error)." };
   }
+}
+
+/**
+ * Why Google's best match is not THE property, or null when it is: one
+ * result, not partial, building-level, same street number, same street (by
+ * long or short name), same city.
+ */
+function preciseMismatch(best: any, count: number, parts: (string | null | undefined)[]): string | null {
+  const component = (type: string, form: "long_name" | "short_name" = "long_name") =>
+    best.address_components?.find((c: any) => c.types?.includes(type))?.[form];
+  const number = String(parts[0] ?? "").match(/^\s*(\d+[A-Za-z]?)\b/)?.[1];
+  // "Schertz/Selma" or "Schertz-Selma": either city is a match.
+  const cities = String(parts[1] ?? "").toLowerCase().split(/\s*[\/]\s*|\s+-\s+/).map((c) => c.trim()).filter(Boolean);
+  const locality = String(component("locality") ?? component("postal_town") ?? "").toLowerCase();
+  const requestedStreet = String(parts[0] ?? "").split(",")[0].replace(/^\s*\d+[A-Za-z]?(?:\s*[-–&]\s*\d+[A-Za-z]?)?\s+/, "");
+  const exactPremise = best.geometry.location_type === "GEOMETRIC_CENTER" &&
+    best.types?.includes("premise") && best.types?.includes("street_address");
+  const where = best.formatted_address;
+  if (count !== 1) return `Google returned ${count} possible places (first: ${where}).`;
+  if (best.partial_match) return `Only a partial match: ${where}.`;
+  if (!exactPremise && best.geometry.location_type !== "ROOFTOP") return `Only an approximate location (${String(best.geometry.location_type).toLowerCase().replace(/_/g, " ")}): ${where}.`;
+  if (!number) return "The address has no street number.";
+  const gotNumber = String(component("street_number") ?? "");
+  if (gotNumber.toLowerCase() !== number.toLowerCase()) return `Google's match has ${gotNumber ? `street number ${gotNumber}` : "no street number"}: ${where}.`;
+  const key = streetKey(requestedStreet);
+  if (key !== streetKey(String(component("route") ?? "")) && key !== streetKey(String(component("route", "short_name") ?? ""))) {
+    return `Google matched a different street (${component("route") ?? "none"}): ${where}.`;
+  }
+  if (cities.length && !cities.includes(locality)) return `Google placed it in ${component("locality") ?? "another city"}, not ${parts[1]}.`;
+  return null;
 }
 
 /**

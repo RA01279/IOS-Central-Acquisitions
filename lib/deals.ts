@@ -167,7 +167,7 @@ export async function createDeal(input: NewDealInput) {
   }
   const supabase = getServiceClient();
   const location = validCoordinates(input)
-    ? { lat: Number(input.latitude), lng: Number(input.longitude), precision: ["rooftop","geometric_center"].includes(input.geocodePrecision ?? "") ? input.geocodePrecision! : "manual" }
+    ? { lat: Number(input.latitude), lng: Number(input.longitude), precision: ["rooftop","geometric_center","range_interpolated","approximate"].includes(input.geocodePrecision ?? "") ? input.geocodePrecision! : "manual" }
     : await geocodeAddress([input.address, input.city, input.market], { state: input.state, requirePrecise: true });
   if (!location) throw new Error("Verify the property location with Google or place a manual pin before creating the deal.");
   const property = {

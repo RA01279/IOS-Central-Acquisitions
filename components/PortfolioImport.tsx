@@ -19,6 +19,8 @@ type Row = PortfolioSite & {
   include: boolean;
   location: { latitude: number; longitude: number; precision: string } | null;
   locationNote: string | null;
+  /** Checked, every retry failed: shown as "Needs manual fix" with Google's reason. */
+  needsFix: boolean;
   result: { dealId?: string; error?: string; duplicate?: { id: string; address: string } } | null;
 };
 
@@ -134,28 +136,41 @@ export default function PortfolioImport() {
     const list: { id: string; name: string; sites: number }[] = await json("/api/deal-portfolios").then((r) => r.portfolios ?? []).catch(() => []);
     setExisting(list);
     setTarget(list.find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? "");
-    setRows(merged.sites.map((s, i) => ({ ...s, key: `${i}`, include: true, location: null, locationNote: null, result: null })));
+    setRows(merged.sites.map((s, i) => ({ ...s, key: `${i}`, include: true, location: null, locationNote: null, needsFix: false, result: null })));
   }
 
   const update = (key: string, patch: Partial<Row>) => setRows((prev) => prev?.map((r) => (r.key === key ? { ...r, ...patch } : r)) ?? null);
 
-  async function checkLocations() {
-    const todo = (rows ?? []).filter((r) => r.include && !r.location && !r.result?.dealId);
+  /**
+   * Locate ticked sites with Google, retrying before giving up (directions
+   * abbreviated, the road alone, a Places search -- lib/locate-site). Returns
+   * the rows as updated, since create() needs them before React re-renders.
+   */
+  async function checkLocations(source: Row[] = rows ?? []): Promise<Row[]> {
+    let out = source;
+    const todo = source.filter((r) => r.include && !r.location && !r.result?.dealId);
     for (let i = 0; i < todo.length; i++) {
       const r = todo[i];
-      setStep(`Checking locations with Google, ${i + 1} of ${todo.length}…`);
-      const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: r.address, city: r.city, state: r.state, market: r.market }) });
+      setStep(`Checking locations with Google, ${i + 1} of ${todo.length}: ${r.address}…`);
+      const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: r.address, city: r.city, state: r.state, market: r.market, retries: true }) });
       const body = await res.json().catch(() => ({}));
       const l = body.location;
-      update(r.key, l
-        ? { location: { latitude: l.latitude, longitude: l.longitude, precision: l.geocode_precision }, locationNote: body.matchedAddress ?? null }
-        : { location: null, locationNote: body.message ?? body.error ?? "Couldn't verify" });
+      const patch: Partial<Row> = l
+        ? { location: { latitude: l.latitude, longitude: l.longitude, precision: l.geocode_precision }, locationNote: body.note ?? body.matchedAddress ?? null, needsFix: false }
+        : { location: null, locationNote: body.reason ?? body.error ?? "Google gave no reason", needsFix: true };
+      out = out.map((x) => (x.key === r.key ? { ...x, ...patch } : x));
+      update(r.key, patch);
     }
+    return out;
   }
 
   async function create() {
-    const ready = (rows ?? []).filter((r) => r.include && r.location && !r.result?.dealId);
-    if (!ready.length) throw new Error("No ticked sites with a verified location. Check locations first.");
+    // Every ticked site is checked first -- including any nobody clicked
+    // "Check locations" for -- so none is silently left out.
+    const checked = await checkLocations();
+    const ready = checked.filter((r) => r.include && r.location && !r.result?.dealId);
+    const unfixed = checked.filter((r) => r.include && !r.location && !r.result?.dealId).length;
+    if (!ready.length) throw new Error(unfixed ? `${unfixed} ticked site${unfixed === 1 ? "" : "s"} still need${unfixed === 1 ? "s" : ""} a manual fix: correct the address and try again.` : "No ticked sites to create.");
     let pid = portfolioId ?? (target || null);
     if (!pid && !meta.name?.trim()) throw new Error("Name the portfolio.");
     if (!pid) {
@@ -192,11 +207,20 @@ export default function PortfolioImport() {
         update(r.key, { result: dup ? { duplicate: { id: dup.id, address: dup.address } } : { error: e.message } });
       }
     }
+    if (unfixed) {
+      setError(`${unfixed} ticked site${unfixed === 1 ? " needs" : "s need"} a manual fix and ${unfixed === 1 ? "wasn't" : "weren't"} created. Correct the address and click Create again -- ${unfixed === 1 ? "it joins" : "they join"} the same portfolio.`);
+    }
   }
 
   const included = rows?.filter((r) => r.include) ?? [];
   const located = included.filter((r) => r.location);
   const created = rows?.filter((r) => r.result?.dealId).length ?? 0;
+  // The Create button counts every ticked site still to create -- located, or
+  // not yet checked (Create checks it) -- and says how many need a fix.
+  const pending = included.filter((r) => !r.result?.dealId && !r.result?.duplicate);
+  const toCreate = pending.filter((r) => r.location || !r.needsFix).length;
+  const needFix = pending.filter((r) => !r.location && r.needsFix).length;
+  const createLabel = `Create ${toCreate} deal${toCreate === 1 ? "" : "s"}${needFix ? ` (${needFix} need${needFix === 1 ? "s" : ""} a fix)` : ""}`;
   const priced = included.reduce((s, r) => s + (r.askingPrice ?? 0), 0);
 
   return (
@@ -262,7 +286,7 @@ export default function PortfolioImport() {
                   const done = !!r.result?.dealId;
                   const cell = (k: "address" | "city" | "state" | "market", w: number) => (
                     <input value={r[k] ?? ""} disabled={done || busy} style={{ width: w }}
-                      onChange={(e) => update(r.key, { [k]: e.target.value || (k === "address" ? "" : null), location: null, locationNote: null } as Partial<Row>)} />
+                      onChange={(e) => update(r.key, { [k]: e.target.value || (k === "address" ? "" : null), location: null, locationNote: null, needsFix: false } as Partial<Row>)} />
                   );
                   const numCell = (k: "acres" | "buildingSf" | "askingPrice", w: number) => (
                     <input value={r[k] ?? ""} inputMode="decimal" disabled={done || busy} style={{ width: w }}
@@ -289,8 +313,12 @@ export default function PortfolioImport() {
                         {r.result?.dealId ? <a href={`/deals/${r.result.dealId}`}>Created ✓</a>
                           : r.result?.duplicate ? <a href={`/deals/${r.result.duplicate.id}`}>Already a deal — open it</a>
                           : r.result?.error ? <span className="error">{r.result.error}</span>
-                          : r.location ? <span className="hint" style={{ margin: 0 }}>✓ {r.locationNote}</span>
-                          : r.locationNote ? <span className="error">{r.locationNote}</span>
+                          : r.location ? (
+                              <span className="hint" style={{ margin: 0, ...(r.location.precision === "approximate" ? { color: "var(--warn-text)" } : {}) }}>
+                                {r.location.precision === "approximate" ? "⚠" : "✓"} {r.locationNote}
+                              </span>
+                            )
+                          : r.needsFix ? <span className="error"><strong>Needs manual fix.</strong> {r.locationNote}</span>
                           : <span className="muted">Not checked</span>}
                       </td>
                     </tr>
@@ -300,16 +328,18 @@ export default function PortfolioImport() {
             </table>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void run(checkLocations)}>Check locations with Google</button>
-            <button type="button" disabled={busy || !located.filter((r) => !r.result?.dealId).length} onClick={() => void run(create)}>
-              Create {located.filter((r) => !r.result?.dealId).length} deals
+            <button type="button" className="secondary" disabled={busy} onClick={() => void run(async () => { await checkLocations(); })}>Check locations with Google</button>
+            <button type="button" disabled={busy || !toCreate} onClick={() => void run(create)}>
+              {createLabel}
             </button>
             {(portfolioId || (target && created > 0)) && <a href={`/deals/portfolios/${portfolioId ?? target}`}>Open the portfolio →</a>}
             {!portfolioId && !created &&<button type="button" className="secondary" disabled={busy} onClick={() => { setRows(null); setFile(null); }}>Start over</button>}
           </div>
           <p className="hint" style={{ margin: 0 }}>
-            Sites Google can&apos;t verify aren&apos;t created; fix the address and check again, or create that one from the
-            single-property form later. Untick anything that isn&apos;t part of the offering.
+            Create checks any site not yet checked, retrying with the directions abbreviated, the road alone and a Places
+            search. Every ticked site it locates joins one portfolio; a road-level match (⚠) is placed on the road, not the
+            building, so check its pin. A site marked &quot;Needs manual fix&quot; isn&apos;t created: correct its address and click
+            Create again, and it joins the same portfolio. Untick anything that isn&apos;t part of the offering.
           </p>
         </>
       )}
