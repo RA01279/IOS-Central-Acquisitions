@@ -76,6 +76,48 @@ export const COUNTY_SOURCES: CountySource[] = [
     layer: "https://gismaps.fultoncountyga.gov/arcgispub/rest/services/OpenData/Tax_Parcels/MapServer/0",
     owner: "Owner", mailing: ["OwnerAddr1", "OwnerAddr2"], situs: "Address", acres: "LandAcres", id: "ParcelID", year: "TaxYear",
   },
+  {
+    // The county's own server is unreliable; this is its hosted ArcGIS Online copy.
+    county: "Clayton", state: "GA", name: "Clayton County Tax Parcels (Tax Assessor, ArcGIS Online)", bounds: [33.35, 33.65, -84.46, -84.24],
+    layer: "https://services5.arcgis.com/m528W8U8YDYeMPrQ/arcgis/rest/services/Clayton_GIS_SD_TAXPARCELS/FeatureServer/0",
+    owner: "OWNERNME", mailing: ["PSTLADDRES", "PSTLCITY", "PSTLSTATE", "PSTLZIP5"], situs: "SITEADDRES", acres: "Approx_Arce", id: "PARCELID",
+  },
+  {
+    county: "Cobb", state: "GA", name: "Cobb County Parcels (Tax Assessor)", bounds: [33.74, 34.08, -84.74, -84.37],
+    layer: "https://gis.cobbcounty.org/gisserver/rest/services/cobbpublic/Parcels/MapServer/3",
+    owner: "OWNER_NAM1", mailing: ["OWNER_ADDR", "OWNER_CITY", "OWNER_STAT", "OWNER_ZIP"], situs: "SITUS_ADDR", acres: "ACRES", id: "PIN",
+  },
+  {
+    county: "DeKalb", state: "GA", name: "DeKalb County Parcels (Property Appraisal)", bounds: [33.61, 33.97, -84.35, -84.02],
+    layer: "https://dcgis.dekalbcountyga.gov/hosted/rest/services/PropertyAppraisal/Parcels_IASWorld/FeatureServer/0",
+    owner: "OWNERNME1", mailing: ["PSTLADDRESS", "PSTLCITY", "PSTLSTATE", "PSTLZIP5"], situs: "SITEADDRESS", acres: "ACREAGE", id: "PARCELID",
+  },
+  {
+    county: "Gwinnett", state: "GA", name: "Gwinnett County Parcels (Tax Assessor)", bounds: [33.76, 34.25, -84.28, -83.8],
+    layer: "https://dwrarcgis.gwinnettcounty.com/server/rest/services/Gwinnett_Services/BackgroundData/MapServer/2",
+    owner: "OWNER1", mailing: ["MAILADDR", "MAILCITY", "MAILSTAT", "MAILZIP"], situs: "LOCADDR", acres: "CALCULATED", id: "PIN",
+  },
+  {
+    // Henry County Water Authority's copy: owner names, no mailing addresses.
+    county: "Henry", state: "GA", name: "Henry County Parcels (Henry County Water Authority)", bounds: [33.31, 33.62, -84.36, -83.97],
+    layer: "https://services1.arcgis.com/W8nsWsU3ZKxVPuk7/arcgis/rest/services/HenryCountyParcels/FeatureServer/0",
+    owner: "OWNER_NAME", mailing: [], situs: "STREET_ADDRESS", acres: "ACRES", id: "PARCEL_ID",
+  },
+  {
+    county: "Douglas", state: "GA", name: "Douglas County Land Records", bounds: [33.58, 33.85, -84.92, -84.58],
+    layer: "https://maps.douglascountyga.gov/arcgis/rest/services/LandRecords/LandRecords/MapServer/0",
+    owner: "OWNER", mailing: ["MAILADD1", "MAILADD2", "MAILADD3", "MCITY", "MSTATE", "MZIP"], situs: "ADDRESS", acres: "ACREAGE_GIS", id: "PIN",
+  },
+  {
+    county: "Chatham", state: "GA", name: "Chatham County Parcel Digest 2025 (SAGIS)", bounds: [31.71, 32.24, -81.4, -80.83],
+    layer: "https://pub.sagis.org/arcgis/rest/services/OpenData/Parcels/MapServer/27",
+    owner: "Owner", mailing: ["Mailing_Address", "Mailing_City", "Mailing_State", "Mailing_Zip"], situs: "PropAddress_Full", acres: "Acres", id: "PIN",
+  },
+  {
+    county: "Effingham", state: "GA", name: "Effingham County Parcels 2024", bounds: [32.11, 32.7, -81.55, -81.1],
+    layer: "https://services.arcgis.com/9scQWTgPOi3GxJRr/arcgis/rest/services/Parcels2024/FeatureServer/0",
+    owner: "LASTNAME", mailing: ["address1", "address2", "address3", "city", "state", "zip"], situs: "StreetAdd", acres: "TOTALACRES", id: "PARCEL_NO",
+  },
 ];
 
 const inBox = (lat: number, lng: number, [s, n, w, e]: number[]) => lat >= s && lat <= n && lng >= w && lng <= e;
@@ -93,7 +135,8 @@ async function lookupCountyParcel(src: CountySource, lat: number, lng: number, f
     const a = (await r.json())?.features?.[0]?.attributes;
     if (!a) return null;
     const owner = clean(a[src.owner]);
-    const acres = src.acres ? num(a[src.acres]) : src.areaSqft && num(a[src.areaSqft]) ? Math.round((num(a[src.areaSqft])! / 43560) * 100) / 100 : null;
+    const rawAcres = src.acres ? num(a[src.acres]) : src.areaSqft && num(a[src.areaSqft]) ? Math.round((num(a[src.areaSqft])! / 43560) * 100) / 100 : null;
+    const acres = rawAcres != null ? Math.round(rawAcres * 100) / 100 : null;
     return {
       owner,
       ownerCareOf: null,
