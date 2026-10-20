@@ -18,19 +18,24 @@ export default function LocationPreview({ address, city, market, state, value, o
   async function lookup() {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address, city, market, state }) });
+      // retries: directions abbreviated, the road alone, a Places search (lib/locate-site).
+      const response = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address, city, market, state, retries: true }) });
       const result = await response.json();
       if (!active.current) return;
       if (!response.ok) throw new Error(result.error ?? "Location lookup failed");
       onChange(result.location);
-      setMessage(result.matchedAddress ?? result.message);
+      setMessage(result.location
+        ? result.location.geocode_precision === "approximate"
+          ? `⚠ ${result.note ?? `Approximate location only: ${result.matchedAddress}`}`
+          : `✓ ${result.matchedAddress}${result.note ? ` (${result.note})` : ""}`
+        : `Needs manual fix: ${result.reason ?? result.message ?? "Google couldn't locate it."} Correct the address or place a pin.`);
       setShowMap(true);
     } catch (error: any) { setMessage(error.message); }
     finally { setBusy(false); }
   }
   return <div style={{ minWidth: 230 }}>
     <fieldset disabled={busy} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-    <p className="hint" role="status">{value && validCoordinates(value) ? `Map ready (${["rooftop","geometric_center"].includes(value.geocode_precision) ? "Google address match" : value.geocode_precision}) · ${value.latitude.toFixed(6)}, ${value.longitude.toFixed(6)}` : "Needs a verified location before saving"}</p>
+    <p className="hint" role="status">{value && validCoordinates(value) ? `Map ready (${["rooftop","geometric_center"].includes(value.geocode_precision) ? "Google address match" : value.geocode_precision === "range_interpolated" ? "Google street-number match" : value.geocode_precision === "approximate" ? "approximate, road-level: check the pin" : value.geocode_precision}) · ${value.latitude.toFixed(6)}, ${value.longitude.toFixed(6)}` : "Needs a verified location before saving"}</p>
     <button type="button" disabled={busy || !address.trim()} onClick={lookup}>{busy ? "Checking Google…" : "Check Google location"}</button>{" "}
     <button type="button" className="secondary" onClick={() => setShowMap(!showMap)}>{showMap ? "Hide map" : "Review / place pin"}</button>
     {message && <p className="hint" role="status">{message}</p>}

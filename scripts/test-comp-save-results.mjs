@@ -13,7 +13,7 @@ const match = load("../lib/comps/match.ts");
 const dependencies = {
   "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
   "@/lib/auth": { getCurrentUser: async () => ({ email: "test@example.com" }) },
-  "@/lib/geocode": { geocodeMany: async (rows) => rows.map(() => null) },
+  "@/lib/locate-site": { locateMany: async (rows) => rows.map(() => ({ found: false, reason: "Only a partial match: East Dr, Texas 77302, USA." })) },
   "@/lib/location": load("../lib/location.ts"),
   "@/lib/money": load("../lib/money.ts"),
   "@/lib/markets": load("../lib/markets.ts"),
@@ -52,6 +52,7 @@ assert.equal(response.body.savedComps[0].id, "Austin yard");
 assert.equal(response.body.geocoding.failed, 0, "Unlocated records must not save");
 assert.equal(response.body.geocoding.fromFile, 2);
 assert.equal(response.body.rejected.length, 2);
+assert.match(response.body.rejected.find((r) => r.address === "Unknown yard").reason, /^Needs manual fix: Only a partial match: East Dr, Texas 77302, USA\. Correct the address/, "an unlocated comp says why");
 assert.equal(response.body.savedComps[1].sale_price, 4200000);
 assert.equal(JSON.stringify(response.body.completedKeys), JSON.stringify(["lease","sale","duplicate"]));
 assert.equal(calls, 4);

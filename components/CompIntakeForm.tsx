@@ -25,6 +25,16 @@ import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
 import { aiReadComps, readableText } from "@/lib/comps/ai-read";
 import { helperOnline } from "@/lib/agent-client";
 
+/** One line for a row's location check: where it landed, or why it needs a fix. */
+function locationMessage(r: any): string {
+  if (r?.location) {
+    return r.location.geocode_precision === "approximate"
+      ? `⚠ ${r.note ?? `Approximate location only: ${r.matchedAddress}`}`
+      : `✓ Google match: ${r.matchedAddress}${r.note ? ` (${r.note})` : ""}`;
+  }
+  return `Needs manual fix: ${r?.reason ?? r?.error ?? "Google couldn't locate it."} Correct the address or place a pin.`;
+}
+
 type CompType = "lease" | "sale";
 
 interface DraftComp {
@@ -379,12 +389,13 @@ export default function CompIntakeForm({
         const addressKey = JSON.stringify([d.address, d.city, d.state, d.market]);
         let result = cache.get(addressKey);
         if (!result) {
-          const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
+          // retries: directions abbreviated, the road alone, a Places search (lib/locate-site).
+          const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: d.address, city: d.city, state: d.state, market: d.market, retries: true }) });
           result = await res.json();
           if (!res.ok && res.status !== 400) throw new Error(result.error ?? "Location lookup failed");
           cache.set(addressKey, result);
         }
-        setDrafts(prev => prev?.map(row => row._key === d._key ? { ...row, latitude: result.location?.latitude ?? null, longitude: result.location?.longitude ?? null, geocodePrecision: result.location?.geocode_precision ?? null, _locationMessage: result.matchedAddress ?? result.message ?? result.error } : row) ?? null);
+        setDrafts(prev => prev?.map(row => row._key === d._key ? { ...row, latitude: result.location?.latitude ?? null, longitude: result.location?.longitude ?? null, geocodePrecision: result.location?.geocode_precision ?? null, _locationMessage: locationMessage(result) } : row) ?? null);
       }
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
@@ -779,7 +790,7 @@ export default function CompIntakeForm({
             {result.held ? ` · ${result.held} held for review (possible duplicate or unusual rate) — see Needs review above` : ""}
             {result.rejected?.length ? ` · ${result.rejected.length} rejected` : ""}
             {result.geocoding?.centroidOnly
-              ? ` · ${result.geocoding.centroidOnly} only resolved to a centroid (won't distance-match)`
+              ? ` · ${result.geocoding.centroidOnly} placed road-level only (approximate; won't distance-match until the pin is corrected)`
               : ""}
             {/* Worth saying: it means the file's own coordinates were kept
                 rather than re-resolved, which is both cheaper and better. */}

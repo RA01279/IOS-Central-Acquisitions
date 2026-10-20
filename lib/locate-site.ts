@@ -1,13 +1,18 @@
 // lib/locate-site.ts
 //
-// Locate one site for New deal > Portfolio OM, retrying before giving up. OM
-// schedules spell addresses however the broker likes ("80 N FM 3083 Rd East"),
-// so after the exact lookup this tries, in order, stopping at the first match:
+// Locate one site -- New deal > Portfolio OM, comp intake, the location
+// check on any form -- retrying before giving up. Brokers spell addresses
+// however they like ("80 N FM 3083 Rd East"), so after the exact lookup this
+// tries, in order, stopping at the first match:
 //   1. the address with direction words abbreviated (East -> E, North -> N)
-//   2. the road alone, direction / street type / house number dropped
+//   2. a Google Places Text Search for "address, city, state" (same number,
+//      street and city)
+//   3. the road alone, direction / street type / house number dropped
 //      ("FM 3083, Conroe, TX") -- a ROAD-LEVEL pin, stored as "approximate"
 //      and labelled so, never passed off as the building
-//   3. a Google Places Text Search for "address, city, state"
+// Places runs before the road on purpose: on comp addresses it finds the
+// street number (1420 Rankin Rd, 8811 W Little York Rd) where the road-only
+// try would drop the pin anywhere along a road miles long.
 // When nothing matches, the reason Google gave for each try comes back.
 
 import { geocodeDetailed, normaliseState, resolveState, streetKey } from "./geocode";
@@ -65,11 +70,14 @@ async function placesTextSearch(q: SiteQuery, state: string | null): Promise<Sit
       return { found: false, reason: `best match was on another street: ${formatted}` };
     }
     if (!sameCity(q.city, city)) return { found: false, reason: `best match was in ${city}` };
-    const building = (best.types ?? []).some((t: string) => t === "premise" || t === "street_address" || t === "establishment");
+    // A premise or business is the building itself; a bare street address is
+    // Google's position for that number along the street (interpolated).
+    const types: string[] = best.types ?? [];
+    const precision = types.some((t) => t === "premise" || t === "establishment") ? "geometric_center" : types.includes("street_address") ? "range_interpolated" : "approximate";
     return {
       found: true, latitude: best.geometry.location.lat, longitude: best.geometry.location.lng,
-      precision: building ? "geometric_center" : "approximate", matchedAddress: formatted, via: "places",
-      note: "Found with Google Places search",
+      precision, matchedAddress: formatted, via: "places",
+      note: precision === "range_interpolated" ? "Found with Google Places search, at the street number" : "Found with Google Places search",
     };
   } catch {
     return { found: false, reason: "no answer (timeout or network error)" };
@@ -95,6 +103,10 @@ export async function locateSite(q: SiteQuery): Promise<SiteLocation> {
     if (hit) return hit;
   }
 
+  const places = await placesTextSearch(q, state);
+  if (places.found) return places;
+  tries.push(`Places search: ${places.reason}`);
+
   const road = roadOnly(q.address);
   if (road && q.city && road.toLowerCase() !== q.address.trim().toLowerCase()) {
     const out = await geocodeDetailed([road, q.city], { state });
@@ -104,15 +116,27 @@ export async function locateSite(q: SiteQuery): Promise<SiteLocation> {
     if (r && r.types?.includes("route") && streetKey(r.formatted.split(",")[0]) === streetKey(road) && r.formatted.toLowerCase().includes(String(q.city).toLowerCase())) {
       return {
         found: true, latitude: r.lat, longitude: r.lng, precision: "approximate", matchedAddress: r.formatted, via: "road",
-        note: `Road-level only: placed on ${road} in ${q.city}, not at the building. Check the pin on the deal.`,
+        note: `Road-level only: placed on ${road} in ${q.city}, not at the building. Check the pin.`,
       };
     }
     tries.push(`As "${road}, ${q.city}": ${out.reason ?? (r?.types?.includes("route") ? `matched ${r.formatted}, not ${road} in ${q.city}` : `Google found only ${r?.formatted}, not the road`)}`);
   }
 
-  const places = await placesTextSearch(q, state);
-  if (places.found) return places;
-  tries.push(`Places search: ${places.reason}`);
-
   return { found: false, reason: tries.join(" · ") };
+}
+
+/** locateSite for many sites, a few requests in flight at a time, results in order. */
+export async function locateMany<T>(items: T[], toQuery: (item: T) => SiteQuery, limit = 4): Promise<SiteLocation[]> {
+  const out: SiteLocation[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) return;
+        out[i] = await locateSite(toQuery(items[i]));
+      }
+    })
+  );
+  return out;
 }

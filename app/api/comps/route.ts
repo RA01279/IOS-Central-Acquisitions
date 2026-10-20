@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
-import { geocodeMany } from "@/lib/geocode";
+import { locateMany } from "@/lib/locate-site";
 import { compIssue } from "@/lib/comps/intake-validation";
 import { inferAssetClass } from "@/lib/comps/match";
 import { canonicalName, canonicalSpellings, findDuplicate, isRateOutlier, type ReviewFlag } from "@/lib/comps/review";
@@ -148,19 +148,19 @@ async function handlePOST(req: NextRequest) {
   // state-restricted, so this is the difference between Savannah, Georgia and
   // Savannah, Texas -- and where the comp doesn't know, geocodeAddress infers
   // it from these same parts rather than assuming.
-  const resolved = await geocodeMany(
-    needGeo,
-    (c) => [c.address, c.city, c.market],
-    5,
-    (c) => c.state,
-    true
-  );
+  // Each one is retried before giving up -- directions abbreviated, the road
+  // alone (a road-level pin, stored "approximate"), a Places search -- and a
+  // miss keeps Google's reason for the row (lib/locate-site).
+  const located = await locateMany(needGeo, (c) => ({ address: c.address, city: c.city, state: c.state, market: c.market }));
   let nextResolved = 0;
-  const geo = valid.map((_, i) =>
-    preset[i]
-      ? { lat: preset[i]!.lat, lng: preset[i]!.lng, precision: "supplied" as const }
-      : resolved[nextResolved++]
-  );
+  const geo: ({ lat: number; lng: number; precision: string } | null)[] = [];
+  const geoReason: (string | null)[] = [];
+  for (let i = 0; i < valid.length; i++) {
+    if (preset[i]) { geo.push({ lat: preset[i]!.lat, lng: preset[i]!.lng, precision: "supplied" }); geoReason.push(null); continue; }
+    const l = located[nextResolved++];
+    geo.push(l.found ? { lat: l.latitude, lng: l.longitude, precision: l.precision } : null);
+    geoReason.push(l.found ? null : l.reason);
+  }
 
   const supabase = getServiceClient();
   const completedKeys: string[] = [];
@@ -188,7 +188,7 @@ async function handlePOST(req: NextRequest) {
   for (let i = 0; i < valid.length; i++) {
     const c = valid[i];
     const g = geo[i];
-    if (!g) { rejected.push({ address: c.address, reason: "Verify the address with Google or provide a manual pin before saving." }); continue; }
+    if (!g) { rejected.push({ address: c.address, reason: `Needs manual fix: ${(geoReason[i] ?? "Google couldn't locate it").replace(/\.$/, "")}. Correct the address or place a pin, then save again.` }); continue; }
     const acres = plain(c.acres);
     const lotSf = plain(c.lotSf) ?? (acres !== null ? Math.round(acres * SQFT_PER_ACRE) : null);
 
@@ -265,7 +265,7 @@ async function handlePOST(req: NextRequest) {
       date_estimated: c.dateEstimated === true,
       latitude: g?.lat ?? null,
       longitude: g?.lng ?? null,
-      geocode_precision: preset[i] && ["manual", "rooftop", "geometric_center", "supplied"].includes(c.geocodePrecision) ? c.geocodePrecision : g?.precision ?? null,
+      geocode_precision: preset[i] && ["manual", "rooftop", "geometric_center", "range_interpolated", "approximate", "supplied"].includes(c.geocodePrecision) ? c.geocodePrecision : g?.precision ?? null,
       geocoded_at: g ? new Date().toISOString() : null,
     };
 
