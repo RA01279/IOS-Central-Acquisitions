@@ -14,6 +14,7 @@ import { dealRef } from "@/lib/format";
 import { loadCompEvidence, subjectOf } from "@/lib/comps/evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
 import AllocatedPriceInput from "@/components/AllocatedPriceInput";
+import PortfolioActions from "@/components/PortfolioActions";
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +193,13 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
             </details>
           )}
         </section>
+
+        <PortfolioActions
+          portfolioId={pf.id}
+          active={sites.filter((s) => s.d.stage !== "archived" && s.d.stage !== "closed").length}
+          archived={sites.filter((s) => s.d.stage === "archived").length}
+          closed={sites.filter((s) => s.d.stage === "closed").length}
+        />
       </main>
     </>
   );
