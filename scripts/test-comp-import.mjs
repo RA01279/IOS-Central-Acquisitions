@@ -66,4 +66,21 @@ check("sale reads", () => {
   assert.equal(sales[0].closedOn, "2026-03-24"); assert.equal(sales[0].buyer, "Birddog Investments");
 });
 
+
+// The agent writes month-only dates as YYYY-MM and a whole-site rent in "Total Monthly".
+const loose = parseCompImport(JSON.stringify({
+  leases: [row(LEASE_COLUMNS, { Address: "8811 W Little York", Tenant: "Big Rig Towing", Commencement: "2025-07", "Term Months": "36", "Total Monthly": "12500", "Lease Type": "Gross", Acres: "2.1" })],
+  sales: [row(SALE_COLUMNS, { Address: "4710 Aldine Bender", "Sale Price": "4100000", "Sale Date": "2025-04", Acres: "5.6" })],
+}));
+const ll = parse.parseCompInput({ text: loose.leases }, { defaultCompType: "lease" }).comps[0];
+check("Total Monthly is a whole-site rent", () => { assert.equal(ll.rent, 12500); assert.equal(ll.rentBasis, "total_monthly"); });
+check("month-only commencement", () => { assert.equal(ll.dateCommenced, "2025-07-01"); assert.equal(ll.datePrecision, "month"); });
+const ls = parse.parseCompInput({ text: loose.sales }, { defaultCompType: "sale" }).comps[0];
+check("month-only close date", () => assert.equal(ls.closedOn, "2025-04-01"));
+check("M/YYYY and YYYY/MM", () => {
+  assert.deepEqual({ ...parse.parseCompDate("4/2025") }, { date: "2025-04-01", precision: "month" });
+  assert.deepEqual({ ...parse.parseCompDate("2025/11") }, { date: "2025-11-01", precision: "month" });
+  assert.equal(parse.parseCompDate("2025-13"), null);
+});
+
 console.log(`${n} comp import checks passed`);

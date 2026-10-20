@@ -22,6 +22,8 @@ import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
 import { validCoordinates } from "@/lib/location";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
+import { aiReadComps, readableText } from "@/lib/comps/ai-read";
+import { helperOnline } from "@/lib/agent-client";
 
 type CompType = "lease" | "sale";
 
@@ -132,6 +134,7 @@ export default function CompIntakeForm({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [seen, setSeen] = useState<{ lines: string[]; totalLines: number; headerCandidates: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [dragging, setDragging] = useState(false);
@@ -214,6 +217,29 @@ export default function CompIntakeForm({
     }
   }
 
+  // A paste or a dropped email body. The Hopper helper reads it first -- it
+  // copes with whatever layout the broker used -- and its tables go through
+  // the same parser as everything else. The rule-based parser alone is the
+  // fallback when the helper is offline or can't answer.
+  async function readPasted(html: string | null, text: string | null) {
+    const rules = (note: string): CompSourcePart => ({ label: null, payload: { html, text }, warnings: [note] });
+    setBusy(true);
+    setError(null);
+    setStep("Reading the comps with the Hopper helper… (usually under a minute)");
+    try {
+      if (!(await helperOnline())) {
+        return await sendParts([rules("The Hopper helper is offline, so this was read by rules only and unusual layouts may be misread. Start the helper and paste again for a better read.")]);
+      }
+      const read = await aiReadComps(`PASTED BROKER TABLE OR EMAIL:\n${readableText(html, text)}`, { label: null, source: html ? "email" : undefined });
+      if (read.parts.length) return await sendParts(read.parts);
+      return await sendParts([{ ...rules("The Hopper helper found no executed leases or closed sales; this is the rule-based reading."), warnings: ["The Hopper helper found no executed leases or closed sales; this is the rule-based reading.", ...read.notes] }]);
+    } catch (e: any) {
+      return await sendParts([rules(`The Hopper helper couldn't read it (${e?.message ?? "unknown error"}); this is the rule-based reading. Check it closely.`)]);
+    } finally {
+      setStep("");
+    }
+  }
+
   // The clipboard carries text/html alongside text/plain when an email body is
   // copied. HTML has real cell boundaries, so it's sent in preference.
   function handlePaste(e: React.ClipboardEvent) {
@@ -221,7 +247,7 @@ export default function CompIntakeForm({
     const text = e.clipboardData.getData("text/plain");
     if (!html && !text) return;
     e.preventDefault();
-    sendToParser({ html: html || null, text: text || null });
+    void readPasted(html || null, text || null);
   }
 
   async function handleFile(file: File) {
@@ -319,7 +345,7 @@ export default function CompIntakeForm({
       }
 
       if (html || text) {
-        sendToParser({ html: html || null, text: text || null });
+        void readPasted(html || null, text || null);
         return;
       }
 
@@ -628,12 +654,12 @@ export default function CompIntakeForm({
         <textarea id="comp-plain-text" value={plainText} onChange={e => setPlainText(e.target.value)}
           onPaste={e => e.stopPropagation()} rows={7} style={{ width: "100%", marginTop: 8 }}
           placeholder="Address, city, rent or sale price, date, and any other details" />
-        <button type="button" disabled={busy || !plainText.trim()} onClick={() => void sendToParser({ text: plainText })}>
+        <button type="button" disabled={busy || !plainText.trim()} onClick={() => void readPasted(null, plainText)}>
           Review pasted text
         </button>
       </details>}
 
-      {busy && <p className="hint" role="status">Working…</p>}
+      {busy && <p className="hint" role="status">{step || "Working…"}</p>}
       {error && <p className="error">{error}</p>}
 
       {warnings.length > 0 && (

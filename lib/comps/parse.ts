@@ -172,6 +172,11 @@ export function parseCompDate(raw: string | undefined): { date: string; precisio
       return { date: `${y}-${String(m).padStart(2, "0")}-01`, precision: "month" };
     }
   }
+  // 2026-03 / 2026/03 (month only -- how the comp-import agent writes one) and 3/2026
+  const ym = s.match(/^(\d{4})[-/](\d{1,2})$/);
+  if (ym && Number(ym[2]) >= 1 && Number(ym[2]) <= 12) return { date: `${ym[1]}-${ym[2].padStart(2, "0")}-01`, precision: "month" };
+  const my4 = s.match(/^(\d{1,2})\/(\d{4})$/);
+  if (my4 && Number(my4[1]) >= 1 && Number(my4[1]) <= 12) return { date: `${my4[2]}-${my4[1].padStart(2, "0")}-01`, precision: "month" };
   // 1/15/2026 or 2026-01-15
   const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (iso) {
@@ -1321,7 +1326,9 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       // bare "Monthly Base" is a whole-site figure; a bare "Price/SF" on a
       // lease table is per SF per month by convention. Guessing wrong here is
       // a 12x error, so an explicitly-labelled column always wins.
-      const monthly = num(get("monthlyRent"));
+      // "Total Monthly" is a whole-site monthly rent too (the comp-import
+      // agent's column for one); it was mapped but never read.
+      const monthly = num(get("monthlyRent")) ?? num(get("totalMonthly"));
       const rateAnnual = num(get("rateAnnual"));
       const rateMonthly = num(get("rateMonthly"));
       // IOS is priced per ACRE per month -- that's the number the market

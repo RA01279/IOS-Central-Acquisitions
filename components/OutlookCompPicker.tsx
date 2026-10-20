@@ -1,10 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { pdfText } from "@/lib/pdf-text";
-import { parseCompImport } from "@/lib/agents/comp-import";
+import { aiReadComps, readableText, type CompSourcePart } from "@/lib/comps/ai-read";
 
-/** One source of comp rows: the email body, a spreadsheet, or a PDF read by the comp-import agent. */
-export type CompSourcePart = { label: string | null; payload: Record<string, unknown> | null; warnings?: string[] };
+export type { CompSourcePart };
 type Attachment = { path: string; name: string; size: number };
 type Email = { id: string; subject: string; sender: string; receivedAt: string; preview: string; hasAttachments: boolean; searchJobId: string };
 type Status = { paired: boolean; online: boolean; mailbox?: string };
@@ -57,27 +56,6 @@ export default function OutlookCompPicker({ onSelect, disabled, hasDrafts }: {
     }
     throw new Error("The helper is taking too long. Check that it is still running, then search again.");
   }
-  /** Run the comp-import agent on a PDF's text and wait for its tables. */
-  async function readPdfComps(text: string) {
-    const post = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent: "comp-import", text: text.slice(0, 98000) }) });
-    const queued = await post.json();
-    if (!post.ok) throw new Error(queued.error || "Could not start reading the PDF.");
-    const deadline = Date.now() + 10 * 60000;
-    while (alive.current && Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      const res = await fetch(`/api/agents?id=${queued.id}`, { cache: "no-store" });
-      const run = await res.json();
-      if (run.status === "failed") throw new Error(run.error || "The helper could not read this PDF.");
-      if (run.status === "completed") {
-        const parsed = parseCompImport(run.result?.report ?? "");
-        if (!parsed) throw new Error("No comp rows found in this PDF.");
-        return parsed;
-      }
-    }
-    throw new Error("Reading the PDF is taking too long. Check the helper is still running.");
-  }
-
   /**
    * The email body plus every comp attachment, as parts for the intake form:
    * spreadsheets go through the same reader as Upload spreadsheet, PDFs through
@@ -90,9 +68,23 @@ export default function OutlookCompPicker({ onSelect, disabled, hasDrafts }: {
     const { attachments: _files, ...email } = result;
     setSourceText(result.text);
     const ref = result.sourceRef || message.subject;
-    const parts: CompSourcePart[] = [{ label: "Email body", payload: { ...email, attachmentsRead: files.length > 0 } }];
+    // The body is read by the Hopper helper (the comp-import agent), which
+    // copes with whatever layout the broker used; the rule-based parser is
+    // the fallback when the helper can't answer.
+    const rulesPart: CompSourcePart = { label: "Email body", payload: { ...email, attachmentsRead: files.length > 0 } };
+    const parts: CompSourcePart[] = [];
+    setStep("Reading the email body with the Hopper helper… (usually under a minute)");
+    try {
+      const body = readableText(result.html, result.text);
+      const read = await aiReadComps(`BROKER EMAIL (subject: ${message.subject}; from: ${message.sender}):\n${body}`, { label: "Email body", sourceRef: ref, source: "email", alive: () => alive.current });
+      if (read.parts.length) parts.push(...read.parts);
+      else if (!files.length) parts.push({ ...rulesPart, warnings: ["The Hopper helper found no executed leases or closed sales in the body; this is the rule-based reading.", ...read.notes] });
+      else if (read.notes.length) parts.push({ label: "Email body", payload: null, warnings: read.notes });
+    } catch (e) {
+      parts.push({ ...rulesPart, warnings: [`The Hopper helper couldn't read the body (${e instanceof Error ? e.message : "unknown error"}); this is the rule-based reading. Check it closely.`] });
+    }
     if (message.hasAttachments && !files.length) {
-      parts[0].warnings = ["This email's attachments aren't spreadsheets or PDFs, so only its body was read."];
+      parts.push({ label: "Attachments", payload: null, warnings: ["This email's attachments aren't spreadsheets or PDFs, so only its body was read."] });
     }
     for (const f of files) {
       setStep(`Reading ${f.name}…`);
@@ -105,11 +97,9 @@ export default function OutlookCompPicker({ onSelect, disabled, hasDrafts }: {
           const pdf = await pdfText(buf, 90000);
           if (pdf.scanned) { parts.push({ label: f.name, payload: null, warnings: ["A scanned PDF with no text layer, so it can't be read. Enter its comps by hand."] }); continue; }
           setStep(`Reading ${f.name} with the Hopper helper… (usually under a minute)`);
-          const tables = await readPdfComps(`COMP SHEET (${f.name}):\n${pdf.text}\n\nBROKER EMAIL:\n${result.text.slice(0, 8000)}`);
-          const warn = ["Read from a PDF. Check each row against the sheet before saving.", ...tables.notes];
-          if (!tables.leases && !tables.sales) { parts.push({ label: f.name, payload: null, warnings: ["No executed leases or closed sales found in this PDF.", ...tables.notes] }); continue; }
-          if (tables.leases) parts.push({ label: f.name, payload: { text: tables.leases, defaultCompType: "lease", source: "email", sourceRef: `${ref} | ${f.name}` }, warnings: warn });
-          if (tables.sales) parts.push({ label: f.name, payload: { text: tables.sales, defaultCompType: "sale", source: "email", sourceRef: `${ref} | ${f.name}` }, warnings: tables.leases ? [] : warn });
+          const read = await aiReadComps(`COMP SHEET (${f.name}):\n${pdf.text}\n\nBROKER EMAIL:\n${result.text.slice(0, 8000)}`, { label: f.name, sourceRef: `${ref} | ${f.name}`, source: "email", alive: () => alive.current });
+          if (!read.parts.length) { parts.push({ label: f.name, payload: null, warnings: ["No executed leases or closed sales found in this PDF.", ...read.notes] }); continue; }
+          parts.push(...read.parts);
         } else {
           let binary = "";
           const bytes = new Uint8Array(buf);
