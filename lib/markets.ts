@@ -47,7 +47,32 @@ const METRO_OF: Record<string, string> = {
   "taylor": "Austin", "bastrop": "Austin",
   "san antonio": "San Antonio", "new braunfels": "San Antonio", schertz: "San Antonio", converse: "San Antonio",
   seguin: "San Antonio", "live oak": "San Antonio", selma: "San Antonio", cibolo: "San Antonio",
+  // Georgia (added when Atlanta and Savannah joined the coverage).
+  atlanta: "Atlanta", "metro atlanta": "Atlanta", atl: "Atlanta", marietta: "Atlanta", smyrna: "Atlanta", austell: "Atlanta",
+  mableton: "Atlanta", "lithia springs": "Atlanta", douglasville: "Atlanta", "fulton industrial": "Atlanta", fairburn: "Atlanta",
+  "union city": "Atlanta", "college park": "Atlanta", "east point": "Atlanta", hapeville: "Atlanta", "forest park": "Atlanta",
+  morrow: "Atlanta", jonesboro: "Atlanta", riverdale: "Atlanta", ellenwood: "Atlanta", conley: "Atlanta", "stockbridge": "Atlanta",
+  mcdonough: "Atlanta", "locust grove": "Atlanta", hampton: "Atlanta", fayetteville: "Atlanta", "peachtree city": "Atlanta",
+  palmetto: "Atlanta", "south fulton": "Atlanta", kennesaw: "Atlanta", "acworth": "Atlanta", norcross: "Atlanta",
+  "peachtree corners": "Atlanta", doraville: "Atlanta", chamblee: "Atlanta", tucker: "Atlanta", lawrenceville: "Atlanta",
+  duluth: "Atlanta", suwanee: "Atlanta", buford: "Atlanta", "lilburn": "Atlanta", "stone mountain": "Atlanta",
+  lithonia: "Atlanta", decatur: "Atlanta", conyers: "Atlanta", covington: "Atlanta", "social circle": "Atlanta", braselton: "Atlanta",
+  savannah: "Savannah", pooler: "Savannah", "port wentworth": "Savannah", "garden city": "Savannah", bloomingdale: "Savannah",
+  rincon: "Savannah", "richmond hill": "Savannah", "black creek": "Savannah", ellabell: "Savannah", guyton: "Savannah",
+  springfield: "Savannah", "pembroke": "Savannah", "hinesville": "Savannah", "brooklet": "Savannah", statesboro: "Savannah",
 };
+
+// The state each market sits in, so an address is never looked up in the
+// wrong one ("Savannah" exists in Texas and Georgia).
+const STATE_OF: Record<string, string> = {
+  houston: "TX", dallas: "TX", "fort worth": "TX", austin: "TX", "san antonio": "TX", "el paso": "TX", laredo: "TX", midland: "TX",
+  atlanta: "GA", savannah: "GA", memphis: "TN", tulsa: "OK", chicago: "IL", "south florida": "FL",
+};
+
+/** Two-letter state for a market (canonical name), or null when unknown. */
+export function stateOfMarket(market: unknown): string | null {
+  return STATE_OF[norm(market)] ?? null;
+}
 
 function dfwSide(city: unknown, longitude?: unknown): "Dallas" | "Fort Worth" | null {
   const c = norm(city);

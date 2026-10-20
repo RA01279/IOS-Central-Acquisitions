@@ -125,7 +125,8 @@ try {
     "@/lib/deals": { createDeal: async (input) => { created.push(input); return dupe ? { duplicates: [{ id: "old" }] } : { deal: { id: "new-deal" } }; }, logDealEvent: async (...a) => { events.push(a); } },
     "@/lib/geocode": { geocodeAddress: async () => ({ lat: 30.0012, lng: -95.0013, precision: "rooftop", formatted: "100 Yard Rd" }) },
     "@/lib/location": load("lib/location.ts"), "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i }, "@/lib/agents/sourcing": sourcing,
-    "@/lib/sourcing/parcels": { lookupParcel: async () => ({ ...p1, owner: "ROLL OWNER LLC", situsAddress: "100 YARD RD , TESTVILLE, TX" }) } });
+    "@/lib/sourcing/parcels": { lookupParcel: async () => ({ ...p1, owner: "ROLL OWNER LLC", situsAddress: "100 YARD RD , TESTVILLE, TX" }) },
+    "@/lib/markets": load("lib/markets.ts"), "@/lib/market-owners": { defaultOwner: async (_m, _c, creator) => creator } });
   const runId = "00000000-0000-4000-8000-000000000001";
   const body = { runId, ref: "S1", market: "Houston", site: { lat: 30.001, lng: -95.001, address: "100 Yard Rd, Testville", operators: ["Acme Trucking"] } };
   const ok = await prospectRoute.POST(req(body));

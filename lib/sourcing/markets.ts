@@ -31,6 +31,20 @@ export const MARKETS: Market[] = [
     { key: "sa-s", label: "South (I-37 / Brooks)", lat: 29.33, lng: -98.45 },
     { key: "sa-nw", label: "Northwest (Loop 410 / Leon Valley)", lat: 29.5, lng: -98.58 },
   ] },
+  { key: "atl", label: "Atlanta", state: "GA", submarkets: [
+    { key: "atl-fib", label: "I-20 West / Fulton Industrial Blvd", lat: 33.76, lng: -84.53 },
+    { key: "atl-airport", label: "Airport / South Atlanta (I-75 / I-85 South)", lat: 33.62, lng: -84.4 },
+    { key: "atl-s", label: "I-75 South (Henry County / McDonough)", lat: 33.47, lng: -84.18 },
+    { key: "atl-nw", label: "Northwest (Austell / Lithia Springs / Mableton)", lat: 33.8, lng: -84.6 },
+    { key: "atl-ne", label: "Northeast (I-85 / Norcross / Doraville)", lat: 33.92, lng: -84.22 },
+    { key: "atl-e", label: "I-20 East (Lithonia / Conyers)", lat: 33.7, lng: -84.08 },
+  ] },
+  { key: "sav", label: "Savannah", state: "GA", submarkets: [
+    { key: "sav-port", label: "Port / Garden City (GA-21 / I-516)", lat: 32.11, lng: -81.15 },
+    { key: "sav-pooler", label: "Pooler / I-16 / I-95", lat: 32.09, lng: -81.25 },
+    { key: "sav-pw", label: "Port Wentworth / Effingham (GA-21 North)", lat: 32.17, lng: -81.17 },
+    { key: "sav-bryan", label: "Bryan County (I-16 / Black Creek / Richmond Hill)", lat: 32.08, lng: -81.42 },
+  ] },
 ];
 
 export function findSubmarket(key: string): { market: Market; submarket: Submarket } | null {

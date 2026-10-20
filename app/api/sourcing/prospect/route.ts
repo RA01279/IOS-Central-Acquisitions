@@ -9,10 +9,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { createDeal, logDealEvent } from "@/lib/deals";
 import { geocodeAddress } from "@/lib/geocode";
+import { canonicalMarket, stateOfMarket } from "@/lib/markets";
 import { validCoordinates } from "@/lib/location";
 import { UUID } from "@/lib/agents/catalog";
 import { parseSourcing } from "@/lib/agents/sourcing";
 import { lookupParcel } from "@/lib/sourcing/parcels";
+import { defaultOwner } from "@/lib/market-owners";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
   // Prefer a verified rooftop for the parcel address; otherwise the operators'
   // Google pin, which the analyst has just looked at on the map.
   const address = sourced.parcelAddress ?? situs ?? site.address;
-  const verified = sourced.parcelAddress ? await geocodeAddress([sourced.parcelAddress, sourced.city, "TX"], { requirePrecise: true }) : null;
+  const verified = sourced.parcelAddress ? await geocodeAddress([sourced.parcelAddress, sourced.city, canonicalMarket(market, sourced.city)], { requirePrecise: true, state: stateOfMarket(canonicalMarket(market, sourced.city)) }) : null;
   const point = verified ? { latitude: verified.lat, longitude: verified.lng, geocodePrecision: verified.precision } : { latitude: Number(site.lat), longitude: Number(site.lng), geocodePrecision: undefined };
 
   let result: any;
@@ -65,6 +67,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Hopper already has a deal at this address.", duplicates: result?.duplicates ?? [] }, { status: 409 });
   }
   const operators = Array.isArray(site.operators) ? site.operators.filter((o: unknown) => typeof o === "string").slice(0, 10).map((o: string) => o.slice(0, 120)) : [];
+  // Owner: the market's coverer, else the analyst who ran the sweep. Never fatal.
+  try {
+    await db.from("deals").update({ assigned_analyst: await defaultOwner(market, sourced.city, user.email) }).eq("id", result.deal.id);
+  } catch {}
   await logDealEvent(result.deal.id, "sourcing_research", {
     runId: body.runId, ref: body.ref, operators,
     owner, ownerMailingAddress: sourced.ownerMailingAddress ?? parcel?.mailingAddress ?? null, ownerType: sourced.ownerType,

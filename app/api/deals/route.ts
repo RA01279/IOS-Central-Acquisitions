@@ -4,6 +4,7 @@ import { createDeal } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { parseMoney } from "@/lib/money";
+import { defaultOwner } from "@/lib/market-owners";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser(req);
@@ -61,8 +62,8 @@ export async function POST(req: NextRequest) {
     // the same write. Checked: a site that silently missed its portfolio link
     // would vanish from the portfolio view while the import reported success.
     const dealId = (result as any).deal?.id;
-    // Whoever creates the deal owns it until it's reassigned.
-    const extra: Record<string, unknown> = { assigned_analyst: user.email.toLowerCase() };
+    // The market's coverer owns a new deal (lib/market-owners.ts), else whoever created it.
+    const extra: Record<string, unknown> = { assigned_analyst: await defaultOwner(body.market, body.city, user.email) };
     if (askingPrice !== null) extra.asking_price = askingPrice;
     if (portfolioId) extra.deal_portfolio_id = portfolioId;
     if (dealId) {

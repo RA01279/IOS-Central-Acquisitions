@@ -15,7 +15,7 @@ vm.runInNewContext(
   }).outputText,
   { exports: m }
 );
-const { canonicalMarket: cm, escalationFraction: esc } = m;
+const { canonicalMarket: cm, escalationFraction: esc, stateOfMarket } = m;
 
 let n = 0;
 const check = (label, actual, expected) => { assert.equal(actual, expected, label); n++; };
@@ -43,6 +43,15 @@ check("blank market, DFW city", cm("", "Haltom City"), "Fort Worth");
 check("blank market, Houston suburb", cm(null, "Pasadena"), "Houston");
 check("blank market, unknown city", cm(null, "Nowhere"), null);
 
+check("Pooler -> Savannah", cm("Pooler", "Pooler"), "Savannah");
+check("Port Wentworth -> Savannah", cm("Port Wentworth", null), "Savannah");
+check("Marietta -> Atlanta", cm("Marietta", null), "Atlanta");
+check("Fulton Industrial -> Atlanta", cm("Fulton Industrial", null), "Atlanta");
+check("blank market, McDonough city", cm(null, "McDonough"), "Atlanta");
+check("Atlanta is GA", stateOfMarket("Atlanta"), "GA");
+check("Savannah is GA, not TX", stateOfMarket("Savannah"), "GA");
+check("Houston is TX", stateOfMarket("Houston"), "TX");
+check("unknown market has no state", stateOfMarket("Narnia"), null);
 check("3 is 3%", esc(3), 0.03);
 check("'3.5%' is 3.5%", esc("3.5%"), 0.035);
 check("0.03 stays", esc(0.03), 0.03);

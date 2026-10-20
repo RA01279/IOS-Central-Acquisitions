@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { DEFAULT_CATEGORIES } from "@/lib/sourcing/yard-users";
 import { searchNearby } from "@/lib/demand-search";
+import { stateOfMarket } from "@/lib/markets";
 
 // Several Google calls in sequence; each has its own timeout, this caps the total.
 export const maxDuration = 60;
@@ -121,17 +122,20 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
   const { data: property, error: propError } = await supabase
     .from("properties")
-    .select("address, city, market, submarket")
+    .select("address, city, market, submarket, latitude, longitude")
     .eq("id", deal.property_id)
     .single();
   if (propError || !property) {
     return NextResponse.json({ error: "Property not found" }, { status: 404 });
   }
 
-  const fullAddress = [property.address, property.city, "TX"].filter(Boolean).join(", ");
+  // Centre on the deal's verified pin. Only without one is the address looked
+  // up -- in the market's own state, never an assumed Texas (Savannah, GA).
+  const fullAddress = [property.address, property.city, stateOfMarket(property.market)].filter(Boolean).join(", ");
 
   try {
-    const center = await geocode(fullAddress);
+    const pinned = property.latitude != null && property.longitude != null;
+    const center = pinned ? { lat: Number(property.latitude), lng: Number(property.longitude) } : await geocode(fullAddress);
     const { tenants: found, screened } = await searchNearby({ ...center, radiusMiles, categories, perCategoryCap: PER_CATEGORY_CAP, apiKey: GOOGLE_KEY });
     // Basemap and enrichment are independent -- overlap them so the extra
     // Place Details round trips don't simply add to the wall clock.
