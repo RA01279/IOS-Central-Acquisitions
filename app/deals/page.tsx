@@ -282,6 +282,7 @@ function PackageCard({ p }: { p: PortfolioCard }) {
         </span>
         {p.stageMix && <span className="stage-age">{p.stageMix}</span>}
       </a>
+      <CardDeleteButton portfolio={{ id: p.id, sites: p.sites }} />
     </div>
   );
 }
