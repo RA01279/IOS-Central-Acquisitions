@@ -1,0 +1,424 @@
+xPZQTPZvWWvSV
+xY5A:U18CBYHC
+uLstjkwztwnJV
+kC;3K33u;u7oc
+
+2026
+ 
+R6250 010
+ 
+11-15-2026
+ 
+$7,259.41
+
+TAATTFFAATAAFADDTFDFTFFTADAFATFDADAAATFTATTDDADFTTATTDFFDFDFAATTD
+
+R6250 010
+ 
+3963
+DIXON ROBIN JAMES
+1201 MILEYS RD
+STATESBORO GA 30461-7782
+
+32,257
+
+jcbZpzEwobMK0yhHZjcbZ
+ZlXZS88UVHSNK9t8:ZlXZ
+ccbSVTSWQPVYuyQYQaaaP
+Yk1q0hZ6:HgK6UnCWecAP
+bYofrkRL8Q8rK9bLXMMzX
+qXHIbEsZygkuvlVQWgFH2
+EtwVLTlgnpFUQDkqNLq30
+tTTIWXbG8XMzbV0caZx9P
+uhUgSxtAJ6xvjaOprO9fX
+xPaLNR9c38gaW2vs:g7K2
+ZG2gGMQZ9op7Ak9PuOBR2
+rpp:wiEvgbPH06l5Z8ZXP
+ZoZZZJpeW8bVoKT7hbWvX
+vppXv8vlp0HXvp4TdD0H0
+
+09/08/2026
+
+R6250%20010/1085543
+
+1
+ 
+26
+ 
+186250000100000
+ 
+3
+ 
+00000725941
+ 
+00000725941
+ 
+3
+
+LEVYING AUTHORITY
+ 
+RATE
+ 
+AMOUNT
+PEACHTREECORNERS STORMWATER
+ 
+FLAT RATE
+ 
+735.54
+PTC STL COM SVC FEE
+ 
+FLAT RATE
+ 
+180.00
+
+TOTAL OTHER ASSESSMENTS:
+ 
+915.54
+ 
+7,259.41
+
+Levied by the Board of Commissioners and representing 41.59% of your total ad valorem tax amount.
+Levied by the Board of Education and representing 58.41% of your total ad valorem tax amount.
+Levied by the State, City or other authorities and representing 0.00% of your total ad valorem tax amount.
+
+R6250 010
+ 
+2026
+ 
+DIXON ROBIN JAMES
+
+PEACHTREE CORNERS
+ 
+3000 AMWILER RD
+ 
+AMWILER RD
+
+LAND VALUE:
+ 
+$356,200
+BUILDING VALUE:
+ 
+$103,500
+TOTAL VALUE:
+ 
+$459,700
+
+ASSESSED VALUE:
+ 
+$183,880
+
+ACREAGE:
+ 
+1.480000
+Taxing Authority
+ 
+Millage Rate
+ 
+Gross Tax
+ 
+-VOE
+ 
+-Exemption
+ 
+-Credit(HTRG)
+ 
+Taxable Value
+ 
+= Net Tax
+
+COUNTY GENERAL FUND
+ 
+Assessed Value
+Tax
+ 
+0.006950
+183,880
+
+1,277.97
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+183,880
+
+1,277.97
+DEVELOPMENT/CODE
+ENFORCEMENT
+
+Assessed Value
+Tax
+ 
+0.000000
+183,880
+
+0.00
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+183,880
+
+0.00
+ECONOMIC DEVELOPMENT
+ 
+Assessed Value
+Tax
+ 
+0.000300
+183,880
+
+55.16
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+183,880
+
+55.16
+FIRE & EMS
+ 
+Assessed Value
+Tax
+ 
+0.003200
+183,880
+
+588.42
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+183,880
+
+588.42
+POLICE
+ 
+Assessed Value
+Tax
+ 
+0.002900
+183,880
+
+533.25
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+183,880
+
+533.25
+RECREATION
+ 
+Assessed Value
+Tax
+ 
+0.001000
+183,880
+
+183.88
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+(0)
+
+(0.00)
+
+183,880
+
+183.88
+TOTAL COUNTY TAXES
+ 
+0.014350
+ 
+2,638.68
+
+Taxing Authority
+ 
+Millage Rate
+ 
+Gross Tax
+ 
+-SFE
+ 
+-Exemption
+ 
+-Credit(HTRG)
+ 
+Taxable Value
+ 
+= Net Tax
+
+SCHOOL
+ 
+Assessed Value
+ 
+183,880
+ 
+(0)
+ 
+(0)
+ 
+(0)
+ 
+183,880
+Tax
+ 
+0.018700
+ 
+3,438.56
+ 
+(0.00)
+ 
+(0.00)
+ 
+(0.00)
+ 
+3,438.56
+SCHOOL BOND
+ 
+Assessed Value
+ 
+183,880
+ 
+(0)
+ 
+(0)
+ 
+(0)
+ 
+183,880
+Tax
+ 
+0.001450
+ 
+266.63
+ 
+(0.00)
+ 
+(0.00)
+ 
+(0.00)
+ 
+266.63
+TOTAL SCHOOL TAXES
+ 
+0.020150
+ 
+3,705.19
+
+Taxing Authority
+ 
+Millage Rate
+ 
+Gross Tax
+ 
+-SFE
+ 
+-Exemption
+ 
+-Credit(HTRG)
+ 
+Taxable Value
+ 
+= Net Tax
+
+PEACHTREE CORNERS
+ 
+183,880
+ 
+(0)
+ 
+(0)
+ 
+(0)
+ 
+183,880
+0.000000
+ 
+0.00
+ 
+(0.00)
+ 
+(0.00)
+ 
+(0.00)
+ 
+0.00
+TOTAL OTHER TAXES
+ 
+0.00
+
+TOTAL MILLAGE RATE:
+ 
+0.034500
+ 
+TOTAL AD VALOREM TAXES: 6,343.87
+
+CHARGE
+ 
+AMOUNT
+AD VALOREM TAXES:
+ 
+6,343.87
+ASSESSMENTS:
+ 
+915.54
+TOTAL AMOUNT DUE
+ 
+7,259.41
+
+Your property value is under appeal. This is a temporary bill. Refer to the enclosed special bulletin for additional information. Pay the amount due by
+the due date.
+The City of Peachtree Corners has modified the structure of streetlight charges. For questions on the changes please contact the City of Peachtree
+Corners at 678-691-1200.

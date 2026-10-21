@@ -31,7 +31,7 @@ it("does not treat undated Gwinnett tax master amounts as current taxes",async()
     const u=String(input);
     if(u.includes("census.gov"))return Response.json({result:{geographies:{Counties:[{NAME:"Gwinnett County"}],States:[{STUSAB:"GA"}]}}});
     if(u.includes("/0/query"))return Response.json({features:[{attributes:{TAXPIN:"TEST-1",PIN:"TEST-1",ADDRESS:"100 Main Road"}}]});
-    if(u.includes("/3/query"))return Response.json({features:[{attributes:{TOTVAL1:100000,TAXTOT1:950}}]});
+    if(u.includes("/3/query"))return Response.json({features:[{attributes:{RPIN:"R6250 010",PIN:"6250 010",LOCADDR:"100 Main Road",TOTVAL1:100000,TAXTOT1:950}}]});
     return new Response("<html>Official assessment rules</html>");
   });
   const report=await researchTaxes({address:"100 Main Road",latitude:33.9,longitude:-84.1,precision:"manual",state:"GA"},emptyTaxState(),()=>{},fetcher as any);

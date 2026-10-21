@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ['pdfjs-dist'],
   // Nothing uses next/image. Turning the optimizer off removes the
   // /_next/image endpoint and the image-optimizer attack surface with it.
   images: { unoptimized: true },
