@@ -8,7 +8,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronLeft, Share, LayoutGrid, Map as MapIcon, NotebookPen, Presentation } from "lucide-react";
+import { ChevronLeft, Share, LayoutGrid, Map as MapIcon, NotebookPen, Presentation, Calculator } from "lucide-react";
 import { pushRecent } from "@/lib/recent";
 
 // The Underwriting tab (Hopper's screening engine) is behind a flag until it
@@ -18,6 +18,8 @@ const UW_ENGINE_TAB = process.env.NEXT_PUBLIC_UW_ENGINE_TAB === "screen";
 export const DEAL_TABS = [
   { seg: "", label: "Summary", short: "Summary", icon: LayoutGrid },
   { seg: "demand-map", label: "Demand Map", short: "Map", icon: MapIcon },
+  { seg: "property-taxes", label: "Property Taxes", short: "Taxes", icon: Calculator },
+  { seg: "ios-underwriting", label: "IOS model", short: "IOS UW", icon: null },
   { seg: "financials", label: "Financials", short: "Financials", icon: null },
   ...(UW_ENGINE_TAB ? [{ seg: "underwriting", label: "Underwriting", short: "UW", icon: null }] : []),
   { seg: "diligence", label: "Diligence", short: "Diligence", icon: null },
@@ -48,12 +50,12 @@ function tabHref(id: string, seg: string, carry: string) {
   return seg === "demand-map" || seg === "ic-deck" ? base + carry : base;
 }
 
-export function DealTabs({ id }: { id: string }) {
+export function DealTabs({ id, ios = true }: { id: string; ios?: boolean }) {
   const tab = useTab(id);
   const carry = useCarry();
   return (
     <nav className="ws-tabs" aria-label="Deal views">
-      {DEAL_TABS.map((t) => (
+      {DEAL_TABS.filter(t=>ios || t.seg!=="ios-underwriting").map((t) => (
         <a key={t.seg} href={tabHref(id, t.seg, carry)} className={t.seg === tab.seg ? "on" : ""}>
           {t.label}
         </a>

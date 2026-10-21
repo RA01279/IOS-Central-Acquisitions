@@ -1,0 +1,80 @@
+import { emptyTaxState, METRICS, type TaxState } from "./types";
+import { includedParcels, rateFraction } from "./model";
+export class TaxError extends Error { constructor(message: string, public status = 400) { super(message); } }
+const array = (v: unknown, max: number): any[] => { if (!Array.isArray(v) || v.length > max) throw new TaxError("Invalid or oversized tax workspace."); return v; };
+const string = (v: unknown, max = 500) => { if (typeof v !== "string" || v.length > max) throw new TaxError("Invalid tax text field."); return v; };
+const year = (v: unknown) => { if (!Number.isInteger(v) || Number(v) < 1900 || Number(v) > 2200) throw new TaxError("Use an explicit valid tax year."); };
+export function validateTaxState(input: unknown): TaxState {
+  const s = input as TaxState;
+  if (!s || s.version !== 1 || JSON.stringify(s).length > 1_400_000) throw new TaxError("Invalid or oversized tax workspace.");
+  const sources = new Set<string>(), parcels = new Set<string>(), records = new Set<string>();
+  for (const source of array(s.sources, 600)) {
+    string(source.id,100); if (sources.has(source.id)) throw new TaxError("Duplicate source ID."); sources.add(source.id);
+    string(source.label); string(source.evidence,60000); string(source.url,4000);
+    if (source.url && !/^https?:\/\//i.test(source.url)) throw new TaxError("Use an HTTP(S) source link.");
+    if (!Number.isFinite(Date.parse(source.retrievedAt)) || !["official","manual","upload"].includes(source.kind)) throw new TaxError("Source needs a retrieval date and origin.");
+    if (source.taxYear !== null) year(source.taxYear);
+    if (source.storagePath !== undefined) string(source.storagePath,300);
+  }
+  const sourceRef = (id: string) => { if (!sources.has(id)) throw new TaxError("Every finding needs a retained supporting source."); };
+  for (const p of array(s.parcels,60)) {
+    for (const k of ["key","accountId","county","state","address","owner","legal","reviewNote","assessmentGroup"]) string(p[k],2000);
+    if (!p.key || !p.accountId || !p.county || !/^[A-Z]{2}$/.test(p.state) || parcels.has(p.key)) throw new TaxError("Each parcel needs a unique key, account, county and state.");
+    parcels.add(p.key);
+    if (!["pending","included","excluded"].includes(p.review) || !["unknown","combined","land","building"].includes(p.component)) throw new TaxError("Invalid parcel review.");
+    array(p.sourceIds,100).forEach(sourceRef); array(p.matchEvidence,30).forEach(x=>string(x,2000));
+  }
+  for (const r of array(s.records,900)) {
+    if (!parcels.has(r.parcelKey)) throw new TaxError("Tax record has no matching parcel."); year(r.year);
+    const key = r.parcelKey+":"+r.year; if (records.has(key)) throw new TaxError("Use one annual record per account; merge jurisdiction details."); records.add(key);
+    if (!r.facts || typeof r.facts !== "object") throw new TaxError("Invalid annual findings.");
+    for (const [metric,f] of Object.entries(r.facts) as [string,any][]) {
+      if (!METRICS.includes(metric as any) || !f || !["proposed","adopted","issued","reported"].includes(f.stage) || typeof f.reviewed !== "boolean") throw new TaxError("Invalid tax finding.");
+      sourceRef(f.sourceId);
+      if (f.value !== null && typeof f.value !== "string" && typeof f.value !== "number") throw new TaxError("Invalid finding value.");
+      if (typeof f.value === "number" && (!Number.isFinite(f.value) || f.value < 0)) throw new TaxError("Tax amounts cannot be negative.");
+      if (typeof f.value === "string") string(f.value,2000);
+    }
+    for (const j of array(r.jurisdictions,50)) { string(j.name); rateFraction(j.rate,j.unit); sourceRef(j.sourceId); if (!["proposed","adopted"].includes(j.stage)) throw new TaxError("Rate needs its adoption status."); }
+  }
+  for (const o of array(s.overrides,1800)) {
+    if (!parcels.has(o.parcelKey) || !METRICS.includes(o.metric)) throw new TaxError("Invalid override target."); year(o.year); sourceRef(o.sourceId); string(o.reason,2000);
+    if (!o.reason.trim() || !records.has(o.parcelKey+":"+o.year)) throw new TaxError("Overrides need a reason and annual record.");
+    if (o.value !== null && typeof o.value !== "number" && typeof o.value !== "string") throw new TaxError("Invalid override value.");
+    if (typeof o.value === "number" && (!Number.isFinite(o.value) || o.value < 0)) throw new TaxError("Invalid override amount.");
+  }
+  const overrideKeys=s.overrides.map(o=>`${o.parcelKey}:${o.year}:${o.metric}`); if (new Set(overrideKeys).size!==overrideKeys.length) throw new TaxError("Duplicate manual override.");
+  for (const r of array(s.rules,30)) { string(r.jurisdiction); string(r.notes,12000); array(r.sourceIds,30).forEach(sourceRef); if (typeof r.reviewed!=="boolean") throw new TaxError("Review rule evidence."); }
+  const scenarioIds=new Set();
+  for (const plan of array(s.scenarios,3)) {
+    if (!["continuation","acquisition","custom"].includes(plan.id) || scenarioIds.has(plan.id)) throw new TaxError("Invalid scenario."); scenarioIds.add(plan.id);
+    string(plan.name); string(plan.notes,12000); year(plan.startYear);
+    if (!Number.isInteger(plan.hold) || plan.hold < 1 || plan.hold > 10 || typeof plan.rulesReviewed!=="boolean") throw new TaxError("Use a 1–10 year hold and explicit rule review.");
+    const keys=new Set(); for (const p of array(plan.parcels,60)) {
+      if (!parcels.has(p.parcelKey) || keys.has(p.parcelKey)) throw new TaxError("Invalid scenario parcel."); keys.add(p.parcelKey);
+      if (array(p.rows,11).length!==plan.hold+1) throw new TaxError("Include the hold plus forward exit year.");
+      for (const row of p.rows) {
+        year(row.year); rateFraction(row.rate,row.unit);
+        for (const key of ["market","ratio","exemption","growth","special","reimbursement"]) if (typeof row[key]!=="number" || !Number.isFinite(row[key])) throw new TaxError("Projection fields must be finite numbers.");
+        for (const key of ["cap","capThrough","grossOverride"]) if (row[key]!==null && (typeof row[key]!=="number" || !Number.isFinite(row[key]))) throw new TaxError("Invalid optional projection field.");
+        if (typeof row.reassess!=="boolean") throw new TaxError("Review reassessment timing.");
+      }
+    }
+  }
+  if (s.research) { string(s.research.at,100); array(s.research.gaps,100).forEach(x=>string(x,4000)); }
+  // Invalid overlapping inclusion must never reach totals or underwriting.
+  try { includedParcels(s); } catch(e) { throw new TaxError((e as Error).message); }
+  return s;
+}
+export async function loadTaxWorkspace(db:any,dealId:string) {
+  const { data,error }=await db.from("deal_property_taxes").select("revision,state,updated_at,updated_by").eq("deal_id",dealId).maybeSingle();
+  if(error) throw new TaxError("Property tax storage is unavailable. Apply the pending local tax migration before use.",503);
+  return data ?? {revision:0,state:emptyTaxState(),updated_at:null,updated_by:null};
+}
+export async function saveTaxWorkspace(db:any,dealId:string,revision:number,state:TaxState,actor:string,action="review") {
+  validateTaxState(state);
+  if (!Number.isInteger(revision) || revision<0) throw new TaxError("Invalid workspace revision.");
+  const { data,error }=await db.rpc("save_deal_tax_state",{p_deal_id:dealId,p_expected:revision,p_state:state,p_actor:actor,p_action:action});
+  if(error) throw new TaxError(error.code==="40001" ? "Tax workspace changed. Reload before saving; keep a copy of your local draft." : error.message, error.code==="40001" ? 409 : 500);
+  return data;
+}

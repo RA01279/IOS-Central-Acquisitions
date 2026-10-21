@@ -116,7 +116,7 @@ export default async function DealLayout(props: { children: React.ReactNode; par
             </div>
           </div>
           <Suspense>
-            <DealTabs id={deal.id} />
+            <DealTabs id={deal.id} ios={deal.asset_class !== "industrial"} />
           </Suspense>
         </div>
         {props.children}
