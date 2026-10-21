@@ -29,7 +29,7 @@ async function sites(id: string) {
   if (!pf) return null;
   const { data: deals, error } = await db
     .from("deals")
-    .select("id, ref, stage, property_id, portfolio_asset_id, properties(address)")
+    .select("id, ref, stage, asking_price, property_id, portfolio_asset_id, properties(address)")
     .eq("deal_portfolio_id", id);
   if (error) throw new Error(error.message);
   return { pf, deals: (deals ?? []) as any[] };
@@ -52,6 +52,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const ids = [...new Set<string>(body.selectedDealIds)];
     const selected = found.deals.filter((d) => ids.includes(d.id));
     if (selected.length !== ids.length) return NextResponse.json({ error: "Selected assets must belong to this portfolio" }, { status: 400 });
+    if (body.selection === "priced" && selected.some((deal) => !(Number(deal.asking_price) > 0))) {
+      return NextResponse.json({ error: "Save an allocated price for each asset before moving it. Refresh if an allocation was cleared." }, { status: 400 });
+    }
     const plans = selected.map((deal) => ({ deal, plan: portfolioStageAction(deal.stage, body.toStage) }));
     const blockers = plans.filter(({ plan }) => plan.error).map(({ deal, plan }) => `${label(deal)}: ${plan.error}`);
     if (blockers.length) return NextResponse.json({ error: blockers.join(" ") }, { status: 400 });

@@ -12,7 +12,7 @@ import Docxtemplater from "docxtemplater";
 import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent, recordOffer } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
-import { dropSecondSigner } from "@/lib/loi-docx";
+import { dropSecondSigner, appendPortfolioSchedule } from "@/lib/loi-docx";
 import { parseMoney } from "@/lib/money";
 import { validDate } from "@/lib/stage-rules";
 
@@ -61,10 +61,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (!Array.isArray(t.selectedDealIds) || !t.selectedDealIds.length || t.selectedDealIds.some((id: unknown) => typeof id !== "string")) {
       return NextResponse.json({ error: "Select at least one portfolio asset" }, { status: 400 });
     }
-    const { data: anchor, error: anchorError } = await supabase.from("deals").select("deal_portfolio_id, loi_terms").eq("id", params.id).maybeSingle();
+    const { data: anchor, error: anchorError } = await supabase.from("deals").select("deal_portfolio_id, loi_terms, deal_portfolios(name)").eq("id", params.id).maybeSingle();
     if (anchorError) return NextResponse.json({ error: anchorError.message }, { status: 500 });
     if (!anchor || anchor.deal_portfolio_id !== t.portfolioId) return NextResponse.json({ error: "Portfolio does not match this deal" }, { status: 400 });
     anchorTerms = anchor.loi_terms ?? {};
+    const portfolio = Array.isArray(anchor.deal_portfolios) ? anchor.deal_portfolios[0] : anchor.deal_portfolios;
+    t.portfolioTitle = portfolio?.name?.trim();
+    if (!t.portfolioTitle) return NextResponse.json({ error: "Set a portfolio title before generating its LOI" }, { status: 400 });
     const ids = [...new Set<string>(t.selectedDealIds)];
     const { data: sites, error } = await supabase.from("deals")
       .select("id, properties(address, city)").eq("deal_portfolio_id", t.portfolioId).in("id", ids).order("created_at");
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (sites.some((s: any) => !s.properties?.address)) return NextResponse.json({ error: "Each selected asset needs an address before generating the LOI" }, { status: 400 });
     t.loiType = "standard";
     t.selectedDealIds = sites.map((s) => s.id);
-    t.propertyDescription = `the following ${sites.length} properties, collectively:\n` + sites.map((s: any, i: number) => `${i + 1}. ${[s.properties.address, s.properties.city].filter(Boolean).join(", ")}`).join("\n");
+    t.propertyDescription = t.portfolioTitle;
   }
 
   let offerPrice: number | null;
@@ -151,6 +154,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     };
   }
 
+  if (portfolioSites) {
+    data.portfolio_title = t.portfolioTitle;
+    data.portfolio_assets = portfolioSites.map((s: any, i: number) => `${i + 1}. ${[s.properties.address, s.properties.city].filter(Boolean).join(", ")}`).join("\n");
+    data.property_description = t.portfolioTitle;
+  }
+
   // 1. Persist the raw form so the next open prefills with it.
   const { error: saveErr } = await supabase
     .from("deals")
@@ -172,6 +181,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   let buffer: Buffer;
   try {
     const zip = new PizZip(Buffer.from(await tpl.arrayBuffer()));
+    if (portfolioSites) zip.file("word/document.xml", appendPortfolioSchedule(zip.file("word/document.xml")!.asText()));
     if (!data.signer2_name.trim()) {
       zip.file("word/document.xml", dropSecondSigner(zip.file("word/document.xml")!.asText()));
     }
@@ -183,7 +193,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   }
 
   // 3. File a copy on the deal.
-  const slug = (data.property_description.split(",")[0] || "LOI")
+  const slug = (t.portfolioTitle || data.property_description.split(",")[0] || "LOI")
     .trim()
     .replace(/[^A-Za-z0-9]+/g, "-")
     .slice(0, 40);

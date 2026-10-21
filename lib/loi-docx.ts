@@ -35,3 +35,16 @@ export function dropSecondSigner(xml: string): string {
   }
   return out;
 }
+// Keep the IOS template's property/title field concise; list selected sites on
+// a separate exhibit, with no building prices or other allocation data.
+export function appendPortfolioSchedule(xml: string): string {
+  const exhibit = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' +
+    '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Exhibit A — {portfolio_title}</w:t></w:r></w:p>' +
+    '<w:p><w:r><w:t>Assets included in this offer</w:t></w:r></w:p>' +
+    '<w:p><w:r><w:t>{portfolio_assets}</w:t></w:r></w:p>';
+  const sectionAt = xml.lastIndexOf("<w:sectPr");
+  const bodyEnd = xml.lastIndexOf("</w:body>");
+  if (bodyEnd < 0) throw new Error("LOI template document body not found");
+  const at = sectionAt >= 0 ? sectionAt : bodyEnd;
+  return xml.slice(0, at) + exhibit + xml.slice(at);
+}

@@ -21,3 +21,11 @@ export function portfolioStageAction(from: string, to: string) {
   if (error) return { error };
   return { action: correction ? "set_acq_stage" : ACTIONS[to], correction };
 }
+
+export function pricedPortfolioAssets<T extends { stage: string; allocatedPrice: number | null }>(assets: T[], to: string): T[] {
+  return assets.filter((asset) => {
+    if (!(Number(asset.allocatedPrice) > 0) || asset.stage === to || ["closed", "archived"].includes(asset.stage)) return false;
+    const plan = portfolioStageAction(asset.stage, to);
+    return !!plan.action && !plan.correction;
+  });
+}

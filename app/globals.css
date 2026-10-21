@@ -1450,3 +1450,9 @@ main.wide {
 .tax-preview { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
 .hm-dealtabs { overflow-x: auto; }
 @media (max-width: 760px) { .tax-summary { grid-template-columns: minmax(0,1fr); } .tax-controls > label { width: 100%; } .tax-toolbar button { flex: 1 1 auto; } .tax-workspace-fields .panel { padding: 16px; } }
+.portfolio-move { border-bottom: 1px solid #DDE4EB; margin-bottom: 16px; padding-bottom: 12px; }
+.portfolio-move-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+.portfolio-move-summary { display: flex; flex-direction: column; gap: 4px; margin-right: auto; }
+.portfolio-move-target { margin: 0; min-width: 160px; }
+.portfolio-move-dates { flex-basis: 100%; }
+@media (max-width: 760px) { .portfolio-move-summary { flex-basis: 100%; } .portfolio-move-fields > button { width: 100%; } }

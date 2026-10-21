@@ -18,6 +18,15 @@ assert.equal(stages.portfolioStageAction('offered', 'moving_to_psa').action, 'co
 assert.equal(stages.portfolioStageAction('closed', 'prospect').action, 'set_acq_stage');
 assert(stages.portfolioStageAction('archived', 'uw').error);
 assert(stages.portfolioStageAction('uw', 'not-a-stage').error);
+const priced = [
+  { id: 'prospect', stage: 'prospect', allocatedPrice: 100 },
+  { id: 'uw', stage: 'uw', allocatedPrice: 200 },
+  { id: 'unpriced', stage: 'prospect', allocatedPrice: null },
+  { id: 'closed', stage: 'closed', allocatedPrice: 100 },
+  { id: 'archived', stage: 'archived', allocatedPrice: 100 },
+];
+assert.deepEqual(stages.pricedPortfolioAssets(priced, 'uw').map((a) => a.id), ['prospect']);
+assert.deepEqual(stages.pricedPortfolioAssets(priced, 'offered').map((a) => a.id), ['uw']);
 let user, allowed, deals, calls, failId;
 function reset() {
   user = { email: 'test@example.com' }; allowed = true; calls = []; failId = null;
@@ -48,6 +57,9 @@ const post = (value) => api.POST(new NextRequest('http://localhost/api/deal-port
   reset(); user = null; assert.equal((await post(body)).status, 401);
   reset(); assert.equal((await post({ ...body, selectedDealIds: ['outside'] })).status, 400); assert.equal(calls.length, 0);
   reset(); assert.equal((await post({ ...body, toStage: 'offered' })).status, 400); assert.equal(calls.length, 0);
+  reset(); assert.equal((await post({ ...body, selection: 'priced' })).status, 400); assert.equal(calls.length, 0);
+  reset(); deals.forEach((d) => { d.asking_price = 1000000; });
+  assert.equal((await (await post({ ...body, selection: 'priced' })).json()).moved, 2);
   reset(); const subset = await post({ ...body, selectedDealIds: ['b'] });
   assert.equal((await subset.json()).moved, 1); assert.deepEqual(calls.map((c) => c.id), ['b']);
   assert.equal(calls[0].body.action, 'start_underwriting');

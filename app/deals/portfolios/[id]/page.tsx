@@ -108,8 +108,6 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
           </div>
         </div>
 
-        <PortfolioStageControl portfolioId={pf.id} assets={sites.map((s) => ({ id: s.d.id, label: [s.p.address, s.p.city].filter(Boolean).join(", ") || dealRef(s.d.ref), stage: s.d.stage }))} />
-
         <div className="kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginBottom: 20 }}>
           <Kpi label="Allocated price" value={usdM(totalPrice || null)} sub={`${priced} of ${sites.length} sites priced`} />
           <Kpi label="Land" value={totalAcres ? `${totalAcres.toFixed(1)} AC` : "—"} sub={totalPrice && totalAcres ? `${usd(totalPrice / totalAcres)}/AC` : undefined} />
@@ -148,6 +146,7 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
 
         <section className="panel">
           <h2>Sites</h2>
+          <PortfolioStageControl portfolioId={pf.id} assets={sites.map((s) => ({ id: s.d.id, label: [s.p.address, s.p.city].filter(Boolean).join(", ") || dealRef(s.d.ref), stage: s.d.stage, allocatedPrice: num(s.d.asking_price) }))} />
           <div style={{ overflowX: "auto" }}>
             <table className="summary-table">
               <thead>
