@@ -15,6 +15,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { archiveDeal, deleteBlocker, deleteDeal, restoreDeal } from "@/lib/deal-archive";
+import { PATCH as changeDealStage } from "../../deals/[id]/route";
+import { portfolioStageAction } from "@/lib/portfolio-stages";
+import { canConfirmPsa } from "@/lib/auth";
+import { parseMoney } from "@/lib/money";
+import { validDate } from "@/lib/stage-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -39,6 +44,52 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const body = await req.json().catch(() => ({}));
   const found = await sites(id);
   if (!found) return NextResponse.json({ error: "Portfolio not found" }, { status: 404 });
+
+  if (body.action === "change_stage") {
+    if (!Array.isArray(body.selectedDealIds) || !body.selectedDealIds.length || body.selectedDealIds.some((id: unknown) => typeof id !== "string")) {
+      return NextResponse.json({ error: "Select at least one asset" }, { status: 400 });
+    }
+    const ids = [...new Set<string>(body.selectedDealIds)];
+    const selected = found.deals.filter((d) => ids.includes(d.id));
+    if (selected.length !== ids.length) return NextResponse.json({ error: "Selected assets must belong to this portfolio" }, { status: 400 });
+    const plans = selected.map((deal) => ({ deal, plan: portfolioStageAction(deal.stage, body.toStage) }));
+    const blockers = plans.filter(({ plan }) => plan.error).map(({ deal, plan }) => `${label(deal)}: ${plan.error}`);
+    if (blockers.length) return NextResponse.json({ error: blockers.join(" ") }, { status: 400 });
+    if (body.toStage === "moving_to_psa" && plans.some(({ plan }) => !plan.skip && !plan.correction) && !canConfirmPsa(user.email)) {
+      return NextResponse.json({ error: "Only Rhett/John can confirm Moving to PSA" }, { status: 403 });
+    }
+    for (const key of ["ddEndOn", "closingOn", "closedOn", "psaEffectiveOn"]) {
+      if (body[key] && !validDate(body[key])) return NextResponse.json({ error: "Enter valid calendar dates" }, { status: 400 });
+    }
+    // Closing prices belong to each deal for reporting; never copy a portfolio total to every site.
+    if (body.toStage === "closed") {
+      if (!validDate(body.closedOn)) return NextResponse.json({ error: "A valid closing date is required" }, { status: 400 });
+      try {
+        for (const { deal, plan } of plans) {
+          if (!plan.skip && !(Number(parseMoney(body.closedPrices?.[deal.id])) > 0)) throw new Error(`Enter a closing price for ${label(deal)}`);
+        }
+      } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
+    }
+    const failed: string[] = [], warnings: string[] = [], skipped: string[] = [];
+    let moved = 0;
+    for (const { deal, plan } of plans) {
+      if (plan.skip) { skipped.push(`${label(deal)}: already in this stage`); continue; }
+      try {
+        const request = new NextRequest(req.url, {
+          method: "PATCH", headers: req.headers,
+          body: JSON.stringify({ action: plan.action, toStage: body.toStage,
+            ...(body.toStage === "due_diligence" && !plan.correction ? { ddEndOn: body.ddEndOn || undefined, closingOn: body.closingOn || undefined, psaEffectiveOn: body.psaEffectiveOn || undefined } : {}),
+            ...(body.toStage === "closed" ? { closedOn: body.closedOn, closedPrice: body.closedPrices[deal.id] } : {}),
+          }),
+        });
+        const response = await changeDealStage(request, { params: Promise.resolve({ id: deal.id }) });
+        const result = await response.json();
+        if (!response.ok) failed.push(`${label(deal)}: ${result.error ?? "Stage update failed"}`);
+        else { moved++; if (result.warning) warnings.push(`${label(deal)}: ${result.warning}`); }
+      } catch (error) { failed.push(`${label(deal)}: ${(error as Error).message}`); }
+    }
+    return NextResponse.json({ moved, failed, skipped, warnings });
+  }
 
   if (body.action === "archive") {
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";

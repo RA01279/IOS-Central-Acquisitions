@@ -55,6 +55,27 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   const t = await req.json();
   const supabase = getServiceClient();
+  let portfolioSites: any[] | null = null;
+  let anchorTerms: Record<string, unknown> = {};
+  if (t.portfolioId) {
+    if (!Array.isArray(t.selectedDealIds) || !t.selectedDealIds.length || t.selectedDealIds.some((id: unknown) => typeof id !== "string")) {
+      return NextResponse.json({ error: "Select at least one portfolio asset" }, { status: 400 });
+    }
+    const { data: anchor, error: anchorError } = await supabase.from("deals").select("deal_portfolio_id, loi_terms").eq("id", params.id).maybeSingle();
+    if (anchorError) return NextResponse.json({ error: anchorError.message }, { status: 500 });
+    if (!anchor || anchor.deal_portfolio_id !== t.portfolioId) return NextResponse.json({ error: "Portfolio does not match this deal" }, { status: 400 });
+    anchorTerms = anchor.loi_terms ?? {};
+    const ids = [...new Set<string>(t.selectedDealIds)];
+    const { data: sites, error } = await supabase.from("deals")
+      .select("id, properties(address, city)").eq("deal_portfolio_id", t.portfolioId).in("id", ids).order("created_at");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!sites || sites.length !== ids.length) return NextResponse.json({ error: "Every selected asset must belong to this portfolio" }, { status: 400 });
+    portfolioSites = sites;
+    if (sites.some((s: any) => !s.properties?.address)) return NextResponse.json({ error: "Each selected asset needs an address before generating the LOI" }, { status: 400 });
+    t.loiType = "standard";
+    t.selectedDealIds = sites.map((s) => s.id);
+    t.propertyDescription = `the following ${sites.length} properties, collectively:\n` + sites.map((s: any, i: number) => `${i + 1}. ${[s.properties.address, s.properties.city].filter(Boolean).join(", ")}`).join("\n");
+  }
 
   let offerPrice: number | null;
   let deposit: number | null;
@@ -64,7 +85,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   } catch (err: any) {
     return NextResponse.json({ error: `Price and deposit: ${err.message}` }, { status: 400 });
   }
-  if (offerPrice == null) return NextResponse.json({ error: "Enter the offer price" }, { status: 400 });
+  if (offerPrice == null || offerPrice <= 0) return NextResponse.json({ error: "Enter a positive offer price" }, { status: 400 });
   if (t.date && !validDate(t.date)) return NextResponse.json({ error: "Enter a valid LOI date" }, { status: 400 });
   if (t.expiryDate && !validDate(t.expiryDate)) return NextResponse.json({ error: "Enter a valid expiry date" }, { status: 400 });
 
@@ -133,7 +154,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // 1. Persist the raw form so the next open prefills with it.
   const { error: saveErr } = await supabase
     .from("deals")
-    .update({ loi_terms: t })
+    .update({ loi_terms: portfolioSites ? { ...anchorTerms, portfolioOfferTerms: t } : t })
     .eq("id", params.id);
   if (saveErr) return NextResponse.json({ error: saveErr.message }, { status: 500 });
 
@@ -171,13 +192,15 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const { error: upErr } = await supabase.storage.from("documents").upload(storagePath, buffer, {
     contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
-  if (!upErr) {
-    await supabase.from("documents").insert({
-      deal_id: params.id,
+  if (upErr) return NextResponse.json({ error: `Could not file LOI: ${upErr.message}` }, { status: 500 });
+  {
+    const { error: docError } = await supabase.from("documents").insert((portfolioSites ?? [{ id: params.id }]).map((site) => ({
+      deal_id: site.id,
       doc_type: "loi",
       storage_path: storagePath,
       uploaded_by: user.email,
-    });
+    })));
+    if (docError) return NextResponse.json({ error: docError.message }, { status: 500 });
   }
   await logDealEvent(
     params.id,
@@ -192,7 +215,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // price so regenerating the document (typo fix, second download) doesn't
   // inflate the count. Never fatal: the LOI download must not fail because the
   // offer row didn't insert.
-  {
+  if (portfolioSites) {
+    // Keep the package total in the event and saved terms, never as a building price.
+    for (const site of portfolioSites) {
+      await logDealEvent(site.id, "portfolio_offer_generated", { portfolioId: t.portfolioId, selectedDealIds: t.selectedDealIds, totalPrice: offerPrice, date: dateIso, storagePath }, user.email);
+      await recordOffer(site.id, { price: null, offeredAt: dateIso, notes: `Portfolio offer: $${dollars(offerPrice)} total across ${portfolioSites.length} assets. No asset price allocated. LOI: ${storagePath}`, source: "loi" }, user.email, { dedupeSameDayPrice: true });
+    }
+  } else {
     try {
       await recordOffer(
         params.id,

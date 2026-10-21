@@ -76,6 +76,12 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
   } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
 
+  if (body.action === "start_underwriting") {
+    const { error } = await advance(params.id, "uw", "advanced_to_uw", { via: "manual_stage_action" }, user.email);
+    if (error) return NextResponse.json({ error }, { status: 400 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (body.action === "mark_offered") {
     const { error } = await advance(params.id, "offered", "marked_offered", {}, user.email);
     if (error) return NextResponse.json({ error }, { status: 500 });

@@ -23,12 +23,13 @@ const FIELDS = [
   "signer1Name", "signer1Title", "signer2Name", "signer2Title",
 ];
 
-export default function LoiPanel({ dealId, defaults }: { dealId: string; defaults: LoiDefaults }) {
+export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: string; defaults: LoiDefaults; portfolio?: { id: string; name: string; selectedIds?: string[]; assets: { id: string; label: string }[] } }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loiType, setLoiType] = useState(defaults.loiType || "standard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>(() => portfolio?.selectedIds?.filter((id) => portfolio.assets.some((a) => a.id === id)) ?? portfolio?.assets.map((a) => a.id) ?? []);
 
   const isSlb = loiType === "slb";
 
@@ -44,10 +45,11 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
       if (v !== null) payload[k] = v as string;
     }
     try {
+      if (portfolio && !selected.length) throw new Error("Select at least one asset");
       const res = await fetch(`/api/deals/${dealId}/loi`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(portfolio ? { ...payload, loiType: "standard", portfolioId: portfolio.id, selectedDealIds: selected } : payload),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "LOI generation failed");
       const blob = await res.blob();
@@ -70,7 +72,7 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
 
   return (
     <section className="panel">
-      <h2>Letter of Intent</h2>
+      <h2>{portfolio ? "Portfolio offer — IOS LOI" : "Letter of Intent"}</h2>
       {!open ? (
         <div className="stage-actions" style={{ marginBottom: 0 }}>
           <button onClick={() => setOpen(true)}>Generate LOI</button>
@@ -80,10 +82,20 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
+          {portfolio && <fieldset>
+            <legend>Assets included in this offer ({selected.length} of {portfolio.assets.length})</legend>
+            <button type="button" className="secondary" onClick={() => setSelected(portfolio.assets.map((a) => a.id))}>Select all</button>{" "}
+            <button type="button" className="secondary" onClick={() => setSelected([])}>Clear selection</button>
+            {portfolio.assets.map((asset) => <label key={asset.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={selected.includes(asset.id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, asset.id] : ids.filter((id) => id !== asset.id))} />
+              {asset.label}
+            </label>)}
+            <p className="hint">One total purchase price covers the selected assets. The IOS LOI lists their addresses without allocated building prices.</p>
+          </fieldset>}
           <div className="grid-2">
             <label>
               LOI type
-              <select value={loiType} onChange={(e) => setLoiType(e.target.value)}>
+              <select value={portfolio ? "standard" : loiType} disabled={!!portfolio} onChange={(e) => setLoiType(e.target.value)}>
                 <option value="standard">Standard purchase</option>
                 <option value="slb">Sale-leaseback (SLB)</option>
               </select>
@@ -140,14 +152,14 @@ export default function LoiPanel({ dealId, defaults }: { dealId: string; default
             </div>
           )}
 
-          <label>
+          {!portfolio && <label>
             Property description
             <input name="propertyDescription" defaultValue={defaults.propertyDescription} required />
-          </label>
+          </label>}
 
           <div className="grid-2">
             <label>
-              Price ($)
+              {portfolio ? "Total offer price ($)" : "Price ($)"}
               <input name="price" defaultValue={defaults.price} required />
             </label>
             {isSlb && (

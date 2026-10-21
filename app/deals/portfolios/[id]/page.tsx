@@ -15,6 +15,9 @@ import { loadCompEvidence, subjectOf } from "@/lib/comps/evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
 import AllocatedPriceInput from "@/components/AllocatedPriceInput";
 import PortfolioActions from "@/components/PortfolioActions";
+import LoiPanel from "@/components/LoiPanel";
+import { loiDefaults } from "@/lib/loi-defaults";
+import PortfolioStageControl from "@/components/PortfolioStageControl";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +41,7 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
   const [{ data: pf, error }, { data: deals, error: dealsError }, comps] = await Promise.all([
     db.from("deal_portfolios").select("*").eq("id", id).maybeSingle(),
     db.from("deals")
-      .select("id, ref, stage, asset_class, asking_price, contract_price, closed_price, properties(address, city, market, submarket, latitude, longitude, lot_sf, building_sf, occupancy_status)")
+      .select("id, ref, stage, asset_class, loi_terms, asking_price, contract_price, closed_price, properties(address, city, market, submarket, latitude, longitude, lot_sf, building_sf, occupancy_status)")
       .eq("deal_portfolio_id", id)
       .order("created_at"),
     loadCompEvidence(),
@@ -104,6 +107,8 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
             ))}
           </div>
         </div>
+
+        <PortfolioStageControl portfolioId={pf.id} assets={sites.map((s) => ({ id: s.d.id, label: [s.p.address, s.p.city].filter(Boolean).join(", ") || dealRef(s.d.ref), stage: s.d.stage }))} />
 
         <div className="kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginBottom: 20 }}>
           <Kpi label="Allocated price" value={usdM(totalPrice || null)} sub={`${priced} of ${sites.length} sites priced`} />
@@ -194,6 +199,11 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
           )}
         </section>
 
+        {sites.length > 0 && <LoiPanel
+          dealId={sites[0].d.id}
+          defaults={{ ...loiDefaults({ asset_class: "ios", loi_terms: sites[0].d.loi_terms?.portfolioOfferTerms }, []), attn: sites[0].d.loi_terms?.portfolioOfferTerms?.attn ?? pf.seller_broker ?? "", sellerClause: sites[0].d.loi_terms?.portfolioOfferTerms?.sellerClause ?? pf.current_owner ?? "its current ownership", loiType: "standard" }}
+          portfolio={{ id: pf.id, name: pf.name, selectedIds: sites[0].d.loi_terms?.portfolioOfferTerms?.selectedDealIds, assets: sites.map((s) => ({ id: s.d.id, label: [s.p.address, s.p.city, s.p.market].filter(Boolean).join(", ") || dealRef(s.d.ref) })) }}
+        />}
         <PortfolioActions
           portfolioId={pf.id}
           active={sites.filter((s) => s.d.stage !== "archived" && s.d.stage !== "closed").length}
