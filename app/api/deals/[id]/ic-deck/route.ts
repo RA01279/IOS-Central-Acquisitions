@@ -30,8 +30,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   try {
     const [saved, { data: docs, error }, { data: selectedDeal }] = await Promise.all([
       loadSavedDeckModel(id),
-      getServiceClient().from("documents").select("id,file_name,created_at").eq("deal_id", id)
-        .ilike("file_name", "%Exec%Summary%.pptx").order("created_at", { ascending: false }).limit(20),
+      getServiceClient().from("documents").select("id,file_name,uploaded_at").eq("deal_id", id)
+        .ilike("file_name", "%Exec%Summary%.pptx").order("uploaded_at", { ascending: false }).limit(20),
       getServiceClient().from("deals").select("properties(address)").eq("id", id).maybeSingle(),
     ]);
     if (error) throw new Error("Could not load source decks.");
