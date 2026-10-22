@@ -23,6 +23,7 @@ function load(path, deps = {}) {
 }
 const xlsx = load("lib/ic-deck/xlsx-lite.ts");
 const model = load("lib/ic-deck/model.ts", { "./xlsx-lite": xlsx });
+const modelSubject = load("lib/ic-deck/model-subject.ts");
 
 // ---- synthetic workbook ------------------------------------------------------
 const wb = new ExcelJS.Workbook();
@@ -101,6 +102,10 @@ assert.equal(model.validateModelSummary(JSON.parse(JSON.stringify(m))).version, 
 assert.throws(() => model.validateModelSummary({ ...m, version: "x" }), /unknown version/);
 assert.throws(() => model.validateModelSummary({ ...m, warnings: ["x".repeat(700)] }), /text too long/);
 assert.throws(() => model.validateModelSummary({ ...m, cashFlow: null }), /missing cashFlow/);
+assert.throws(() => modelSubject.bindModelSubject(m, "999 Other Deal"), /model identifies/);
+const typo = modelSubject.bindModelSubject({ ...m, source: { ...m.source, fileName: "100 Example Yard Rd.xlsx" }, property: { ...m.property, address: "101 Example Yard Rd" } }, "100 Example Yard Rd");
+assert.equal(typo.property.address, "100 Example Yard Rd");
+assert(typo.warnings.some(w => w.includes("101 Example Yard Rd")), "same-file address typo is disclosed");
 
 // ---- render ------------------------------------------------------------------
 const evidenceFor = (from) => load("lib/comps/evidence.ts", {
@@ -109,16 +114,17 @@ const evidenceFor = (from) => load("lib/comps/evidence.ts", {
 });
 const kit = load("lib/ic-deck/pptx-kit.ts");
 const deck = load("lib/ic-deck/deck.ts", { "./pptx-kit": kit });
-const out = deck.renderIcDeck({
+const deckInput = {
   model: m,
   deal: { id: "d", address: "100 Example Yard Rd", city: "Testville", state: "TX", market: "Testville", submarket: null, stage: "offered", stageLabel: "Offered",
     acquisitionType: "slb", contractPrice: null, lastOffer: { price: 5200000, date: "2026-09-01" }, ddEndOn: null, closingOn: null, loi: { depositAmount: "50,000", ddDays: "45", closingDays: "30" } },
   leaseComps: [{ n: 1, address: "1 Comp <Way> & Co", city: "Testville", date: "2026-03-01", buildingSf: 10000, acres: 2, quoted: "$5,000 / AC / mo", normalized: "$1.00", party: null, distanceMi: 1.2 }],
   saleComps: [], compRadiusMiles: 15, assets: [], maps: {}, preparedOn: new Date("2026-10-01T12:00:00"),
-});
+};
+const out = deck.renderIcDeck(deckInput);
 const zip = new PizZip(out);
 const slides = Object.keys(zip.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
-assert.equal(slides.length, 23);
+assert.equal(slides.length, 24);
 const all = slides.map((n) => zip.file(n).asText()).join("");
 for (const n of Object.keys(zip.files).filter((f) => /\.(xml|rels)$/.test(f))) {
   const text = zip.file(n).asText();
@@ -131,7 +137,27 @@ assert(all.includes("Confirm which price IC is approving"), "model vs Hopper pri
 assert(zip.file("ppt/notesSlides/notesSlide2.xml").asText().includes("MODEL CHECKS"), "model checks travel in the notes");
 assert(all.includes("Exhibit needed"), "missing maps become marked placeholders");
 assert.equal(zip.file("ppt/slideLayouts/slideLayout2.xml").asText().includes("100 Example Yard Rd"), true, "footer carries the subject");
-console.log("PASS: model extraction by label, model checks (site SF, stale MLA, stale base-case table), hidden sheets ignored, input guard, 23-slide render with escaped text and native tables.");
+console.log("PASS: model extraction, model checks, hidden sheets ignored, 24-slide render with editable financial tables.");
+
+// Reuse actual slide packages, not screenshots; financial slides are rebuilt.
+const reference = load("lib/ic-deck/reference.ts");
+const oldDeck = new PizZip(out);
+oldDeck.file("ppt/slides/slide6.xml", oldDeck.file("ppt/slides/slide6.xml").asText().replace("Site photos (building, yard, loading, cranes/power).", "ORIGINAL_SITE_EXHIBIT"));
+oldDeck.file("ppt/slides/slide8.xml", oldDeck.file("ppt/slides/slide8.xml").asText().replace("Model", "OLD_MODEL_DO_NOT_REUSE"));
+const sourceBytes = oldDeck.generate({ type: "nodebuffer" });
+assert.throws(() => reference.validateReference(sourceBytes, "999 Other Deal Road"), /does not match/);
+const retained = new PizZip(deck.renderIcDeck({ ...deckInput, reference: { bytes: sourceBytes, name: "Same deal - Exec Summary.pptx" } }));
+assert.equal(retained.file("ppt/slides/slide6.xml").asText(), oldDeck.file("ppt/slides/slide6.xml").asText(), "source exhibit is preserved byte-for-byte");
+assert(!retained.file("ppt/slides/slide8.xml").asText().includes("OLD_MODEL_DO_NOT_REUSE"), "old model slides never survive a refresh");
+assert(retained.file("ppt/notesSlides/notesSlide6.xml").asText().includes("Same deal - Exec Summary.pptx"), "source snapshot is attributed");
+assert.equal([...retained.file("ppt/presentation.xml").asText().matchAll(/<p:sldId\s/g)].length, 24, "all 24 slides are registered");
+const rels = retained.file("ppt/_rels/presentation.xml.rels").asText();
+assert(rels.includes('Target="slides/slide24.xml"'), "last slide is linked");
+if (process.env.IC_TEST_OUTPUT) {
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(process.env.IC_TEST_OUTPUT, retained.generate({ type: "nodebuffer" }));
+}
+console.log("PASS: same-property source exhibits preserved, stale financial slides replaced, 24-slide relationship manifest complete.");
 
 // ---- route -------------------------------------------------------------------
 {
@@ -147,8 +173,10 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     assets: [{ address: "Owned Yard Ln", city: "Testville", status: "owned", occupancy: "occupied", site_acres: 3, building_sf: 8000, latitude: 30.05, longitude: -95.02, geocode_precision: "rooftop" }],
   };
 
+  const persisted = [];
   const query = (table) => {
-    const b = { select: () => b, eq: () => b, neq: () => b, not: () => b, order: () => b, limit: async () => ({ data: tables[table], error: null }),
+    const b = { select: () => b, eq: () => b, ilike: () => b, neq: () => b, not: () => b, order: () => b, limit: async () => ({ data: tables[table], error: null }),
+      insert: row => { persisted.push(row); return b; }, single: async () => ({ data: { id: "generated-document" }, error: null }),
       range: async (from) => ({ data: from === 0 ? tables[table] : [], error: null }), maybeSingle: async () => ({ data: tables[table], error: null }) };
     return b;
   };
@@ -156,9 +184,12 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
   const NextResponse = class { constructor(body, init) { this.body = body; this.status = init?.status ?? 200; this.headers = new Map(Object.entries(init?.headers ?? {})); } static json(body, init) { return { body, status: init?.status ?? 200 }; } };
   const route = load("app/api/deals/[id]/ic-deck/route.ts", {
     "next/server": { NextResponse }, "@/lib/auth": { getCurrentUser: async () => user },
-    "@/lib/supabase": { getServiceClient: () => ({ from: query }) }, "@/lib/deals": { STAGE_LABELS: { offered: "Offered" } }, "@/lib/comps/evidence": evidenceFor(query),
+    "@/lib/supabase": { getServiceClient: () => ({ from: query, storage: { from: () => ({ upload: async (_path, bytes) => { assert(bytes.length > 0); return { error: null }; }, createSignedUrl: async () => ({ data: { signedUrl: "https://storage.example.test/summary.pptx" }, error: null }) }) } }) }, "@/lib/deals": { STAGE_LABELS: { offered: "Offered" } }, "@/lib/comps/evidence": evidenceFor(query),
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck,
+    "@/lib/ic-deck/saved-model": { loadSavedDeckModel: async () => ({ model: m, version: 3 }) },
+    "@/lib/ic-deck/reference": load("lib/ic-deck/reference.ts"),
+    "@/lib/ic-deck/model-subject": modelSubject,
     "@/lib/agents/ic-narrative": load("lib/agents/ic-narrative.ts"), "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
   });
   const realFetch = globalThis.fetch;
@@ -174,9 +205,18 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     const lease = z.file("ppt/slides/slide16.xml").asText();
     assert(lease.includes("Near Lease Rd") && !lease.includes("Far Away Rd"), "comps ranked within the radius");
     assert(lease.includes("$5,000 / AC / mo"), "lease rent shown as quoted with its unit");
-    assert(z.file("ppt/slides/slide21.xml").asText().includes("Owned Yard Ln"), "owned assets near the subject listed");
+    assert(z.file("ppt/slides/slide22.xml").asText().includes("Owned Yard Ln"), "owned assets near the subject listed");
     assert(z.file("ppt/slides/slide3.xml").asText().includes("Exhibit needed"), "map failure falls back to a placeholder");
-    assert(!z.file("ppt/slides/slide22.xml").asText().includes("Confirm which price"), "matching offer and model price raise no flag");
+    assert(!z.file("ppt/slides/slide23.xml").asText().includes("Confirm which price"), "matching offer and model price raise no flag");
+    assert.equal((await route.POST(req({}), props)).status, 200, "build uses the saved model without selecting a workbook");
+    const download = await route.POST(req({ delivery: "vault" }), props);
+    assert.equal(download.status, 200);
+    assert.equal(download.body.url, "https://storage.example.test/summary.pptx", "large decks download directly from storage");
+    assert.equal(persisted[0].deal_id, "d1", "generated artifact belongs to the selected deal");
+    assert.equal(download.body.slides, 24);
+    const prepared = await route.GET({}, { params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000001" }) });
+    assert.equal(prepared.status, 200);
+    assert.equal(prepared.body.saved.version, 3, "page automatically loads the saved model version");
     assert.equal((await route.POST(req({ model: { version: "nope" } }), props)).status, 400);
     user = null;
     assert.equal((await route.POST(req({ model: m }), props)).status, 401);
@@ -201,7 +241,7 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     leaseComps: [], saleComps: [], compRadiusMiles: 15, assets: [], maps: {}, preparedOn: new Date(), narrative: { sections: nar.parseNarrative(JSON.stringify(good)).sections, runAt: "2026-10-01" } });
   const z2 = new PizZip(out2);
   const s2 = z2.file("ppt/slides/slide2.xml").asText();
-  assert(s2.includes("1.1 miles to SH-249 &lt;exit&gt; &amp; ramp.") && s2.includes("Agent draft — verify"), "drafts render escaped and tagged");
+  assert(s2.includes("1.1 miles to SH-249 &lt;exit&gt; &amp; ramp.") && s2.includes("Sourced draft — verify"), "drafts render escaped and tagged");
   assert(!s2.includes("[Analyst: highway access"), "drafted section replaces its open item");
   assert(s2.includes("[Analyst: governing") === false && z2.file("ppt/slides/slide7.xml").asText().includes("Example Tenant makes widgets."));
   assert(z2.file("ppt/slides/slide7.xml").asText().includes("do not assert creditworthiness"), "credit stays an analyst item");
@@ -224,6 +264,9 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     "next/server": { NextResponse: NR }, "@/lib/auth": { getCurrentUser: async () => who }, "@/lib/supabase": { getServiceClient: () => ({ from: q }) },
     "@/lib/deals": { STAGE_LABELS: {} }, "@/lib/comps/evidence": evidenceFor(q), "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck, "@/lib/agents/ic-narrative": nar, "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
+    "@/lib/ic-deck/saved-model": { loadSavedDeckModel: async () => null },
+    "@/lib/ic-deck/reference": load("lib/ic-deck/reference.ts"),
+    "@/lib/ic-deck/model-subject": modelSubject,
   });
   const rid = "00000000-0000-4000-8000-000000000009", props2 = { params: Promise.resolve({ id: "d1" }) };
   const res = await route2.POST({ json: async () => ({ model: JSON.parse(JSON.stringify(m)), narrativeRunId: rid }) }, props2);
