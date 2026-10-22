@@ -1,6 +1,6 @@
 // lib/ic-deck/deck.ts
 //
-// The IC executive summary, in the Golden Spike v2 order (23 slides). Every
+// The IC executive summary, in the Aldine reference order (24 slides). Every
 // figure comes from one of three places, and each slide's notes say which:
 //   - the acquisition model (ModelSummary, read from the workbook's cached values)
 //   - Hopper records (deal, LOI terms, comps, owned assets)
@@ -15,6 +15,7 @@ import { join } from "node:path";
 import type { ModelSummary } from "./model";
 import type { NarrativeKey, NarrativeSection } from "../agents/ic-narrative";
 import { MUTED, NAVY, R_NS, REL_NS, SlideBuilder, type Picture, type Para } from "./pptx-kit";
+import { REFERENCE_EXHIBIT_SLIDES, validateReference, referenceBudget } from "./reference";
 
 export interface DeckComp {
   n: number;
@@ -28,6 +29,7 @@ export interface DeckComp {
   quoted: string;
   /** Normalised: lease $/SF bldg/mo, sale $/SF bldg. */
   normalized: string;
+  normalizedUnit?: string;
   party: string | null;
   distanceMi: number | null;
   capRate?: number | null;
@@ -57,11 +59,13 @@ export interface IcDeckInput {
   leaseComps: DeckComp[];
   saleComps: DeckComp[];
   compRadiusMiles: number;
+  compRadii?: { lease: number; sale: number };
   assets: DeckAsset[];
   /** Sourced agent drafts for the sections Hopper can't fill. Optional. */
   narrative?: { sections: Record<NarrativeKey, NarrativeSection>; runAt: string };
   maps: Partial<Record<"coverPhoto" | "coverAerial" | "location" | "aerial" | "aerialClose" | "leaseComps" | "saleComps" | "portfolio", Picture>>;
   preparedOn: Date;
+  reference?: { bytes: Uint8Array; name: string };
 }
 
 // ---- formatting -------------------------------------------------------------
@@ -81,20 +85,25 @@ const monthYear = (d: Date) => `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 const millions = (v: number) => `$${(v / 1e6).toFixed(2)}M`;
 
 const OPEN = (what: string): Para => ({ runs: [{ text: `[Analyst: ${what}]`, color: "B4541A", italic: true }] });
-const DRAFT_TAG = { text: "  Agent draft — verify", color: "B4541A", italic: true, bold: false, size: 7 };
+const DRAFT_TAG = { text: "  Sourced draft — verify", color: "B4541A", italic: true, bold: false, size: 7 };
 
 export function renderIcDeck(input: IcDeckInput): Buffer {
   const { model: m, deal } = input;
-  const zip = new PizZip(readFileSync(join(process.cwd(), "lib/ic-deck/templates/ic-deck.pptx")));
-  const property = m.property.address ?? deal.address;
+  const zip = input.reference
+    ? validateReference(input.reference.bytes, input.deal.address)
+    : new PizZip(readFileSync(join(process.cwd(), "lib/ic-deck/templates/ic-deck.pptx")));
+  const property = deal.address || m.property.address || "Subject property";
+  const sourceBudget = input.reference ? referenceBudget(zip) : null;
   const cityState = m.property.cityState ?? [deal.city, deal.state].filter(Boolean).join(", ");
   const tenants = m.rentRoll.rows.map((r) => r.tenant);
   const occupied = m.rentRoll.totalSf && m.property.buildingSf ? m.rentRoll.rows.reduce((s, r) => s + (r.sf ?? 0), 0) / m.property.buildingSf : null;
   const price = m.capitalization.find((c) => /price/i.test(c.label))?.amount ?? null;
+  const pricePsf = m.capitalization.find(c => /price/i.test(c.label))?.psf;
+  const denominator = price && pricePsf && m.property.siteSf && Math.abs(price / m.property.siteSf - pricePsf) / pricePsf < .02 ? "land" : price && pricePsf && m.property.buildingSf && Math.abs(price / m.property.buildingSf - pricePsf) / pricePsf < .02 ? "building" : "model basis";
   const hold = m.returns.holdYears;
   const holdTag = `${hold ?? "?"}-Yr Hold; ${pct(m.yields.exitCap, 2)} exit`;
   const source = `Model: ${m.source.fileName}${m.source.modelDate ? ` (as of ${date(m.source.modelDate)})` : ""}`;
-  const footer = `DRAFT for IC review · Built by Hopper ${date(input.preparedOn.toISOString())} · ${source}`;
+  const footer = `DRAFT for IC review · Built ${date(input.preparedOn.toISOString())}${m.source.modelDate ? ` · Model as of ${date(m.source.modelDate)}` : ""} · Sources in slide notes`;
   const slides: SlideBuilder[] = [];
   // Agent drafts: bullets on the slide, every source and unconfirmed lead in the notes.
   const narrative = input.narrative;
@@ -125,7 +134,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     mapOrPlaceholder(s, "coverPhoto", "Cover photo of the property (drone or street view).", { x: 0, y: 1.57, w: 5.25, h: 3.77 });
     mapOrPlaceholder(s, "coverAerial", "Cover aerial with the parcel outlined.", { x: 5.25, y: 1.57, w: 4.75, h: 3.77 });
     const walt = m.rentRoll.waltYears;
-    const strategy = occupied !== null && occupied >= 0.999 ? "Stabilized Opportunity" : occupied ? "Value-Add Opportunity" : "Opportunity";
+    const strategy = deal.acquisitionType && /leaseback|slb/i.test(deal.acquisitionType) ? "Sale-Leaseback Opportunity" : occupied !== null && occupied >= 0.999 ? "Occupied Opportunity" : occupied ? "Value-Add Opportunity" : "Opportunity";
     const lease = deal.acquisitionType && /leaseback|slb/i.test(deal.acquisitionType) ? `${walt ? Math.round(walt) + "-Year " : ""}Sale-Leaseback` : walt ? `${walt.toFixed(1)}-Year WALT` : null;
     s.text([{ runs: [{ text: `${property}${m.property.acres ? ` (${m.property.acres.toFixed(2)} AC)` : ""}` }], spaceAfter: 0 }, { runs: [{ text: cityState, size: 24 }] }],
       { x: 0.21, y: 5.5, w: 6.5, h: 1.05 }, { size: 28, bold: true, color: NAVY });
@@ -146,13 +155,14 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       [pct(m.returns.levered.irr), `GLIRR (${holdTag})`],
       [pct(m.returns.unlevered.irr), `GUIRR (${holdTag})`],
       [mult(m.returns.levered.multiple), `Equity Multiple (${holdTag})`],
-      [pct(m.yields.goingIn, 2), `Going-in Cap Rate (${pct(m.yields.returnOnCostAtExit, 2)} YTC at exit)`],
+      [pct(m.yields.goingIn, 2), "Going-in Cap Rate"],
       [pct(m.returns.lp.irr), `Levered LP IRR (${holdTag})`],
+      [pct(m.yields.returnOnCostAtExit, 2), "Yield-to-Cost at Exit"],
     ];
     tiles.forEach(([big, small], i) => {
-      const x = 0.2 + i * 1.93;
-      s.rect({ x, y: 1.36, w: 1.83, h: 0.72 }, "EEF2F7");
-      s.text([{ runs: [{ text: big, bold: true, size: 15, color: NAVY }], align: "ctr", spaceAfter: 0 }, { runs: [{ text: small, size: 7, color: MUTED }], align: "ctr" }], { x, y: 1.36, w: 1.83, h: 0.72 }, { anchor: "ctr" });
+      const x = 0.2 + i * 1.6;
+      s.rect({ x, y: 1.36, w: 1.5, h: 0.72 }, "EEF2F7");
+      s.text([{ runs: [{ text: big, bold: true, size: 15, color: NAVY }], align: "ctr", spaceAfter: 0 }, { runs: [{ text: small, size: 7, color: MUTED }], align: "ctr" }], { x, y: 1.36, w: 1.5, h: 0.72 }, { anchor: "ctr" });
     });
     const fees = m.totalCost.amount !== null && price !== null ? m.totalCost.amount - price : null;
     const status = deal.contractPrice ? `Under contract at ${usd(deal.contractPrice)}` : deal.lastOffer ? `Offer of ${usd(deal.lastOffer.price)} submitted ${date(deal.lastOffer.date)}` : `Stage: ${deal.stageLabel}`;
@@ -163,15 +173,18 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     s.text([
       head("Site Overview"),
       body(`${pct(occupied, 2)} leased IOS site in ${cityState} on ${m.property.acres?.toFixed(2) ?? "—"} acres with a ${sf(m.property.buildingSf)} building (${pct(m.property.coverage, 2)} coverage), ${tenantLine}.`),
-      body(`Going-in basis of ${usd(m.capitalization[0]?.psf, 2)} PSF (${usd(price)} purchase price); all-in cost of ${usd(m.totalCost.psf, 2)} PSF (${usd(m.totalCost.amount)}).`),
+      body(`Going-in basis of ${usd(pricePsf, 2)}/SF ${denominator} (${usd(price)} purchase price); all-in cost of ${usd(m.totalCost.psf, 2)}/SF ${denominator} (${usd(m.totalCost.amount)}).`),
       drafted("locationHighlights") ? { runs: [{ text: "Location Highlights", bold: true, color: NAVY, size: 10 }, DRAFT_TAG], spaceAfter: 1 } : head("Location Highlights"),
       ...(drafted("locationHighlights")?.bullets.slice(0, 2).map(body) ?? [OPEN("highway access, submarket, nearby demand drivers")]),
+      head("Business Plan — Model Assumptions"),
+      body(`${deal.acquisitionType && /leaseback|slb/i.test(deal.acquisitionType) ? "Sale-leaseback" : "Acquisition"}${tenants.length ? ` with ${tenants.join(", ")}` : " with vacancy at closing"}; ${m.rentRoll.rows[0]?.expiration ? `recorded lease expiration ${date(m.rentRoll.rows[0].expiration)}.` : "lease timing requires confirmation."}`),
+      body(`Capital improvements budget: ${usd(m.capitalization.find(c => /capex|capital improvements/i.test(c.label))?.amount)}. ${m.rentRoll.rows[0]?.downtimeMonths ?? "Unspecified"} months modeled downtime; ${m.rentRoll.rows[0]?.marketPsfMonthly != null ? usd(m.rentRoll.rows[0].marketPsfMonthly, 2) + "/building SF/month market rent." : "market rent requires confirmation."}`),
       head("Deal Status"),
       body(status + (terms ? `; ${terms}.` : ".")),
       drafted("zoning") ? { runs: [{ text: "Zoning", bold: true, color: NAVY, size: 10 }, DRAFT_TAG], spaceAfter: 1 } : head("Zoning"),
       ...(drafted("zoning")?.bullets.slice(0, 2).map(body) ?? [OPEN("governing jurisdiction, district and outdoor-storage rights (see Site research agent)")]),
       head("Underwriting Assumptions"),
-      body(`${hold ?? "—"}-year hold; ${pct(m.yields.exitCap, 2)} exit cap on a ${pct(m.yields.returnOnCostAtExit, 2)} yield-to-cost; ${usd(fees)} of acquisition, financing and other costs capitalized into the ${usd(m.totalCost.psf, 2)} PSF all-in basis.`),
+      body(`${hold ?? "—"}-year hold; ${pct(m.yields.exitCap, 2)} exit cap on a ${pct(m.yields.returnOnCostAtExit, 2)} yield-to-cost; ${usd(fees)} of acquisition, financing and other costs capitalized into the ${usd(m.totalCost.psf, 2)}/SF ${denominator} all-in basis.`),
       body(`Debt: ${pct(m.debt.ltc, 2)} LTC (${usd(m.debt.loan)}), ${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)} spread, ${m.debt.interestOnlyMonths ?? "—"} months interest-only.`),
     ], { x: 0.2, y: 2.2, w: 5.45, h: 4.72 }, { size: 9 });
     const right = 5.8, w = 3.98;
@@ -179,7 +192,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ["Address", property], ["City, State", cityState], ["Tenant", tenants.join(", ") || "Vacant"],
       ["Site AC", m.property.acres?.toFixed(2) ?? "—"], ["Site SF", n0(m.property.siteSf)], ["Building SF", n0(m.property.buildingSf)], ["Coverage %", pct(m.property.coverage, 2)],
     ], { x: right, y: 2.2, w, h: 1.9 }, { size: 8, widths: [1.1, 1.9], align: ["l", "r"], rowHeight: 0.22 });
-    s.table(["Capitalization", "$ Amount", "$ PSF"], [
+    s.table(["Capitalization", "$ Amount", `$/SF ${denominator}`], [
       ...m.capitalization.map((c) => [c.label, usd(c.amount), usd(c.psf, 2)]),
       ["Total", usd(m.totalCost.amount), usd(m.totalCost.psf, 2)],
     ], { x: right, y: 4.15, w, h: 1.5 }, { size: 8, widths: [1.7, 1, 0.8], align: ["l", "r", "r"], emphasis: [m.capitalization.length], rowHeight: 0.2 });
@@ -230,7 +243,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   // 8. Model — base case -------------------------------------------------
   {
     const s = slide("Model – Base Case");
-    const leftBottom = s.table(["Sources & Uses", "$ Amount", "$ PSF"], [
+    const leftBottom = s.table(["Sources & Uses", "$ Amount", `$/SF ${denominator}`], [
       ...m.capitalization.map((c) => [c.label, usd(c.amount), usd(c.psf, 2)]),
       ["Total Uses", usd(m.totalCost.amount), usd(m.totalCost.psf, 2)],
       ["Loan", usd(m.debt.loan), m.debt.loan && m.property.buildingSf ? usd(m.debt.loan / m.property.buildingSf, 2) : "—"],
@@ -286,9 +299,14 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   {
     const s = slide("Sensitivity Analysis – Base Case");
     const grids = [m.sensitivities.deal, m.sensitivities.lp];
+    const sensitivityChecks = m.warnings.filter(w => /sensitivity|data tables|exit-cap table/i.test(w));
     grids.forEach((g, gi) => {
       const x = gi === 0 ? 0.3 : 5.15;
       s.text([{ runs: [{ text: gi === 0 ? `Deal Returns (${hold ?? "?"}-Yr Hold)` : `LP Returns (${hold ?? "?"}-Yr Hold)`, bold: true, color: NAVY }] }], { x, y: 1.42, w: 4.55, h: 0.3 }, { size: 11 });
+      if (sensitivityChecks.length) {
+        s.text([{ runs: [{ text: "Model Check — Recalculate Sensitivities", bold: true, color: NAVY }] }, ...sensitivityChecks.slice(0, 4).map(text => ({ runs: [{ text }], bullet: true })), { runs: [{ text: "Correct the price rows and cached data tables in Excel, recalculate, save and upload the current model. Stale grids are withheld from this deck.", bold: true }] }], { x, y: 1.9, w: 4.55, h: 4.2 }, { size: 11 });
+        return;
+      }
       if (!g) { s.placeholder("Price × exit cap sensitivity from the model.", { x, y: 1.8, w: 4.55, h: 3 }); return; }
       // Shade only an exact base-price row; between rows, the note says so.
       const hlRow = price === null ? -1 : g.rows.findIndex((r) => Math.abs(r.key - price) < 1);
@@ -327,18 +345,19 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
 
   // 16-19. Comps ---------------------------------------------------------
   const compSlides = (kind: "Lease" | "Sale", comps: DeckComp[], mapKey: "leaseComps" | "saleComps") => {
+    const radius = input.compRadii?.[kind === "Lease" ? "lease" : "sale"] ?? input.compRadiusMiles;
     const s = slide(`${kind} Comps`);
-    if (!comps.length) s.placeholder(`No ${kind.toLowerCase()} comps in Hopper within ${input.compRadiusMiles} miles and 24 months. Add comps on the Comps page.`, { x: 0.3, y: 1.45, w: 9.4, h: 4 });
+    if (!comps.length) s.placeholder(`No ${kind.toLowerCase()} comps in Hopper within ${radius} miles and 24 months. Add comps on the Comps page.`, { x: 0.3, y: 1.45, w: 9.4, h: 4 });
     else if (kind === "Lease") {
-      s.table(["#", "Address", "Date", "Bldg SF", "Land", "Rent (as quoted)", "$/SF Bldg/Mo", "Tenant", "Dist."],
+      s.table(["#", "Address", "Date", "Bldg SF", "Site AC", "Rent (as quoted)", comps[0]?.normalizedUnit ?? "$/SF Bldg/Mo", "Tenant", "Dist."],
         comps.map((c) => [String(c.n), [c.address, c.city].filter(Boolean).join(", "), `${date(c.date)}${c.dateEstimated ? "*" : ""}`, n0(c.buildingSf), ac(c.acres), c.quoted, c.normalized, c.party ?? "—", c.distanceMi == null ? "—" : `${c.distanceMi.toFixed(1)} mi`]),
         { x: 0.3, y: 1.45, w: 9.4, h: 4.8 }, { size: 8, widths: [0.3, 2.4, 0.85, 0.8, 0.7, 1.4, 0.9, 1.3, 0.6], align: ["ctr", "l", "r", "r", "r", "r", "r", "l", "r"], rowHeight: 0.3 });
     } else {
-      s.table(["#", "Address", "Closed", "Bldg SF", "Land", "Price", "$/SF Bldg", "Cap Rate", "Buyer", "Dist."],
+      s.table(["#", "Address", "Closed", "Bldg SF", "Site AC", "Price", comps[0]?.normalizedUnit ?? "$/SF Bldg", "Cap Rate", "Buyer", "Dist."],
         comps.map((c) => [String(c.n), [c.address, c.city].filter(Boolean).join(", "), date(c.date), n0(c.buildingSf), ac(c.acres), c.quoted, c.normalized, c.capRate == null ? "—" : pct(c.capRate, 2), c.party ?? "—", c.distanceMi == null ? "—" : `${c.distanceMi.toFixed(1)} mi`]),
         { x: 0.3, y: 1.45, w: 9.4, h: 4.8 }, { size: 8, widths: [0.3, 2.3, 0.85, 0.8, 0.7, 1.05, 0.85, 0.7, 1.2, 0.6], align: ["ctr", "l", "r", "r", "r", "r", "r", "r", "l", "r"], rowHeight: 0.3 });
     }
-    s.text([{ runs: [{ text: `Hopper comp repository: ranked by recency, distance, size and coverage within ${input.compRadiusMiles} miles and 24 months.${kind === "Lease" ? " * Date estimated from lease expiration." : ""}`, color: MUTED }] }], { x: 0.3, y: 6.55, w: 9.4, h: 0.35 }, { size: 8 });
+    s.text([{ runs: [{ text: `Hopper comp repository: ranked by recency, distance, size and coverage within ${radius} miles and 24 months.${kind === "Lease" ? " * Date estimated from lease expiration." : ""}`, color: MUTED }] }], { x: 0.3, y: 6.55, w: 9.4, h: 0.35 }, { size: 8 });
     s.notes.push(`Hopper comps: ${comps.map((c) => `#${c.n} ${c.address}`).join("; ") || "none in range"}.`);
     const map = slide(`${kind} Comps`);
     mapOrPlaceholder(map, mapKey, `Map of the ${kind.toLowerCase()} comps, numbered to match the table.`, { x: 0.3, y: 1.42, w: 9.4, h: 5.45 });
@@ -352,7 +371,17 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     const s = slide(`${where} Portfolio Context`);
     if (input.assets.length) mapOrPlaceholder(s, "portfolio", `Map of owned ${where} assets with the subject.`, { x: 0.3, y: 1.42, w: 9.4, h: 5.45 });
     else s.placeholder(`No owned assets recorded in ${where}.`, { x: 0.3, y: 1.42, w: 9.4, h: 5.45 });
-    const t = slide("Portfolio Summary");
+    const pf = slide(`${where} Pro Forma Portfolio`);
+    const knownSf = input.assets.reduce((sum, a) => sum + (a.buildingSf ?? 0), 0);
+    const knownAc = input.assets.reduce((sum, a) => sum + (a.acres ?? 0), 0);
+    pf.table(["Portfolio", "Assets", "Recorded Building SF", "Recorded Site AC"], [
+      ["Owned within 50 miles", String(input.assets.length), n0(knownSf), ac(knownAc)],
+      ["Proposed acquisition", "1", n0(m.property.buildingSf), ac(m.property.acres)],
+      ["Pro forma (subject added)", String(input.assets.length + 1), n0(knownSf + (m.property.buildingSf ?? 0)), ac(knownAc + (m.property.acres ?? 0))],
+    ], { x: 0.3, y: 1.65, w: 9.4, h: 2 }, { size: 11, emphasis: [2], align: ["l", "r", "r", "r"], rowHeight: 0.42 });
+    pf.text(`Subject purchase price: ${usd(price)}; all-in cost: ${usd(m.totalCost.amount)}. Recorded area totals exclude assets with missing sizes; these are not total market inventory or portfolio valuations. The acquisition is proposed, not an asset already owned.`, { x: 0.3, y: 3.8, w: 9.4, h: 1.2 }, { size: 11 });
+    pf.notes.push(source, "Hopper owned assets within 50 miles of the subject, capped at the nearest 15. Does not imply portfolio NOI, value or returns; those require the portfolio model.");
+    const t = slide("Portfolio Breakdown");
     if (input.assets.length) {
       t.table(["#", "Address", "City", "Site AC", "Bldg SF", "Status", "Occupancy", "Dist. to Subject"],
         input.assets.map((a, i) => [String(i + 1), a.address, a.city ?? "—", a.acres?.toFixed(2) ?? "—", n0(a.buildingSf), a.status, a.occupancy ?? "—", a.distanceMi == null ? "—" : `${a.distanceMi.toFixed(1)} mi`]),
@@ -373,11 +402,14 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ["Closing period", deal.loi.closingDays ? `${deal.loi.closingDays} days after DD` : "—"],
       ["Estimated DD expiration", date(deal.ddEndOn)],
       ["Estimated closing", date(deal.closingOn ?? m.dates.acquisition)],
+      ...(sourceBudget?.total != null ? [["Diligence budget (source snapshot)", usd(sourceBudget.total)]] : []),
     ];
     s.table(["Pursuit Terms", ""], rows, { x: 2.25, y: 1.8, w: 5.5, h: 3 }, { size: 11, widths: [2.6, 2], align: ["l", "r"], rowHeight: 0.36 });
     if (recorded !== null && price !== null && Math.abs(recorded - price) > 1) {
       s.text([{ runs: [{ text: `The model is at ${usd(price)}; Hopper records ${usd(recorded)}. Confirm which price IC is approving.`, color: "B4541A", bold: true }] }], { x: 2.25, y: 4.95, w: 5.5, h: 0.5 }, { size: 10 });
     }
+    const budgetCheck = m.warnings.find(w => /retained budget uses/i.test(w));
+    if (budgetCheck) s.text(budgetCheck, { x: 2.25, y: 5.65, w: 5.5, h: 0.9 }, { size: 10, color: "B4541A", bold: true });
     s.notes.push("Model price from ES Summary; deposit and periods from the deal's last saved LOI terms; dates from the deal record.");
   }
 
@@ -394,7 +426,26 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   // ---- assemble ---------------------------------------------------------
   zip.file("ppt/slideLayouts/slideLayout2.xml", zip.file("ppt/slideLayouts/slideLayout2.xml")!.asText().replace(/\{\{PROPERTY\}\}/g, property.replace(/&/g, "&amp;").replace(/</g, "&lt;")));
   let types = zip.file("[Content_Types].xml")!.asText();
+  for (const [ext, mime] of [["png", "image/png"], ["jpeg", "image/jpeg"]]) {
+    if (!types.includes(`Extension="${ext}"`)) types = types.replace("</Types>", `<Default Extension="${ext}" ContentType="${mime}"/></Types>`);
+  }
   for (const s of slides) {
+    if (input.reference && REFERENCE_EXHIBIT_SLIDES.includes(s.number)) {
+      // Keep the entire original package: pictures, crops, groups, tables,
+      // embedded workbooks and fonts remain intact and editable.
+      s.notes = [`Source exhibit retained from ${input.reference.name}. Same-property source snapshot; review dates, tenant information, survey coverage and budget before circulating.`];
+      zip.file(`ppt/notesSlides/notesSlide${s.number}.xml`, s.notesXml());
+      const path = `ppt/slides/_rels/slide${s.number}.xml.rels`;
+      let rel = zip.file(path)!.asText();
+      const note = /<Relationship\b[^>]*Type="[^"]*\/notesSlide"[^>]*\/>/;
+      const link = `<Relationship Id="rIdSourceNotes" Type="${R_NS}/notesSlide" Target="../notesSlides/notesSlide${s.number}.xml"/>`;
+      rel = note.test(rel) ? rel.replace(note, link) : rel.replace("</Relationships>", link + "</Relationships>");
+      zip.file(path, rel);
+      zip.file(`ppt/notesSlides/_rels/notesSlide${s.number}.xml.rels`, `<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="${R_NS}/slide" Target="../slides/slide${s.number}.xml"/></Relationships>`);
+      const part = `/ppt/notesSlides/notesSlide${s.number}.xml`;
+      if (!types.includes(`PartName="${part}"`)) types = types.replace("</Types>", `<Override PartName="${part}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/></Types>`);
+      continue;
+    }
     zip.file(`ppt/slides/slide${s.number}.xml`, s.xml());
     const rels = [`<Relationship Id="rId1" Type="${R_NS}/slideLayout" Target="../slideLayouts/slideLayout${s.number === 1 ? 1 : 2}.xml"/>`, `<Relationship Id="rIdNotes" Type="${R_NS}/notesSlide" Target="../notesSlides/notesSlide${s.number}.xml"/>`];
     s.pictures.forEach((p, i) => {
@@ -405,9 +456,16 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     zip.file(`ppt/slides/_rels/slide${s.number}.xml.rels`, `<Relationships xmlns="${REL_NS}">${rels.join("")}</Relationships>`);
     zip.file(`ppt/notesSlides/notesSlide${s.number}.xml`, s.notesXml());
     zip.file(`ppt/notesSlides/_rels/notesSlide${s.number}.xml.rels`, `<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="${R_NS}/slide" Target="../slides/slide${s.number}.xml"/></Relationships>`);
-    types = types.replace("</Types>", `<Override PartName="/ppt/notesSlides/notesSlide${s.number}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/></Types>`);
+    for (const [part, kind] of [[`/ppt/slides/slide${s.number}.xml`, "slide"], [`/ppt/notesSlides/notesSlide${s.number}.xml`, "notesSlide"]]) {
+      if (!types.includes(`PartName="${part}"`)) types = types.replace("</Types>", `<Override PartName="${part}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.${kind}+xml"/></Types>`);
+    }
   }
-  if (slides.length !== 23) throw new Error(`Deck has ${slides.length} slides; the template has 23.`);
+  if (slides.length !== 24) throw new Error(`Deck has ${slides.length} slides; expected 24.`);
+  const ids = slides.map(s => `<p:sldId id="${256 + s.number}" r:id="rIdDeckSlide${s.number}"/>`).join("");
+  zip.file("ppt/presentation.xml", zip.file("ppt/presentation.xml")!.asText().replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, `<p:sldIdLst>${ids}</p:sldIdLst>`));
+  const deckRels = zip.file("ppt/_rels/presentation.xml.rels")!.asText().replace(/<Relationship\b[^>]*Type="[^"]*\/slide"[^>]*\/>/g, "");
+  zip.file("ppt/_rels/presentation.xml.rels", deckRels.replace("</Relationships>", slides.map(s => `<Relationship Id="rIdDeckSlide${s.number}" Type="${R_NS}/slide" Target="slides/slide${s.number}.xml"/>`).join("") + "</Relationships>"));
   zip.file("[Content_Types].xml", types);
+  if (zip.file("docProps/app.xml")) zip.file("docProps/app.xml", zip.file("docProps/app.xml")!.asText().replace(/<Slides>\d+<\/Slides>/, "<Slides>24</Slides>"));
   return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
