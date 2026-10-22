@@ -27,6 +27,15 @@ const priced = [
 ];
 assert.deepEqual(stages.pricedPortfolioAssets(priced, 'uw').map((a) => a.id), ['prospect']);
 assert.deepEqual(stages.pricedPortfolioAssets(priced, 'offered').map((a) => a.id), ['uw']);
+const stageGroups = stages.groupPortfolioStageAssets([
+  { portfolioId: 'package', stage: 'prospect', id: 'unpriced-a' },
+  { portfolioId: 'package', stage: 'prospect', id: 'unpriced-b' },
+  { portfolioId: 'package', stage: 'uw', id: 'priced-moved' },
+  { portfolioId: null, stage: 'uw', id: 'single' },
+]);
+assert.deepEqual(stageGroups.get('package:uw').map((a) => a.id), ['priced-moved']);
+assert.equal(stageGroups.get('package:prospect').length, 2);
+assert.equal(stageGroups.size, 2);
 let user, allowed, deals, calls, failId;
 function reset() {
   user = { email: 'test@example.com' }; allowed = true; calls = []; failId = null;

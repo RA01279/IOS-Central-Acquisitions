@@ -13,6 +13,7 @@ import DealGrid from "@/components/DealGrid";
 import DealFilters, { type FilterState } from "@/components/DealFilters";
 import { DarkKpi } from "@/components/ui";
 import { fetchAll } from "@/lib/fetch-all";
+import { groupPortfolioStageAssets } from "@/lib/portfolio-stages";
 
 // Live, per-request, auth-gated data -- never statically prerender this at
 // build time (doing so also fails the build when Supabase env isn't present).
@@ -115,32 +116,29 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
   };
   shown = [...shown].sort(by[sort]);
 
-  // A portfolio's sites show as ONE card, in the stage most of its sites are
-  // at (ties go to the earlier stage). Filters still apply site by site, so a
-  // market filter shows the package with only its sites in that market.
-  const groups = new Map<string, DealCardData[]>();
+  // Each stage shows the portfolio assets actually in that stage. A minority
+  // moving forward must not remain hidden in the portfolio's majority stage.
+  const groups = groupPortfolioStageAssets(shown);
   const singles: DealCardData[] = [];
   for (const c of shown) {
-    if (c.portfolioId) groups.set(c.portfolioId, [...(groups.get(c.portfolioId) ?? []), c]);
-    else singles.push(c);
+    if (!c.portfolioId) singles.push(c);
   }
-  const packages: PortfolioCard[] = [...groups.keys()].map((id) => {
-    // Filters decide whether the package shows; the card then describes all of it.
-    const sites = allCards.filter((c) => c.portfolioId === id);
+  const packages: PortfolioCard[] = [...groups.values()].map((sites) => {
+    const id = sites[0].portfolioId!;
+    const totalSites = allCards.filter((c) => c.portfolioId === id).length;
     const ask = (c: DealCardData) => {
       const row = deals.find((d: any) => d.id === c.id) as any;
       return c.price ?? (row?.asking_price != null ? Number(row.asking_price) : 0);
     };
-    const counts = ACQUISITION_STAGES.map((st) => [st, sites.filter((c) => c.stage === st).length] as const).filter(([, n]) => n);
-    const lead = counts.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
     const acres = sites.reduce((t, c) => t + (c.lotSf ?? 0), 0) / 43560;
     return {
       id,
       name: sites[0].portfolioName ?? "Portfolio",
       sites: sites.length,
+      totalSites,
       markets: new Set(sites.map((c) => c.market).filter(Boolean)).size,
-      stage: lead,
-      stageMix: counts.length > 1 ? counts.map(([st, n]) => `${n} ${STAGE_LABELS[st]}`).join(", ") : null,
+      stage: sites[0].stage,
+      stageMix: sites.length < totalSites ? `${sites.length} of ${totalSites} portfolio assets in ${STAGE_LABELS[sites[0].stage]}` : null,
       acres,
       price: sites.reduce((t, c) => t + ask(c), 0),
     };
@@ -260,15 +258,16 @@ interface PortfolioCard {
   id: string;
   name: string;
   sites: number;
+  totalSites: number;
   markets: number;
   stage: string;
-  /** "12 Prospect, 2 UW" when the sites aren't all at one stage. */
+  /** The number of assets in this stage relative to the full portfolio. */
   stageMix: string | null;
   acres: number;
   price: number;
 }
 
-/** One card for a whole portfolio package; its sites are on the portfolio page. */
+/** One card per portfolio and stage; every card opens the portfolio page. */
 function PackageCard({ p }: { p: PortfolioCard }) {
   return (
     <div className="pipeline-card-wrap">
@@ -282,7 +281,7 @@ function PackageCard({ p }: { p: PortfolioCard }) {
         </span>
         {p.stageMix && <span className="stage-age">{p.stageMix}</span>}
       </a>
-      <CardDeleteButton portfolio={{ id: p.id, sites: p.sites }} />
+      <CardDeleteButton portfolio={{ id: p.id, sites: p.totalSites }} />
     </div>
   );
 }

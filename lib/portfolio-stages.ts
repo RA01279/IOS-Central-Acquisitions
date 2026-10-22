@@ -29,3 +29,13 @@ export function pricedPortfolioAssets<T extends { stage: string; allocatedPrice:
     return !!plan.action && !plan.correction;
   });
 }
+
+export function groupPortfolioStageAssets<T extends { portfolioId: string | null; stage: string }>(assets: T[]): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const asset of assets) {
+    if (!asset.portfolioId) continue;
+    const key = `${asset.portfolioId}:${asset.stage}`;
+    groups.set(key, [...(groups.get(key) ?? []), asset]);
+  }
+  return groups;
+}
