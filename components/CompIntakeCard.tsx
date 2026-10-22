@@ -2,10 +2,11 @@
 import LocationPreview from "./LocationPreview";
 import { validCoordinates } from "@/lib/location";
 import { RENT_BASES } from "@/lib/comps/intake-validation";
+import CompDecimalInput from "./CompDecimalInput";
 
 export default function CompIntakeCard({ draft: d, update, issue }: { draft: any; update: (patch: any) => void; issue: string | null }) {
   const text = (label: string, key: string, type = "text") => <label>{label}<input type={type} value={d[key] ?? ""} onChange={e => update({ [key]: e.target.value || null })} /></label>;
-  const number = (label: string, key: string) => <label>{label}<input type="number" min="0" step="any" value={d[key] ?? ""} onChange={e => update({ [key]: e.target.value === "" ? null : Number(e.target.value) })} /></label>;
+  const number = (label: string, key: string) => <label>{label}<CompDecimalInput value={d[key] ?? null} onChange={value => update({ [key]: value })} /></label>;
   return <section className="panel-inset" style={{ padding: 16, marginTop: 12 }}>
     <label><input type="checkbox" checked={d._include} onChange={e=>update({_include:e.target.checked})} /> Include this {d.compType} comp</label>
     <div className="grid-2">

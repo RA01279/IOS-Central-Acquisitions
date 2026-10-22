@@ -20,6 +20,7 @@ const OmCompPicker = dynamic(() => import("./OmCompPicker"), { ssr: false });
 import type { CompSourcePart } from "./OutlookCompPicker";
 import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
+import CompDecimalInput from "./CompDecimalInput";
 import { validCoordinates } from "@/lib/location";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
 import { aiReadComps, readableText } from "@/lib/comps/ai-read";
@@ -999,10 +1000,9 @@ export default function CompIntakeForm({
                         )}
                       </td>
                       <td>
-                        <input
-                          value={fmtNum(d.compType === "sale" ? d.salePrice : d.rent)}
-                          onChange={(e) => {
-                            const n = e.target.value === "" ? null : Number(e.target.value.replace(/[$,]/g, ""));
+                        <CompDecimalInput
+                          value={d.compType === "sale" ? d.salePrice : d.rent}
+                          onChange={(n) => {
                             update(i, d.compType === "sale" ? { salePrice: n } : { rent: n });
                           }}
                           style={{ width: 110 }}

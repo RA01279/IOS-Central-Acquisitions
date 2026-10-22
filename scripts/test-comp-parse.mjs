@@ -410,6 +410,17 @@ check("no comps", empty.comps.length, 0);
 check("explains itself", empty.warnings.some((w) => w.includes("single column")), true);
 check("offers a way forward", empty.warnings.some((w) => w.includes("drop the spreadsheet")), true);
 
+for (const quote of ['$1.20 PSF per month', '$1.20/SF/month', '$.95 psf/mo', '$14.40 PSF per year']) {
+  const expected = quote.includes('.95') ? .95 : quote.includes('14.40') ? 14.4 : 1.2;
+  const basis = quote.includes('year') ? 'per_sf_bldg_annual' : 'per_sf_bldg_monthly';
+  const table = parseCompTable(`Address\tRent\tLease Date\n123 Houston St\t${quote}\t2026-01-01`, { defaultCompType: 'lease', city: 'Houston' });
+  check(`inline quote ${quote}`, table.comps.map(c => [c.rent, c.rentBasis]), [[expected, basis]]);
+  const email = parseCompInput({ html: null, text: `Address: 123 Houston St\nRent: ${quote}\nLease Date: 2026-01-01` }, { defaultCompType: 'lease', city: 'Houston' });
+  check(`email quote ${quote}`, email.comps.map(c => [c.rent, c.rentBasis]), [[expected, basis]]);
+}
+const monthlyHeader = parseCompTable('Address\tRent PSF per month\tLease Date\n123 Houston St\t$1.20\t2026-01-01', { defaultCompType: 'lease' });
+check('monthly PSF header', monthlyHeader.comps.map(c => [c.rent, c.rentBasis]), [[1.2, 'per_sf_bldg_monthly']]);
+
 unlinkSync(fileURLToPath(tmpUrl));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

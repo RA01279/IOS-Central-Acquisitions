@@ -117,6 +117,16 @@ const MAX_PLAUSIBLE_BLDG_MONTHLY = 4;
 // Brokers write "±9,900", "$1,485,000", "16.40%", and "—" for unknown. Anything
 // that isn't a number becomes null rather than 0: a zero rent would quietly
 // drag a recommendation down, a null is visibly missing.
+function quotedRent(raw: string | undefined): { value: number; basis: string } | null {
+  const match = raw?.trim().match(/^\$?([\d,]+(?:\.\d+)?|\.\d+)\s*(?:(?:\/|per\s+)(sf|sq\.?\s*ft|acre|ac)|p(sf))\s*(?:\/|per\s+)(mo(?:nth)?|yr|year)(?:\s+(?:NNN|gross))?$/i);
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/g, ""));
+  const acre = /^(acre|ac)$/i.test(match[2] ?? "");
+  const annual = /^(yr|year)$/i.test(match[4]);
+  if (!Number.isFinite(value) || (acre && annual)) return null;
+  return { value, basis: acre ? "per_acre_monthly" : annual ? "per_sf_bldg_annual" : "per_sf_bldg_monthly" };
+}
+
 function num(raw: string | undefined): number | null {
   if (raw === undefined) return null;
   const s = String(raw).trim();
@@ -301,7 +311,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(suite|ste|unit|space|bay|suiteunit)$/, "suite"],
   [/^(baserentmo|baserentmonth|monthlybaserentmo|rentmo|baserentpermonth)$/, "monthlyRent"],
   [/^(rentsfyr|rentpsfyr|rentsfyear|baserentsfyr|annualrentsf|rentperssfyr)$/, "rateAnnual"],
-  [/^(rentsfmo|rentpsfmo|rentsfmonth|baserentsfmo)$/, "rateMonthly"],
+  [/^(rentsfmo|rentpsfmo|rentsfmonth|baserentsfmo|rentpsfmonth|psfmonth|psfpermonth|rentpsfpermonth|rentpersfpermonth)$/, "rateMonthly"],
   // CAM, split by unit for the same reason rents are: "CAM / Mo" is dollars a
   // month, "CAM $/SF/Yr" is a rate, and averaging one as the other is
   // meaningless. A bare "CAM" column is treated as monthly dollars, which is
@@ -975,6 +985,8 @@ export function parseCompEmailText(text: string, opts: ParseOptions = {}): Parse
     let ambiguousRent = false;
     const cells = group.map(f => {
       if (f.field !== 'monthlyRent') return f;
+      const explicit = quotedRent(f.value);
+      if (explicit) return { ...f, label: explicit.basis === 'per_acre_monthly' ? 'Rate AC Mo' : explicit.basis === 'per_sf_bldg_annual' ? 'Rent SF Yr' : 'Rent SF Mo', value: String(explicit.value) };
       // A bare Rent label does not state whether dollars are total, per SF, or per acre.
       const rate = f.value.match(/^\$?([\d,]+(?:\.\d+)?)\s*(?:\/|per\s+)(acre|ac|sf|sq\.?\s*ft)\s*(?:\/|per\s+)(mo(?:nth)?|yr|year)(?:\s+(?:NNN|gross))?$/i);
       if (rate) return { ...f, label: /^(ac|acre)$/i.test(rate[2]) ? (/^(yr|year)$/i.test(rate[3]) ? 'Unresolved rent' : 'Rate AC Mo') : (/^(yr|year)$/i.test(rate[3]) ? 'Rent SF Yr' : 'Rent SF Mo'), value: rate[1] };
@@ -1328,16 +1340,17 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       // a 12x error, so an explicitly-labelled column always wins.
       // "Total Monthly" is a whole-site monthly rent too (the comp-import
       // agent's column for one); it was mapped but never read.
+      const explicit = ["rateMonthly", "rateAnnual", "monthlyRent", "psf"].map(key => quotedRent(get(key as Field))).find(Boolean);
       const monthly = num(get("monthlyRent")) ?? num(get("totalMonthly"));
-      const rateAnnual = num(get("rateAnnual"));
-      const rateMonthly = num(get("rateMonthly"));
+      const rateAnnual = num(get("rateAnnual")) ?? (explicit?.basis === "per_sf_bldg_annual" ? explicit.value : null);
+      const rateMonthly = num(get("rateMonthly")) ?? (explicit?.basis === "per_sf_bldg_monthly" ? explicit.value : null);
       // IOS is priced per ACRE per month -- that's the number the market
       // quotes, negotiates and argues about, and the standard TX IOS template
       // carries it in its own column ("Rate (AC/Mo)"). So it outranks
       // everything: a building-SF rate on a yard deal is a derived
       // convenience, and on a 6-acre site with a 20,000 SF shed it says far
       // more about the shed than about the deal.
-      const perAcre = num(get("ratePerAcre"));
+      const perAcre = num(get("ratePerAcre")) ?? (explicit?.basis === "per_acre_monthly" ? explicit.value : null);
       const perLandSf = num(get("rateLandSfMonthly"));
       if (perAcre !== null) {
         parsed.rent = perAcre;
