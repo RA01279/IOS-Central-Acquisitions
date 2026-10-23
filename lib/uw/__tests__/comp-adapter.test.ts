@@ -91,11 +91,12 @@ describe("nnnStatus", () => {
     expect(c.nnnStatus).toBe("stated_nn");
     expect(c.rentPerAcreMo).toBe(7_000);
   });
-  it("assumed (treated as NNN) when lease_type is blank", () => {
+  it("keeps unknown lease structure out of NNN-equivalent assumptions", () => {
     for (const lt of [null, ""]) {
       const c = normalizeLease(lease({ lease_type: lt, rent: 7_000 }));
-      expect(c.nnnStatus).toBe("assumed");
-      expect(c.rentPerAcreMo).toBe(7_000);
+      expect(c.nnnStatus).toBe("not_convertible");
+      expect(c.rentPerAcreMo).toBeNull();
+      expect(c.reasons.not_convertible).toMatch(/unknown/);
     }
   });
   it("adjusted: gross / modified gross minus CAM x building SF / 12, per acre", () => {

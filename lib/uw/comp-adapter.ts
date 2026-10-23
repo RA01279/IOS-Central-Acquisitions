@@ -9,8 +9,8 @@
 // Decisions from the addendum in docs/uw-build-plan.md:
 //   - Acreage is lot_sf / 43560. yard_acres is unreliable (a copy of the lot
 //     size on 91% of rows) and is ignored.
-//   - A blank lease_type is treated as NNN but labelled "assumed", so stats
-//     can be shown with and without those comps. Never mixed silently.
+//   - A blank lease_type cannot establish NNN equivalence and is excluded
+//     from net-rent assumptions until its structure is supported.
 //   - Comps are never deleted. Duplicates and outliers get a flag and a reason.
 //
 // Unit meanings follow lib/comps/rates.ts (building SF for per_sf_bldg_*, land
@@ -166,7 +166,11 @@ export function normalizeLease(row: CompRow): LeaseComp {
   let rentPerAcreMo: number | null = gross;
   if (STATED.has(lt)) nnnStatus = "stated";
   else if (lt === "nn") nnnStatus = "stated_nn";
-  else if (lt === "") nnnStatus = "assumed";
+  else if (lt === "") {
+    nnnStatus = "not_convertible";
+    rentPerAcreMo = null;
+    reasons.not_convertible = "lease structure is unknown; an NNN-equivalent rent is unsupported";
+  }
   else if (GROSS.has(lt)) {
     const cam = pos(row.cam_psf_annual);
     const bldg = pos(row.building_sf);

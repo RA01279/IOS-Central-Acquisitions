@@ -141,17 +141,17 @@ describe("with and without review_extreme / assumed NNN", () => {
     expect(s.withoutExtreme!.max).toBe(8_300);
   });
 
-  it("separates assumed-NNN leases", () => {
+  it("excludes leases whose NNN equivalence is unsupported", () => {
     const rows = [
-      ...[7_000, 8_000, 9_000].map((r) => lease(r, 2)),
+      ...[6_000, 7_000, 8_000, 9_000, 9_500].map((r) => lease(r, 2)),
       ...[10_000, 11_000].map((r) => lease(r, 2, { lease_type: null })),
     ];
     const s = valueStats(usableLeases(rows), "lease", 2);
     if (s.status !== "ok") throw new Error("expected ok");
     expect(s.withExtreme.n).toBe(5);
-    expect(s.withoutAssumedNnn!.n).toBe(3);
+    expect(s.withoutAssumedNnn!.n).toBe(5);
     expect(s.withoutAssumedNnn!.base).toBe(8_000);
-    expect(s.warnings.some((w) => /2 of 5 lease comps .* assumed NNN/.test(w))).toBe(true);
+    expect(s.withExtreme.compIds).not.toEqual(expect.arrayContaining(rows.slice(5).map(r=>r.id)));
   });
 });
 
