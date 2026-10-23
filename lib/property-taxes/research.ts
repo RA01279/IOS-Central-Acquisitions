@@ -1,9 +1,10 @@
 // Server-side only. Fixed official endpoints; never fetch a user-supplied URL.
 import { geocodeAddress, normaliseState, resolveState } from "../geocode";
 import { emptyTaxState, type TaxState, type TaxSource, type TaxParcel } from "./types";
-import { matchParcel, parcelKey } from "./model";
+import { matchParcel, parcelKey, mergeResearch } from "./model";
 import {normalizedAddress} from './address';
-import {parseGwinnettBill,gwinnettPdfText} from './gwinnett';
+import {researchAccount} from './collector-research';
+import {historyCoverage} from './coverage';
 
 export const TX_PARCELS = "https://feature.geographic.texas.gov/arcgis/rest/services/Parcels/stratmap_land_parcels_48_most_recent/MapServer/0";
 export const GA_PARCELS = "https://services3.arcgis.com/RfpmnkSAQleRbndX/ArcGIS/rest/services/Property_and_Tax/FeatureServer/0";
@@ -52,7 +53,10 @@ export function texasParcel(attributes: Record<string,unknown>, subject: TaxSubj
 }
 export async function researchTaxes(subject: TaxSubject, existing: TaxState, emit: Emit, fetcher: typeof fetch = fetch): Promise<TaxState> {
   const report = emptyTaxState(), gaps: string[] = [];
-  report.research = { at: new Date().toISOString(), status: "partial", gaps };
+  const upstream=fetcher,deadline=AbortSignal.timeout(90000);
+  fetcher=(input,init)=>upstream(input,{...init,signal:init?.signal?AbortSignal.any([deadline,init.signal]):deadline});
+  const attempts:NonNullable<TaxState['research']>['attempts']=[];
+  report.research = { at: new Date().toISOString(), status: "partial", gaps, attempts };
   emit("Resolving county and parcel evidence", report);
   let state = normaliseState(subject.state) ?? resolveState([subject.address, subject.city]), county = subject.county ?? "";
   let lat = subject.latitude, lng = subject.longitude;
@@ -98,7 +102,7 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
       }
       if (!report.parcels.length) gaps.push("TxGIO did not identify a dated parcel at the pin. Manually identify every acquisition parcel.");
     } catch(e) { gaps.push(`Texas parcel lookup unavailable: ${e instanceof Error ? e.message : "retry needed"}`); }
-    gaps.push("TxGIO publishes market value and parcel identity only. It does not establish taxable value, exemptions, issued bills, payment status or five-year history. Retrieve the county appraisal district and collector records or attach bills.");
+    gaps.push("TxGIO publishes market value and parcel identity only. Historical tax bills are imported only from a separate supported collector source. Other counties still require a collector connector or official bill upload. A collector total may exclude separately billed authorities; payment status and complete five-year history require their own evidence.");
   } else if (state === "GA" && county.toLowerCase().replace(/ county$/, "") === "gwinnett") {
     try {
       // The polygon ADDRESS field is only a street number. Resolve the full
@@ -116,24 +120,27 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
         if(!/^R\d{4}\s*\d{3}[A-Z]?$/i.test(accountId)) {gaps.push('County account format needs manual review.');continue;}
         const source=addSource(report,'Gwinnett county situs-address and owner record (values undated)',lookup,a);
         report.parcels.push({key,accountId,county:'Gwinnett',state:'GA',address:text(a.LOCADDR),owner:text(a.OWNER1),legal:text(a.LEGAL1),sourceIds:[source.id],matchEvidence:['Exact normalized full situs address matches the official county master. Verify acquisition boundaries and any additional parcels.','The map pin is supporting evidence only; it cannot override a conflicting situs address.'],review:'pending',reviewNote:'',component:'unknown',assessmentGroup:accountId});
-        const url=`https://www.gwinnetttaxcommissioner.com/PropTaxBill/${encodeURIComponent(accountId)}.pdf`;
-        try {
-          const response=await fetcher(url,{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});
-          if(!response.ok) throw new Error(`HTTP ${response.status}`);
-          const reader=response.body?.getReader();if(!reader)throw new Error('Empty bill');
-          const chunks:Uint8Array[]=[];let size=0;
-          while(true){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>4_000_000){await reader.cancel();throw new Error('Bill exceeds 4 MB research limit');}chunks.push(chunk.value);}
-          const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-          if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw new Error('Official response is not a PDF bill');
-          const raw=await gwinnettPdfText(bytes),billSource=addSource(report,'Gwinnett official issued tax bill; verify temporary/appeal notice',url,raw);
-          const record=parseGwinnettBill(raw,accountId,subject.address,billSource,key);
-          report.records.push(record);report.parcels[report.parcels.length-1].sourceIds.push(billSource.id);
-        }catch(e){gaps.push(`Dated official bill unavailable for ${accountId}: ${e instanceof Error?e.message:'retry needed'}.`);}
       }
       gaps.push('Undated figures from the county master are evidence only. Latest issued bill is retrieved separately; earlier years and live payments/balances remain unavailable until supported by dated collector records.');
     } catch(e) { gaps.push(`Gwinnett parcel lookup unavailable: ${e instanceof Error ? e.message : "retry needed"}`); }
     gaps.push("Gwinnett open-data tax master does not identify a tax year for its value fields. Its undated figures are preserved as evidence, not promoted to current taxes. Dated figures come only from separately verified official bills; earlier years and payments may remain unavailable.");
   } else gaps.push(`Automatic dated tax-record extraction is not connected for ${county || "this county"}, ${state || "unknown state"}. Add official records manually or upload bills. No amounts have been inferred.`);
+  // Research every retained subject account, including manually corrected accounts
+  // and extra acquisition parcels outside the map pin. A GIS outage must not stop
+  // an already identified account from reaching its collector.
+  const candidates=mergeResearch(existing,report).parcels.filter(p=>p.review!=='excluded');
+  for(const parcel of candidates){
+    if(deadline.aborted){attempts.push({parcelKey:parcel.key,status:'failed',message:'Research time limit reached before this account could finish. Retry; saved findings are retained.'});continue;}
+    const index=report.parcels.findIndex(p=>p.key===parcel.key);
+    if(index<0)report.parcels.push(structuredClone(parcel));else report.parcels[index]=structuredClone(parcel);
+    for(const id of parcel.sourceIds){const source=existing.sources.find(s=>s.id===id);if(source&&!report.sources.some(s=>s.id===id))report.sources.push(structuredClone(source));}
+    emit(`Checking historical bills: ${parcel.accountId} · ${parcel.county}, ${parcel.state}`,report);
+    const result=await researchAccount(parcel,fetcher);attempts.push(result.attempt);report.sources.push(...result.sources);
+    report.parcels.find(p=>p.key===parcel.key)!.sourceIds.push(...result.sources.map(s=>s.id));
+    for(const row of result.records){const prior=report.records.find(r=>r.parcelKey===row.parcelKey&&r.year===row.year);if(prior){Object.assign(prior.facts,row.facts);prior.jurisdictions=row.jurisdictions;prior.billEvidence=row.billEvidence;}else report.records.push(row);}
+    if(result.attempt.status!=='retrieved')gaps.push(`${parcel.accountId}: ${result.attempt.message}`);
+    emit(`Account check ended: ${parcel.accountId} — ${result.attempt.status}`,report);
+  }
   // Corrected/manual accounts remain in the workspace even when outside the pin.
   if (existing.parcels.length) gaps.push("Previously identified parcels remain in the workspace. A pin lookup is not an exhaustive acquisition boundary search; verify every account, including separate improvement accounts.");
   emit("Parcel evidence available; checking jurisdiction rules", report);
@@ -155,7 +162,8 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
     } catch { gaps.push(`Rule source inaccessible: ${rule.url}. Open it manually; no access controls were bypassed.`); }
   }
   gaps.push("Protests, appeals, delinquency, payments, penalties and interest are unknown unless supported by a dated record. Proposed values/rates and forecasts are not issued bills.");
-  report.research = { at:new Date().toISOString(), status:"partial", gaps };
-  emit("Research finished with source gaps; review partial findings", report);
+  report.research = { at:new Date().toISOString(), status:"partial", gaps, attempts };
+  const coverage=historyCoverage(mergeResearch(existing,report));
+  emit(`Research run finished: ${coverage.retrieved}/${coverage.expected||5} annual account bills retrieved${coverage.historyComplete?'; review account coverage':'; history incomplete'}`, report);
   return report;
 }

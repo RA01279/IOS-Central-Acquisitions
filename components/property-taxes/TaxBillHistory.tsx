@@ -1,0 +1,16 @@
+import type {TaxState} from '@/lib/property-taxes/types';
+import {effectiveFact} from '@/lib/property-taxes/model';
+import {subjectRecords,taxMoney} from '@/lib/property-taxes/presentation';
+import {SourceLink} from './TaxRecords';
+export default function TaxBillHistory({state,dealId}:{state:TaxState;dealId:string}){
+ const records=subjectRecords(state).filter(r=>{const f=effectiveFact(state,r,'levied');return typeof f?.value==='number'&&(f.stage==='issued'||(r.billEvidence&&f.stage!=='proposed'));});
+ const latest=records.length?Math.max(...records.map(r=>r.year)):new Date().getFullYear();
+ const years=Array.from({length:5},(_,i)=>latest-i),parcels=state.parcels.filter(p=>p.review!=='excluded');
+ return <section className="panel" aria-label="Historical tax bills"><h2>Historical tax bills</h2><p>Published billed amounts by actual tax year, including bills that may already be paid. These are account-level source amounts, not assessed values, today's balances or estimates.</p><p className="hint">{records.length?`Five-year view ending with the latest retrieved bill year: ${latest}.`:'No dated historical bills have been retrieved for this property.'} Sources identify whether each amount comes from an issued bill or the collector's published bill history, which may reflect corrections or amended levies. Review parcel coverage before treating these as the full property's taxes.</p><div className="table-scroll"><table className="summary-table"><thead><tr><th>Tax year</th><th>Parcel / account</th><th>Published tax billed</th><th>Record type &amp; review</th><th>Official source</th></tr></thead><tbody>{years.flatMap(year=>parcels.length?parcels.map(p=>{
+  const r=records.find(x=>x.year===year&&x.parcelKey===p.key),f=r&&effectiveFact(state,r,'levied'),manual=state.overrides.some(o=>o.parcelKey===p.key&&o.year===year&&o.metric==='levied');
+  const captured=state.sources.find(s=>s.id===f?.sourceId)?.captureMethod==='user_import';
+  return <tr key={`${p.key}:${year}`}><th scope="row">{year}</th><td>{p.accountId} · {p.county}, {p.state}</td><td>{typeof f?.value==='number'?taxMoney(f.value):'Not retrieved'}</td><td>{r?`${manual?'Manual correction':captured?'User-imported collector bill history':r.billEvidence?.kind==='collector_history'?'Collector-reported bill history':'Issued tax bill'} · ${p.review==='pending'?'parcel match needs review':f?.reviewed?'reviewed':'figure needs review'}`:'No original bill record'}</td><td>{f&&<SourceLink source={state.sources.find(s=>s.id===f.sourceId)} dealId={dealId}/>}</td></tr>;
+ }):[<tr key={year}><th scope="row">{year}</th><td>Parcel not identified</td><td>Not retrieved</td><td>Identify the subject account and research official records</td><td>Unavailable</td></tr>])}</tbody></table></div>
+ {records.filter(r=>r.billEvidence).map(r=><p className="hint" key={`${r.parcelKey}:${r.year}`}>{r.year} · {state.parcels.find(p=>p.key===r.parcelKey)?.accountId}: {r.billEvidence!.scope} {r.billEvidence!.notes}</p>)}
+ <p className="hint">Missing years remain unavailable. Temporary bills, appeals and changed source values are retained in Annual records. Research and bill imports never replace underwriting assumptions automatically.</p></section>;
+}

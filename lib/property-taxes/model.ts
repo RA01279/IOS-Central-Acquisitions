@@ -70,6 +70,8 @@ export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
       const fact = row.facts[metric], prior = old.facts[metric];
       if (fact) old.facts[metric] = { ...fact, reviewed: prior?.value === fact.value && prior?.stage === fact.stage ? prior.reviewed : false, ...(prior && prior.value !== fact.value ? { previous: prior.value } : prior?.previous!==undefined ? {previous:prior.previous} : {}) };
     }
+    if(row.billEvidence)old.billEvidence=structuredClone(row.billEvidence);
+    else if(row.facts.levied&&old.billEvidence?.sourceId!==row.facts.levied.sourceId)delete old.billEvidence;
     if(row.jurisdictions.length) {
       const manual=old.jurisdictions.filter(j=>current.sources.some(s=>s.id===j.sourceId && s.kind!=="official"));
       old.jurisdictions=[...row.jurisdictions,...manual.filter(j=>!row.jurisdictions.some(n=>n.name===j.name&&n.sourceId===j.sourceId))];

@@ -14,7 +14,9 @@ export function validateTaxState(input: unknown): TaxState {
     if (source.url && !/^https?:\/\//i.test(source.url)) throw new TaxError("Use an HTTP(S) source link.");
     if (!Number.isFinite(Date.parse(source.retrievedAt)) || !["official","manual","upload"].includes(source.kind)) throw new TaxError("Source needs a retrieval date and origin.");
     if (source.taxYear !== null) year(source.taxYear);
+    if(source.taxYears!==undefined){array(source.taxYears,10).forEach(year);if(new Set(source.taxYears).size!==source.taxYears.length)throw new TaxError('Duplicate source tax year.');}
     if (source.storagePath !== undefined) string(source.storagePath,300);
+    if(source.captureMethod!==undefined&&(source.captureMethod!=='user_import'||source.kind!=='manual'))throw new TaxError('Invalid source capture method.');
   }
   const sourceRef = (id: string) => { if (!sources.has(id)) throw new TaxError("Every finding needs a retained supporting source."); };
   for (const p of array(s.parcels,60)) {
@@ -36,6 +38,7 @@ export function validateTaxState(input: unknown): TaxState {
       if (typeof f.value === "string") string(f.value,2000);
     }
     for (const j of array(r.jurisdictions,50)) { string(j.name); rateFraction(j.rate,j.unit); sourceRef(j.sourceId); if (!["proposed","adopted"].includes(j.stage)) throw new TaxError("Rate needs its adoption status."); }
+    if(r.billEvidence){if(!['issued_statement','collector_history'].includes(r.billEvidence.kind))throw new TaxError('Invalid bill evidence type.');sourceRef(r.billEvidence.sourceId);string(r.billEvidence.scope,2000);string(r.billEvidence.notes,4000);if(r.billEvidence.collectorAccount!==undefined)string(r.billEvidence.collectorAccount,100);if(!r.facts.levied||r.facts.levied.sourceId!==r.billEvidence.sourceId)throw new TaxError('Historical bill needs a matching sourced levy.');}
   }
   for (const o of array(s.overrides,1800)) {
     if (!parcels.has(o.parcelKey) || !METRICS.includes(o.metric)) throw new TaxError("Invalid override target."); year(o.year); sourceRef(o.sourceId); string(o.reason,2000);
@@ -61,7 +64,14 @@ export function validateTaxState(input: unknown): TaxState {
       }
     }
   }
-  if (s.research) { string(s.research.at,100); array(s.research.gaps,100).forEach(x=>string(x,4000)); }
+  if (s.research) {
+    string(s.research.at,100); if(!Number.isFinite(Date.parse(s.research.at))||!['partial','complete'].includes(s.research.status))throw new TaxError('Invalid research result.');
+    array(s.research.gaps,100).forEach(x=>string(x,4000));
+    for(const a of array(s.research.attempts??[],60)){
+      if(!parcels.has(a.parcelKey)||!['retrieved','blocked','unsupported','failed'].includes(a.status))throw new TaxError('Invalid account research result.');
+      string(a.message,4000);if(a.sourceUrl!==undefined){string(a.sourceUrl,4000);if(!/^https:\/\//.test(a.sourceUrl))throw new TaxError('Invalid official research link.');}
+    }
+  }
   // Invalid overlapping inclusion must never reach totals or underwriting.
   try { includedParcels(s); } catch(e) { throw new TaxError((e as Error).message); }
   return s;

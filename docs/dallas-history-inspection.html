@@ -1,0 +1,494 @@
+
+
+
+<!doctype html>
+
+<HTML>
+<!-- 	PRC 191735 - HeatherH - 7/27/2017
+		Added class 'no-print' to prevent header from being printed 
+        
+        PRC 218389 - DucN     - 04/02/2019
+        Updated the banner including the new photo of John Ames
+
+		PRC 228290 - DougP    - 09/30/2019
+		Updated the banner with new photo of John Ames.  Updated background-color.
+-->
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge;chrome=1" />
+
+		<title> Dallas County Web Site </title>
+		<script src="/act_webdev/jss/jquery-3.3.1.min.js" type="text/javascript"></script>
+        <script src="/act_webdev/jss/excelexportjs.js" type="text/javascript"></script>
+		<script src="/act_webdev/dallas/resource/jquery/jquery-ui-1.14.1/jquery-ui.min.js" type="text/javascript"></script>
+		<meta name="description" content="Dallas County Web Site for all important business in the county.">
+
+		<link rel="stylesheet" href="/act_webdev/dallas/resource/jquery/jquery-ui-1.14.1/jquery-ui.min.css" type="text/css">
+		<link rel="stylesheet" href="/act_webdev/dallas/common_client.css" type="text/css">
+		<link rel="stylesheet" href="/act_webdev/dallas/newstyle.css" type="text/css">
+		<link rel="stylesheet" href="/act_webdev/dallas/dallas.css" type="text/css" >
+				
+		<style type="text/css">
+			body { background-color : #165185; }
+			.body_no_margin { margin : 4px; }
+			.body1 { font-size : small; font-family : Arial, Helvetica, sans-serif; }
+			.style10 { font-style : italic; font-family : "Times New Roman", Times, serif; }
+            #account-grid p { font-size: 14px; font-family: Roboto, sans-serif; }
+		</style>
+	</head>
+<!--
+<BODY marginheight="10" marginwidth="10">
+-->
+<meta http-equiv="X-UA-Compatible" content="IE=edge;chrome=1" />
+<BODY class="body_no_margin">
+<!--<TABLE class="tablebgi" cellSpacing=0 cellPadding=0 width=782 align=center border=0>-->
+<TABLE class="tablebgi" cellSpacing="0" cellPadding="0" width="980" align="center" border="0">
+  <tr class="trans" >
+	<!-- PRC 191735 -->
+    <td align="center" class='no-print'>
+		<a href="https://www.dallascounty.org/departments/tax/pay-property-tax.php">
+        <!-- PRC 218389 - Updated the banner including the new photo of John Ames -->
+
+		
+		<img border="0" src="/act_webdev/dallas/images/tax-act-banner-2026-blue-silver.jpg"
+         height="440"
+         alt="Go to DallasCounty.org for more services."
+         title="Go to DallasCounty.org for more services.">
+    </a>
+    <!-- djr removing <br> -->
+    </td>
+  </tr>
+  <tr class="trans" >
+    <td class="trans" >
+    <!-- djr make valid
+    <table class="trans" width="99%"  border="0" align="center" cellpadding="5" cellspacing="5" bordercolor="#CCCCCC">
+		-->
+    <table class="trans" width="99%"  border="0" align="center" cellpadding="5" cellspacing="5">
+		 <tr class="trans" >
+		 	<td class="trans" >
+
+                <hr class="trans" >
+
+
+<!-- 
+
+Page Option Settings
+--------------------
+        Current Tax Year: 2026
+  Retrieve QtrPay Status: false
+Retrieve Deferral Status: false
+
+       Current Date/Time: Thu Oct 22 14:12:18 CDT 2026
+        Client Date/Time: Thu Oct 22 14:12:18 CDT 2026
+ Balance as of Date/Time: Thu Oct 22 14:12:18 CDT 2026
+
+     Adjust Based on EOM: false
+     Days as Prior Month: 0
+
+        Time Zone Offset: 0
+Adjust Date Amount (hrs): 0
+
+           Query Timeout: 30 seconds
+ --><!-- record tax year: 2026 -->
+<!-- Database Verification: DATABASE IS UP -->
+
+
+
+<div align=center>
+<!-- djr remove for validation 
+<span><center>
+-->
+  <a class="navbutton" href="index.jsp">Owner Search</a>
+  <a class="navbutton" href="searchbyproperty.jsp">Address Search</a>
+  <a class="navbutton" href="searchbyaccount.jsp">Account Search</a>
+  <a class="navbutton" href="searchbyfiduciary.jsp">Fiduciary Search</a>
+<!-- djr
+</center>
+</span>
+--> 
+</div>
+<!-- Mar 9 2012   -->
+	<h6 align="center">
+		<br>
+		Property Tax Balance
+		<br>
+	</h6>
+
+	</td></tr><tr><td>
+
+<!--
+PRC 194667 - HeatherH - 12-8-2017
+Added notice for inactive accounts
+-->
+
+<!-- PRC 194667 - HeatherH - Added styling for inactive account notice -->
+<style>
+	.notice {
+		color: red;
+		text-align: center;
+		font-weight:bold;
+		margin-bottom: 15px;
+		font-size: 14px;
+	}
+	.hide {
+		display: none;
+	}
+	.cart-btn {
+		background-color: #15db10;
+		padding: 7px 10px;
+		color: white !important;
+		border-radius: 10px;
+		border: 1px solid #15db10;
+		font-size: 16px !important;
+        margin-bottom: 10px;
+	}
+	.cart-btn:hover {
+		color: black !important;
+		cursor: pointer;
+	}
+</style>
+<br>
+<!-- PRC 194667 - HeatherH
+Div for displaying notice for inactive accounts -->
+<div id="inactiveNotice" class="notice hide"></div>
+<table width="95%" bordercolor="#333399" border="1" cellpadding="2" align="center">
+	<tr>
+		<td >
+			<h5 align="center"><b>
+				All tax information refers to the 2026 Tax Year, unless otherwise noted, i.e. "Prior Year Amount Due".
+				Amounts due include penalty, interest, and collection fees if applicable.
+			</b></h5>
+		</td>
+	</tr>
+</table>
+
+<br>
+
+<table border="0" cellpadding="1" align="center" valign="top" width="*">
+	<tr valign="top">
+		<td width="53%" valign="top" height="356">
+			<h3>
+
+				<b>Account Number:&nbsp; 00000527655350000</b><br><br>
+				<b>Address:</b> <br> 2401 COMMERCIAL BUILDING LLC<br>5900 LOVELL AVE STE A<br>FORT WORTH, TX  76107-0000 <br><br>
+				<b>Property Site Address:</b> <br> 2401 W COMMERCE ST, DA<br> <br><br>
+				<b>Legal Description:</b> <br> LONE STAR PARK<br>BLK A/6168 TR 3  ACS 4.612<br>INT201700012229 DD01032017 CO-DC<br>6158 00A   00300      2006158 00A<br> <br><br>
+
+
+				<br>
+				<b>Current Tax Levy: &nbsp; </b> $103,850.74 <br><br>
+				<b>Current Amount Due: &nbsp; </b>
+				
+				$103,850.74<br><br>
+				
+				<b>Prior Year Amount Due: &nbsp; </b>$0.00<br><br>
+				<b>Total Amount Due: &nbsp; </b>
+				
+				$103,850.74<br><br>
+				
+
+                
+                
+
+
+                
+
+
+
+                
+
+                
+                    <style>
+                        #paymentoptions .navbutton {
+                            font-size:14px;
+                            padding: 10px 15px; border-radius: 3px; font-family: Roboto, sans-serif, Arial;
+                        }
+                    </style>
+                    <form id="paymentoptions" action="payment/payment_options.jsp" method="post">
+                        <input type="hidden" name="can" value="00000527655350000">
+                        <!--
+                        <a class="navbutton" href="#" onclick="document.getElementById('paymentoptions').submit();return false;">Payment Plan Options</a>
+<br>
+-->
+                        <a xclass="navbutton" href="#" onclick="document.getElementById('paymentoptions').submit();return false;">
+                            <img src="Pay_Options_Button_button.png" width=130>
+                        </a>
+                    </form>
+                
+
+			</h3>
+		</td>
+		<td width="47%" height="356" valign="top">
+
+
+			
+
+            
+
+<div>
+
+
+
+
+                    
+                        <script>
+                            function setNotice(notice) {
+                                if ( notice == "" ) {
+                                    $("#payment-block").removeClass("disable-payments");
+                                } else {
+                                    $("#payment-block").addClass("disable-payments");
+                                    $("#payment-notice").html(notice);
+                                }
+                            }
+                        </script>
+                        <style>
+                            #payment-block #payment-notice { display: none; }
+                            #payment-block #payment-notice p { margin-top: 0px; padding-top: 0px; }
+
+                            #payment-block #payment-section{ display: block; }
+                            #payment-block.disable-payments #payment-notice { display: block; }
+                            #payment-block.disable-payments #payment-section { display: none; }
+                        </style>
+
+                        <div id="payment-block" class="">
+                                        <div id="payment-notice" style="margin: 0px; padding: 0px; margin-bottom:20px; xmargin-top: -20px;">
+                                                
+                                        </div>
+                                        <div id="payment-section">
+                                            <form action="payment.jsp" name="FrmCCDetails" method="post">
+                                                <input type="hidden" name="can" value="00000527655350000">
+                        
+                                                <a id="pay-now-button" class="PayNow" href="javascript:document.FrmCCDetails.submit();">
+                                                    
+                                                    <img alt="PAY NOW" border="0" src="./images/PayNowBOG.png" onmouseover="this.src='./images/PayNowBOG.png'" onmouseout="this.src='./images/PayNowBOG.png'">
+                                                </a>
+                                            </form>
+                        
+                                            <h3 style="padding-top: 5px;color:red;">
+                                                Large dollar payments may cause your issuing bank to question this transaction.
+                                                Contact your financial institution to inform them of the amount you will be paying to avoid delays in processing your payment.
+                                            </h3>
+                                        </div>
+                        </div>
+                    
+
+			
+
+
+
+
+			<a class="eStatementEnrollment"
+				
+				 href="requests/register/request.jsp?can=00000527655350000&ownerno=0">
+			
+			<img alt="eStatement Enrollment" border="0" src="./images/eStatementEnrollmentWOB.png"
+				 onmouseover="this.src='./images/eStatementEnrollmentBOB.png'"
+				 onmouseout="this.src='./images/eStatementEnrollmentWOB.png'" />
+		</a>
+			<h3 style="padding-top: 0px;font-weight:bold;">
+				Enroll in eStatements to receive your Dallas County Tax Statements electronically.
+			</h3>
+
+
+			<h3>	 
+				<b>Market Value:</b> &nbsp;$4,614,030 <br><br>
+				<b>Land Value:</b> &nbsp;$1,004,060 <br><br>
+				<b>Improvement Value:</b> &nbsp; $3,609,970 <br><br>
+
+				<b>Capped Value:</b> $0 <br><br>
+				<b>Agricultural Value:</b> &nbsp; $0 <br><br>
+
+				<b>Exemptions:</b> None <br><br><br>
+
+
+
+				<a 
+						href="requests/currentstatement/statement_prepare.jsp?can=00000527655350000&ownerno=0"
+						 >
+					Current Tax Statement
+				</a>
+				<br><br>
+
+				
+				<a 
+						href="requests/summarystatement/summary_generate.jsp?can=00000527655350000&ownerno=0"
+						 >
+					Summary Tax Statement
+				</a>
+				<br><br>
+
+				<a href="reports/taxbyyear.jsp?can=00000527655350000&ownerno=0">
+					Taxes Due Detail by Year and Jurisdiction
+				</a>
+				<br><br>
+
+				<a href="reports/paymentinfo.jsp?can=00000527655350000&ownerno=0">
+					Payment Information
+				</a>
+				<br><br>
+
+				<a href="requests/receipt/composite_year.jsp?can=00000527655350000&ownerno=0">
+					Composite Receipt
+				</a>(pending payments are not included)
+				<br><br>
+
+				
+				
+
+
+				
+
+
+				
+
+				<a href="requests/address_correction.jsp?can=00000527655350000&ownerno=0">
+					Request an Address Correction
+				</a>
+				<br><br>
+				<!--
+			<a href="requests/duplicate_receipt.jsp?can=00000527655350000" target="_blank">Duplicate Receipt</a>
+			<br><br>
+      -->
+
+
+
+			</h3>
+
+
+
+		</td>
+	</tr>
+</table>
+<table width="100%" cellpadding="2">
+	<tr>
+		<td colspan="2" >
+			<h3><a href="reports/future_taxselect.jsp?can=00000527655350000&ownerno=0&taxYear=2026">Click
+				Here</a> to see your estimated amount due for a future date. You
+				can see this information by year and by both year and jurisdiction.</h3>
+		</td>
+	</tr>
+</table>
+<!-- PRC 194667 - HeatherH - Display inactive notice for inactive accounts on page load -->
+<script>
+	if("NA" == "IA" ||
+			"NA" == "XA" ||
+			"NA" == "XD") {
+		$("#inactiveNotice").text("This account is inactive for the 2026 tax year.");
+		$("#inactiveNotice").removeClass("hide");
+	}
+</script>
+
+	</td></tr><tr><td>
+
+
+
+	<h3 align="center">
+              <font face="Arial, Helvetica, sans-serif" size="2" >
+              <i>
+			Make your check or money order payable to: <br>
+		  <b>
+              JOHN R. AMES, PCC, CTA, TAX ASSESSOR/COLLECTOR<br>
+              Dallas County Tax Office<br>
+              P O BOX 139066<br>
+              DALLAS, TEXAS 75313-9066
+              </b>
+              </i>
+              </font>
+	</h3>
+
+	</td></tr><tr><td>
+
+  <div align=center>
+    <a class="navbutton" href="portfolio/Login.jsp">Go to Your Portfolio</a>
+    <a class="navbutton" 
+      href="https://www.dallascounty.org/departments/tax/">
+			Tax Office Home Page
+    </a>
+  </div>
+
+
+
+
+<!-- 	PRC 191735 - HeatherH - 7/27/2017
+		Added class 'no-print' to prevent footer from being printed -->
+		
+		</td>
+	</tr>
+<!-- PRC 191735 -->
+<tr class='no-print'> 
+  <td> 
+    <hr width="100%">
+    <div>
+      <a style="font-size:10px;margin-left: 10px;" 
+        href="/act_webdev/dallas/terms.jsp">
+        Terms of Use
+      </a>
+	  <a style="font-size:10px;margin-left: 10px;" 
+        href="/act_webdev/dallas/privacypolicy.jsp">
+        Privacy Policy
+      </a>
+    </div>
+    <!--<br>-->
+  </td>
+</tr>
+<!-- PRC 191735 -->
+<tr class='no-print'> 
+<td >
+<table><tr><td>
+<span class="disclaimer"><b>Disclaimer:</b></span>
+            <span class="disclaimerBody">
+              The Dallas County Tax Office provides this World Wide Web (WWW) site
+              information and services &quot;as is&quot; without warranty of any
+              kind, either expressed or implied. The Dallas County Tax Office
+              does not warrant the accuracy, authority, completeness, usefulness,
+              timeliness, or fitness for a particular purpose of its information
+              or services. The Dallas County Tax Office, its officials and employees
+              shall not be liable for any loss or injury caused in whole or part
+              by its negligence, contingencies beyond its control, loss of data,
+              or errors or omissions in the WWW site information or services. 
+            </span>
+			  </td>
+			  </tr>
+			  </table>
+ </td>
+</tr>
+<!-- PRC 191735 -->
+<tr class='no-print'> 
+  <td> 
+    <hr width="100%">
+  </td>
+</tr>
+<!-- PRC 191735 -->
+<tr class='no-print'> 
+  <td> 
+    <table width="100%">
+      <tr> 
+        <td valign="top" align="left"> <font face="Arial" color="#666666" size="1"> 
+          
+          DALLAS COUNTY TAX OFFICE<br>
+          500 Elm Street<br>
+          Dallas, Texas 75202<br>
+          214-653-7811
+  
+          </font></td>
+        <td valign="top" > 
+          <div align="right">
+					<font face="Arial" size="1" color="#666666">
+					<i>
+					&copy;Appraisal &amp; Collection Technologies.
+          <br>
+					All rights reserved.
+					</i>
+					</font>
+				</div>
+            <br>
+
+          </td>
+   
+    </table>
+  </td>
+</tr></table>
+</td></tr></table>
+</body>
+</html>
+

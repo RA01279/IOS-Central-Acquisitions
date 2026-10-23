@@ -2,6 +2,7 @@ import {beforeAll,afterAll,beforeEach,it,expect,vi} from "vitest";
 import {NextRequest} from "next/server";
 import {taxTestDb,taxTestClient,taxDealId} from "../../../tests/helpers/tax-test-db";
 import {taxFixture} from "./fixtures";
+import {readFileSync} from 'node:fs';
 const mocks=vi.hoisted(()=>({user:{email:"local-test@example.test"} as {email:string}|null,db:null as any,revalidate:vi.fn(),research:vi.fn()}));
 vi.mock("@/lib/auth",()=>({getCurrentUser:async()=>mocks.user}));
 vi.mock("@/lib/supabase",()=>({getServiceClient:()=>mocks.db}));
@@ -44,4 +45,16 @@ it("retains a validated bill attachment and returns only a deal-scoped signed li
   const form=new FormData();form.append("revision","2");form.append("bill",new File(["%PDF-1.7\nSynthetic bill attachment\n%%EOF"],"synthetic-bill.pdf",{type:"application/pdf"}));
   const response=await POST(new NextRequest(`http://localhost/api/deals/${taxDealId}/property-taxes`,{method:"POST",headers:{origin:"http://localhost"},body:form}),props);expect(response.status).toBe(200);const saved=await response.json(),source=saved.state.sources.at(-1);expect(source.kind).toBe("upload");expect(files.size).toBe(1);expect(source.storagePath).toContain(`deals/${taxDealId}/property-taxes/`);
   const signed=await GET(new NextRequest(`http://localhost?source=${source.id}`),props);expect(signed.status).toBe(307);expect(signed.headers.get("location")).toContain(source.storagePath);
+});
+it('imports verified account text with preserved provenance and rejects mismatched history before saving',async()=>{
+ const workspace=await (await GET(new NextRequest('http://localhost'),props)).json();
+ const state=workspace.state;Object.assign(state.parcels[0],{accountId:'R6250 010',county:'Gwinnett',state:'GA',address:'3000 Amwiler Road'});
+ const saveResponse=await POST(request({action:'save',revision:workspace.revision,state}),props),saved=await saveResponse.json();expect(saveResponse.status,JSON.stringify(saved)).toBe(200);
+ const text=readFileSync(new URL('./gwinnett-history-capture.txt',import.meta.url),'utf8');
+ const body={action:'import-history',revision:saved.revision,parcelKey:state.parcels[0].key,text,sourceUrl:'https://www.gwinnetttaxcommissioner.com/property-tax/view-pay-your-taxes/-/p/propertyInfo/R6250+010/1085543'};
+ const bad=await POST(request({...body,text:text.replace('3000 AMWILER','3002 AMWILER')}),props);expect(bad.status).toBe(400);
+ const response=await POST(request(body),props);const result=await response.json();expect(response.status,JSON.stringify(result)).toBe(200);
+ expect(result.state.records.find((r:any)=>r.year===2025).facts.levied.value).toBe(7079.41);expect(result.state.sources.at(-1).captureMethod).toBe('user_import');
+ expect(result.state.scenarios).toHaveLength(0);
+ expect((await POST(request(body),props)).status).toBe(409);
 });

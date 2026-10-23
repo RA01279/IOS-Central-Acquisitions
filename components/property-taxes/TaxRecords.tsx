@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { METRICS, type TaxState, type Metric, type TaxSource, type Fact, type RateUnit } from "@/lib/property-taxes/types";
 import { effectiveFact } from "@/lib/property-taxes/model";
-import { fmtUsd } from "@/lib/uw/view-model";
-export function SourceLink({source,dealId}:{source:TaxSource|undefined;dealId:string}){if(!source)return <span className="hint">Source unavailable</span>;const href=source.storagePath?`/api/deals/${dealId}/property-taxes?source=${encodeURIComponent(source.id)}`:source.url;return <span className="tax-source">{href?<a href={href} target="_blank" rel="noreferrer">{source.label}</a>:source.label} · retrieved {source.retrievedAt.slice(0,10)} · tax year {source.taxYear??"unverified"} · {source.kind}</span>;}
+import { taxMoney as fmtUsd } from "@/lib/property-taxes/presentation";
+export function SourceLink({source,dealId}:{source:TaxSource|undefined;dealId:string}){if(!source)return <span className="hint">Source unavailable</span>;const href=source.storagePath?`/api/deals/${dealId}/property-taxes?source=${encodeURIComponent(source.id)}`:source.url;return <span className="tax-source">{href?<a href={href} target="_blank" rel="noreferrer">{source.label}</a>:source.label} · retrieved {source.retrievedAt.slice(0,10)} · tax year {source.taxYear??(source.taxYears?.length?source.taxYears.join(", "):"unverified")} · {source.kind}</span>;}
 export default function TaxRecords({state,onChange,dealId}:{state:TaxState;onChange:(s:TaxState)=>void;dealId:string}) {
   const [parcel,setParcel]=useState(""),[year,setYear]=useState(new Date().getFullYear()),[metric,setMetric]=useState<Metric>("levied"),[value,setValue]=useState(""),[label,setLabel]=useState(""),[url,setUrl]=useState(""),[reason,setReason]=useState(""),[sourceId,setSourceId]=useState(""),[stage,setStage]=useState<Fact["stage"]>("reported"),[error,setError]=useState<string|null>(null),[jurisdiction,setJurisdiction]=useState(""),[rate,setRate]=useState(""),[unit,setUnit]=useState<RateUnit>("per_100"),[taxable,setTaxable]=useState(""),[exemption,setExemption]=useState("");
   function edit(jurisdictionOnly=false){setError(null);try{

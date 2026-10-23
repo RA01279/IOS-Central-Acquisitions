@@ -5,6 +5,8 @@ import { getServiceClient } from "@/lib/supabase";
 import { loadTaxWorkspace, saveTaxWorkspace, TaxError } from "@/lib/property-taxes/store";
 import { mergeResearch } from "@/lib/property-taxes/model";
 import { researchTaxes } from "@/lib/property-taxes/research";
+import {importGwinnettHistory} from '@/lib/property-taxes/gwinnett-history-import';
+import {emptyTaxState} from '@/lib/property-taxes/types';
 export const dynamic="force-dynamic";
 export const maxDuration=120;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,7 +75,18 @@ export async function POST(req:NextRequest,props:{params:Promise<{id:string}>}) 
       const saved=await saveTaxWorkspace(db,id,body.revision,body.state,user.email);
       revalidatePath(`/deals/${id}/property-taxes`); return NextResponse.json(saved);
     }
-    if(body.action!=="research") throw new TaxError("Choose save or research");
+    if(body.action==='import-history'){
+      const current=await loadTaxWorkspace(db,id);
+      if(body.revision!==current.revision)throw new TaxError('Workspace changed. Reload before importing history.',409);
+      const parcel=current.state.parcels.find((p:any)=>p.key===body.parcelKey&&p.review!=='excluded');
+      if(!parcel||typeof body.text!=='string'||typeof body.sourceUrl!=='string')throw new TaxError('Choose a subject account and copy its official account history.');
+      let capture;try{capture=importGwinnettHistory(body.text,body.sourceUrl,parcel);}catch(e){throw new TaxError(e instanceof Error?e.message:'Could not validate county history.');}
+      const findings=emptyTaxState();findings.sources=[capture.source];findings.records=capture.records;
+      const state=mergeResearch(current.state,findings);
+      const saved=await saveTaxWorkspace(db,id,current.revision,state,user.email,'review');
+      revalidatePath(`/deals/${id}/property-taxes`);return NextResponse.json(saved);
+    }
+    if(body.action!=="research") throw new TaxError("Choose save, research or import-history");
     const current=await loadTaxWorkspace(db,id);
     if(body.revision!==current.revision) throw new TaxError("Workspace changed. Reload before researching.",409);
     const {data:events}=await db.from("deal_events").select("detail,created_at").eq("deal_id",id).eq("event_type","sourcing_research").order("created_at",{ascending:false}).limit(3);

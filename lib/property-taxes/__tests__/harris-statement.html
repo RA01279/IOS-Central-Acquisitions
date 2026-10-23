@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-WSCFFC5N9Q"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+
+        /* gtag('config', 'G-WSCFFC5N9Q');*/
+        gtag('config', 'G-WSCFFC5N9Q');
+    </script>
+
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, user-scalable=yes" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Harris County Tax Office</title>
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link href="/Shared/Styles/normalize.css" rel="stylesheet" />
+    <link rel="Stylesheet" href="/Shared/Styles/Main.css" />
+    <link href='https://fonts.googleapis.com/css?family=Oxygen:400,300,700' rel='stylesheet' type='text/css'>
+    <!--[if IE 9]><style>.name, div, table#helpHover{font-family:cambria;}</style><![endif]-->
+    <!--[if IE 8]><link href="~/Shared/Styles/ie/ie8.css" rel="stylesheet" /><![endif]-->
+    <!--[if lt IE 8]><link href="~/Shared/Styles/ie/lt-ie8.css" rel="stylesheet" /><![endif]-->
+
+    
+    <link rel="Stylesheet" href="/Shared/Styles/PropertyTax.css" />
+    <style>
+        #A0 {
+            width: 75px;
+        }
+
+        #A1, .NameOnly {
+            width: 175px;
+        }
+
+        .AddressOnly, .NameOnly {
+            display: none;
+        }
+
+        .Main {
+            height: 950px;
+        }
+
+        .topPage {
+            font-size: 11px;
+            text-align: left;
+            float: left;
+        }
+
+        .tablePager {
+            text-align: right;
+        }
+
+        .searchOpt {
+            cursor: pointer;
+        }
+
+        .TaxSearchHeader {
+            display: none;
+        }
+
+        q {
+            color: red;
+        }
+
+/*        h1, h2 {
+            color: white !important;
+        }  websites refresh changes  */
+    </style>
+    <link href="/Shared/js/jtable.2.3.0/themes/metro/blue/jtable.min.css" rel="stylesheet"
+          type="text/css" />
+    <link href="/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.10.4/jquery-ui.min.js"></script>
+    <script type="text/javascript" src="/Shared/js/fancybox/jquery.fancybox.pack.js"></script>
+    <script src="https://ajax.aspnetcdn.com/ajax/jquery.validate/1.11.1/jquery.validate.min.js"></script>
+    <script src="/Shared/js/jquery-accessibleMegaMenu.js"></script>
+    <script src="/Shared/js/jquery.form.js"></script>
+    <script src="/Shared/js/Chart.min.js"></script>
+
+        <script>
+        $(document).ready(function () {
+            $('.fancybox').fancybox();
+            $('.fancybox-buttons').fancybox({ openEffect: 'none', closeEffect: 'none', prevEffect: 'none', nextEffect: 'none', closeBtn: false, helpers: { title: { type: 'inside' }, buttons: {} }, afterLoad: function () { this.title = 'Image ' + (this.index + 1) + ' of ' + this.group.length + (this.title ? ' - ' + this.title : ''); } });
+        });
+    </script>
+
+        <script>
+
+        if (jQuery) {
+            (function ($) {
+                "use strict";
+                $(document).ready(function () {
+                    $('.megamenu').accessibleMegaMenu();
+
+                    setTimeout(function () {
+                        $('body').removeClass('init');
+                    }, 500);
+                });
+            }(jQuery));
+        }
+
+    </script>
+
+        <script>
+        $(document).ready(function () {
+            $('#sitesearch').submit(function (event) {
+                event.preventDefault();
+                var inp = $("#sitesearch").serialize();
+                var act = $.post("/SiteSearch", inp);
+                act.done(function (data) {
+                    $.fancybox(data);
+                });
+            });
+        });
+    </script>
+
+
+    
+
+    <script type="text/javascript" src="/Shared/js/PropertyTaxNew1.js"></script>
+    <script src="/Shared/js/jquery.placeholder.js"></script>
+    <script src="../Scripts/syntaxhighligher/shCore.js" )" type="text/javascript"></script>
+    <script src="../Scripts/syntaxhighligher/shBrushJScript.js" )" type="text/javascript"></script>
+    <script src="../Scripts/syntaxhighligher/shBrushXml.js" )" type="text/javascript"></script>
+    <script src="../Scripts/syntaxhighligher/shBrushCSharp.js" )" type="text/javascript"></script>
+    <script src="../Scripts/syntaxhighligher/shBrushSql.js" )" type="text/javascript"></script>
+    <script src="../Scripts/jtablesite.js" )" type="text/javascript"></script>
+    <script type="text/javascript" src="../Scripts/jtable/jquery.jtable.min.js" )"></script>
+
+
+    <meta name="google-translate-customization" content="ca89bff5183c8027-52604ce9b2e78ed4-g128c0d147bed5252-d" />
+
+</head>
+<body>
+        <a href="#main-content" class="skip-link">Skip to main content</a>
+
+        <header>
+        <div class="ie">
+            <div class="headContent">
+
+                <div class="hCont">
+
+                    <div class="MsBennett">
+                        <a href="/Default">
+                            <img alt="Miss Ramirez" src="/images/AnnetteRamirez/Annette.png" width="150" height="150" />
+                        </a>
+                    </div>
+
+                    <div class="title">
+                        <div class="name">Annette Ramirez</div>
+                        <div class="subname">Tax Assessor-Collector</div>
+
+                        <a title="Sign up" href="/Account/eBill" class="signup"></a>
+                        <a title="Find us in LinkedIn" href="https://www.linkedin.com/in/harris-county-tax-office-307337158/" class="linkedIn" target="_blank"></a>
+                        <a title="Find us in Instagram" href="https://www.instagram.com/harriscountyto/" class="instagram" target="_blank"></a>
+
+                        <a title="Follow us on Facebook" href="https://www.facebook.com/HarrisCountyTACOffice/" class="facebook" target="_blank"></a>
+                        <a title="Find us on twitter" href="https://twitter.com/HarrisCountyTAC/" class="twitter" target="_blank"></a>
+                        <a title="Contact Us" href="/About/Contact" class="contactNew"></a>
+                        <form class="searchTextForm" id="sitesearch">
+                            <input title="Search Our Website" type="text" class="searchText" name="searchText" size="10" />
+                            <input type="submit" class="searchButton" value="Search" style="margin-left: 10px;" />
+                        </form>
+
+
+                    </div>
+
+                    <div class="logo">
+                        <a href="/Default">
+                            <img alt="Harris County Tax Office Logo" src="/HarrisCounty/img/Logo2.png" width="150" height="145" />
+                        </a>
+                    </div>
+                    <div class="message">
+
+                    </div>
+
+
+
+                </div>
+            </div>
+        </div>
+    </header>
+
+
+        <nav>
+        <ul class="nav-menu">
+            <li class="nav-item">
+                <a href="javascript:void(0)">Property Tax</a>
+                <div class="sub-nav">
+                    <ul class="sub-nav-group">
+                        <li><a href="/Property/Overview">Overview</a></li>
+                         <li><a href="/Property/ViewStatementReceipts"><span >Statements & Receipts</span></a></li>
+                        <li><a href="https://myharriscountytax.com/"><span>Pay Online</span></a></li>
+                        <li><a href="/Property/PropertyTax">Payment Options</a></li>
+                        <li><a href="/Property/DelinquentTax">Search Delinquent Accounts</a></li>
+                        <li><a href="/Property/Appointments/Appointment">Property Transaction Appointment</a></li>
+                        <li><a href="/Property/PropertyInstallment">Installment Payment Plan</a></li>
+                        <li><a href="/Property/TaxBreaks">Tax Breaks & Exemptions</a></li>
+                        
+                        <li><a href="/Property/ManufactureHomes">Manufactured Homes</a></li>
+                        <li><a href="/Property/Overpayments">Overpayments</a></li>
+                        <li><a href="/Property/TaxSales/Index">Delinquent Property Tax Sales</a></li>
+                        <li><a href="/Property/Workshops">Workshops</a></li>
+                        <li><a href="/Portfolio/MortgageAcct?L=t">Commercial Portfolio</a></li>
+                        <li><a href="/Property/Resources">Resources</a></li>
+                        <li><a href="/Property/JurisdictionTaxRates">Tax Rate Information</a></li>
+                        <li><a href="/Property/PropertyFAQ">Frequently Asked Questions</a></li>
+                        <li><a href="/About/Forms?#tabs-2">Forms</a></li>
+                    </ul>
+                </div>
+            </li>
+            <li class="nav-item">
+                <a href="javascript:void(0)" title="Vehicle Registration">Vehicle Registration</a>
+                <div class="sub-nav">
+                    <ul class="sub-nav-group">
+                        <li><a href="/Auto/Automotive">About</a></li>
+                        <li><a target="_blank" href="https://renew.txdmv.gov/Renew/RegistrationRenewalServlet">Online Registration Renewal</a></li>
+                        
+                        <li><a href="/Auto/RenewalLocations">Registration Renewal Locations</a></li>
+                        <li><a href="/Auto/Placard">Disabled Placard Information</a></li>
+                        <li><a href="/Auto/PlacardFAQ">Disabled Placard FAQs</a></li>
+                        <li><a href="/Auto/FeeEstimator">Registration Renewal Fee Estimator</a></li>
+                        <li><a href="/Auto/UsedCar">Buying A Used Motor Vehicle?</a></li>
+                        <li><a href="/Auto/Plate">Special Plate Status</a></li>
+                        <li><a href="/Auto/MailInTitle">Mail-in Title Status</a></li>
+                        <li><a href="/Auto/IDSchedule">ID Schedule</a></li>
+                        <li><a href="/Auto/TitleServices">Title Service Owners & Reps</a></li>
+                        <li><a href="/Auto/Appointments/Appointment">Auto Transaction Appointment</a></li>
+                        <li><a href="/Auto/AutoFAQ">Frequently Asked Questions</a></li>
+                        <li><a href="/About/Forms?#tabs-1">Frequently Used Vehicle Forms</a></li>
+                        <li><a href="/Auto/ConvenienceLogProgram/ConvenienceLog">Branch Convenience Package Status</a></li>
+                    </ul>
+                </div>
+            </li>
+            <li class="nav-item">
+                <a href="javascript:void(0)" title="Permits & Special Taxes">Permits & Special Taxes</a>
+                <div class="sub-nav">
+                    <ul class="sub-nav-group">
+                        <li><a href="/SpecialPermitTaxes/Alcohol">Alcoholic Beverage Tax</a></li>
+                        <li><a target="_blank" href="http://www.tpwd.state.tx.us/fishboat/boat/owner/titles_and_registration/">Boat License</a></li>
+                        <li><a href="/SpecialPermitTaxes/CoinOp">Coin-operated Machines</a></li>
+                        <li><a href="/Property/Appointments/Appointment">Permit & License Appointment</a></li>
+                        <li><a href="/SpecialPermitTaxes/Hotel">Hotel/Motel Taxes</a></li>
+                        
+                        <li><a href="/SpecialPermitTaxes/SIT">Special Inventory Tax (Dealer) Forms</a></li>
+
+                    </ul>
+
+                </div>
+            </li>
+            
+            
+
+            
+            
+
+            
+            
+            <li class="nav-item">
+                <a href="javascript:void(0)">Online Services</a>
+                <div class="sub-nav">
+                    <ul class="sub-nav-group">
+                        <li><a href="https://myharriscountytax.com/">Pay Tax</a></li>
+                        <li><a href="/Property/TaxSales/Index">Delinquent Property Tax Sales</a></li>
+                        <li><a href="/SpecialPermitTaxes/Hotel">Hotel/Motel Taxes</a></li>
+                        <li><a target="_blank" href="https://renew.txdmv.gov/Renew/RegistrationRenewalServlet">Online Registration Renewal</a></li>
+                        
+                        
+                        
+                        
+                        <li> <a href="/About/Forms">Forms</a></li>
+                        
+                        <li>  <a href="/About/Careers">Careers</a></li>
+                        
+                        <li style="visibility:hidden;"><a href="/TaxSales/Survey">survey</a></li>
+                    </ul>
+
+                </div>
+            </li>
+
+            
+
+
+
+            <li class="nav-item">
+                <a href="javascript:void(0)">Military</a>
+                <div class="sub-nav">
+                    <ul class="sub-nav-group">
+                        <li><a href="/Military/HelpDesk">Military Help Desk</a></li>
+                    </ul>
+                </div>
+            </li>
+        </ul>
+    </nav>
+
+    
+    <main role="main" id="content">
+
+
+<script src='https://www.google.com/recaptcha/api.js' type="text/javascript"></script>
+
+<link rel="stylesheet" href="/Shared/Styles/animate.css" />
+<link rel="stylesheet" href="/Property/Statement.css" />
+
+<script>
+    $(window).on('load', function () {
+        // This force-removes the roles that cause the Lighthouse error
+        $('#tabs ul').removeAttr('role');
+        $('#tabs li').removeAttr('role');
+        $('#tabs a').removeAttr('role');
+
+        // Optional: Remove the jQuery UI classes if they interfere with styling
+        $('#tabs ul').removeClass('ui-tabs-nav ui-helper-reset ui-helper-clearfix ui-widget-header ui-corner-all');
+    });
+</script>
+
+
+<script>
+    function goback() {
+        $("#resultHead").hide();
+        $("#SearchResults").hide();
+        $("#CurrentStatement").fadeIn();
+    }
+    $(document).ready(function () {
+
+        $('#esPanel h3').click(function () {
+            $('span#es').toggleClass('closed');
+        });
+    });
+
+
+
+</script>
+<!--lnh-->
+
+
+    <a id="main-content" tabindex="-1"></a>
+    <!--[if lt IE 9]><style>table{text-align: inherit;} table.tot td{width:50%;text-align: inherit;text-align: right;} td.head{width:auto;} </style><![endif]-->
+    <style>
+        .clickable-ribbon, .clickable-ribbon1 {
+            cursor: pointer;
+        }
+        
+            /* Optional: Add a hover effect to replace the default link behavior */
+            .clickable-ribbon:hover {
+                filter: brightness(90%); /* Slightly dims the ribbon on hover */
+                transition: filter 0.2s ease;
+            }
+        form label {
+            color: #000;
+        }
+        .tablePager {
+            text-align: right;
+        }
+
+        .searchOpt {
+            cursor: pointer;
+        }
+
+        .TaxSearchHeader {
+            display: none;
+        }
+
+        #A0 {
+            width: 75px;
+        }
+
+        #A1, .NameOnly {
+            width: 175px;
+        }
+
+        input {
+            margin-top: 3px;
+        }
+
+        td.Subtitle-Account {
+            font-size: 1.1em;
+        }
+
+        td.PropDesc {
+            padding: 5px;
+        }
+
+        #cert {
+            min-height: 1100px;
+        }
+
+        span.dYears {
+            text-align: left;
+            float: left;
+            margin-left: 60px;
+        }
+
+        .ContentTitleN {
+            color: #1d1636 !important;
+            font-size: 2.50em;
+            font-variant: small-caps;
+            padding-bottom: 10px;
+            text-align: center;
+            font-weight: 500;
+            text-shadow: 3px 3px 3px rgba(0, 0, 7, 0.33);
+        }
+    </style>
+    <script src="/Shared/js/jquery.placeholder.js"></script>
+    <script>
+
+        function closeSearch() {
+            $("#resultHead").fadeOut();
+            $("#SearchResults").fadeOut();
+            $("#CurrentStatement").show();
+        }
+
+        function PayOnline1(data1) {
+            if (confirm('There is recent payment which is still pending to process. Are you sure to pay again or pay for future taxes?')) {
+                $(".PayOnline1")[0].click();
+
+            }
+            //else {
+            //    alert('Why did you press cancel? You should have confirmed');
+            //}
+        }
+
+        function PayOnline2(data1) {
+            if (confirm('There is recent payment which is still pending to process. Are you sure to pay again or pay for future taxes?')) {
+                $(".PayOnline2")[0].click();
+
+            }
+            //else {
+            //    alert('Why did you press cancel? You should have confirmed');
+            //}
+        }
+        $(document).ready(function () {
+            $('.clickable-ribbon1').on('click', function () {
+                var url = $(this).data('url');
+
+                if (url) {
+                    // Since e-Bill usually opens in the same window, 
+                    // we just change the location.
+                    window.location.href = url;
+                }
+            });
+            $('.clickable-ribbon').on('click', function () {
+                var url = $(this).data('url');
+                var target = $(this).data('target') || '_self';
+
+                if (url) {
+                    if (target === '_blank') {
+                        window.open(url, '_blank');
+                    }
+                    else {
+                        window.location.href = url;
+                    }
+                }
+            });
+            //$("#PayOnline").click(function (e) {
+            //    if (confirm('Some message')) {
+            //        alert('Thanks for confirming');
+            //    } else {
+            //        alert('Why did you press cancel? You should have confirmed');
+            //    }
+            //});
+            //begin: suchita
+            $('.rYear ul').hide();
+            var x = false;
+            $('[id^="tabs-"]').hide();
+            $('.rYear>.year').click(function (e) {
+                var id = $(this).attr('id');
+                e.stopPropagation();
+
+
+                $(this).find('ul').slideToggle();
+
+                if (x == false) {
+
+                    for (var i = 2001; i < id; i++) {
+                        $('#' + i).hide();
+                    }
+
+
+                    $('#' + id + ' ul li').show();
+                    $('#' + id + ' ul li #tabs').show();
+                    x = true;
+                }
+                else {
+                    $('.rYear li').show();
+                    $('.rYear ul').hide();
+                    x = false;
+
+                }
+            });
+
+            $('.rYear>.year li').click(function (e) {
+                var id = $(this).attr('id');
+                e.stopPropagation();
+
+
+
+                if (id.indexOf("Back") >= 0) {
+
+                    $(this).find('ul').slideToggle();
+                    $('.rYear li').show();
+                    $('.rYear ul').hide();
+
+                }
+                else {
+
+                    $('[id^="tabs-"]').hide();
+                    var chk = id.replace("In", "#tabs");
+                    $(chk).show();
+
+                }
+            });
+
+            //end: suchita
+            $('h2.left').click(function () {
+                $('h2.left').removeAttr("style", "background-color: #0D143A; color:#00d18c;") //website refresh changes
+                $(this).attr("style", "background-color: #0D143A;color:#00d18c;border:none;");//website refresh changes
+
+            })
+            $('#ui-id-1').click(function () {
+                $("#resultHead").fadeOut();
+                $("#SearchResults").fadeOut();
+                $("#CurrentStatement").show();
+            })
+
+            $('.txReceipt').click(function () {
+                $('.StatementPrint').prop('href', $(this).data('link'));
+                $('.StatementPrint .ribbon .left').text('Print Receipt');
+            });
+            $('.txCurrent').click(function () {
+                $('.StatementPrint').prop('href', $(this).data('link'));
+                $('.StatementPrint .ribbon .left').text('Print Statement');
+            });
+            $('.txDelinquent').click(function () {
+                $('.StatementPrint').prop('href', $(this).data('link'));
+                $('.StatementPrint .ribbon .left').text('Print Delinquent Statement');
+            });
+
+            ////lnh: right here
+            //$('#SearchTaxes').submit(function (event) {
+            //    event.preventDefault();
+            //    $(".ui-tabs-panel").hide();
+            //    $("#tabs-1").show();
+            //    $("#CurrentStatement").hide();
+
+            //    $("#resultHead").fadeIn();
+            //    $("#SearchResults").fadeIn();
+            //    $("#SearchResults").html("<p class='load'>Loading...</p><p class='load'><img src='loader.gif'/> </p>");
+
+            //    $('#SearchResults').load('CurrentResults?' + $('#SearchTaxes').serialize(), function (response, status, xhr) {
+            //        if (status == "error") {
+            //            var msg = "No results could be found, please check your input and try again.";
+            //            $("#SearchResults").html(msg);
+            //        }
+            //    });
+            //}
+            //);
+
+            $('input, textarea').placeholder();
+
+            $('.FSearch').hide();
+            $('.AddressOnly').hide();
+            $('.NameOnly').show();
+            var a = false; var b = false; var c = false;
+
+            $('.searchOpt').click(function () {
+                $('.searchOpt').attr('checked', true).prop('checked', false);
+                $(this).attr('checked', true).prop('checked', true);
+                checked();
+            });
+
+
+            function checked() {
+
+                a = $('#Ncheck').prop('checked');
+                b = $('#Acheck').prop('checked');
+                c = $('#Accountcheck').prop('checked');
+
+                if (c == false && a == false && b == true) {
+                    $('.FSearch').hide();
+                    $('.AddressOnly').show();
+                    $('.NameOnly').hide();
+                }
+                else if (c == false && a == true && b == false) {
+                    $('.FSearch').hide();
+                    $('.AddressOnly').hide();
+                    $('.NameOnly').show();
+                }
+                else {
+                    $('.AddressOnly').hide();
+                    $('.FSearch').show();
+                    $('.NameOnly').hide();
+                }
+
+                if (c == true && a == false && b == false) {
+                    $('.FSearch').attr("placeholder", "Account Number");
+                }
+                if (c == true && a == false && b == true) {
+                    $('.FSearch').attr("placeholder", "Account Number or Address");
+                }
+                if (c == true && a == true && b == false) {
+                    $('.FSearch').attr("placeholder", "Account Number or Name");
+                }
+                if (c == false && a == true && b == true) {
+                    $('.FSearch').attr("placeholder", "Name or Address");
+                }
+                if (c == true && a == true && b == true || c == false && a == false && b == false) {
+                    $('.FSearch').attr("placeholder", "Account Number, Name, or Address");
+                    //a = $('#Ncheck').prop('checked', true);
+                    //b = $('#Acheck').prop('checked', true);
+                    //c = $('#Accountcheck').prop('checked', true);
+                }
+            }
+
+
+        });
+        $(function () {
+            $("#cert").tabs({ show: { effect: "fade" } })
+        });
+    </script>
+    <script lang="javascript">
+        function Receipt(account) {
+
+            $("#cert").html("<p class='load'>Loading...</p><p class='load'><img src='loader.gif'/> </p>");
+            window.location.href = 'Receipt?account=' + account + '&&T=CurrAccount';
+        }
+    </script>
+    <script src="/Shared/js/bootstrap.min.js"></script>
+            <div id="cert">
+
+                <ul role="tablist">
+                    <li role="presentation">
+                        <fieldset class="stax" style="width:212px;" role="tab">
+                            <legend>Search</legend>
+                            <form id="SearchTaxes" name="SearchTaxes">
+                                <label for="selTaxSearch" class="sr-only">Search By</label>
+                                <select id="selTaxSearch">
+                                    <option value="account">Account</option>
+                                    <option value="name">Name</option>
+                                    <option value="address">Address</option>
+                                </select>
+
+                                <label for="txtSearchValue" class="sr-only" aria-hidden="true">Search Value</label>
+                                <input type="text" id="txtSearchValue" name="txtSearchValue" required placeholder="Search text here" />
+
+                                <button type="submit" id="btnSubmitTaxSearchStatement" class="searchButton">Search</button>
+                            </form>
+                        </fieldset>
+                    </li>
+                    <li class="ribbon" style="margin-top: 50px" role="tab">
+                        <a href="#tabs-1" class="txCurrent" data-link="pdf?t=print&amp;Account=FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=">
+                            <h2 class="left">Current Statement</h2>
+                        </a>
+                    </li>
+
+                            <li class="ribbon" style="margin-top:90px;" role="tab">
+                                <a href="#tabs-2">
+                                    <h2 class="left">5 Year Account History</h2>
+                                    
+                                </a>
+                            </li>
+
+
+                        <li class="ribbon clickable-ribbon"
+                            style="margin-top:130px;"
+                            role="tab"
+                            data-url="pdf?t=print&Account=FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU="
+                            data-target="_blank">
+                            <h2 class="left">Print Statement</h2>
+                        </li>
+                        <li class="ribbon clickable-ribbon1"
+                            style="margin-top:170px;"
+                            role="tab"
+                            data-url="https://www.hctax.net/Account/eBill">
+                            <h2 class="left">e-Bill</h2>
+                        </li>
+                            <form name="myform2" action="https://public.hcad.org/records/outsider/hc.asp?acct=0612170060008" method="post" class="statement">
+                                <input type="hidden" name="acct" value="0612170060008" />
+                            <li class="ribbon" onclick="document.forms['myform2'].submit();" style="margin-top:210px; " role="tab">
+                                <h2 class="left">HCAD</h2>
+                            </li>
+                            </form>
+
+
+                        <a onclick="Receipt('FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=');">
+                        <li class="ribbon" style="margin-top:250px; " role="tab">
+                            <h2 class="left">Tax Receipts</h2>
+                        </li>
+                        </a>
+
+
+                    
+                    
+                    
+
+                </ul>
+
+
+
+                <div id="tabs-1">
+                    <fieldset style="margin-left:20px;">
+                        <legend></legend>
+                        <div id="resultHead">
+                            <div class="ContentTitle">Search Results</div>
+                            <p><a href="javascript:void(0)" onclick="closeSearch();">Close</a></p>
+                        </div>
+
+                        <div id="SearchResults"></div>
+
+                        <div id="CurrentStatement">
+                            <div class="ContentTitleN">2025 Property Tax Statement</div>
+                                    <span class="ContentTitle" style="padding-left:30%;padding-right:30%;padding-bottom:50px;font-size:20px; color:green;"><strong>Account is Paid</strong></span>
+
+
+                            <table class="values" style="margin-top:20px;">
+                                <tr>
+                                    <td class="Subtitle">Account Number</td>
+                                    <td class="Subtitle">Current As Of:</td>
+                                    <td class="Subtitle">Assessed Owner</td>
+                                </tr>
+                                <tr>
+                                    <td class="Subtitle-Account"><b>061-217-006-0008            </b></td>
+                                    <td scope="row">October 21, 2026</td>
+
+                                    
+                                    
+                                            <td scope="row">
+                                                ALP WAF EMPIRE ISF OWNER TX LLC         <br />
+                                                1600 MARKET ST STE 2600                 <br />PHILADELPHIA PA 19103-7219              <br />
+                                                                                        <br />
+                                                                                        
+                                            </td>
+
+                                </tr>
+                                <tr>
+                                </table>
+                                <table class="values">
+                                    <tr>
+                                        <td class="Subtitle">Property Description</td>
+                                        <td class="Subtitle">Appraised Values</td>
+                                        <td class="Subtitle" id="notes">Notes/Exemptions</td>
+
+                                    </tr>
+                                    <tr>
+                                        
+
+                                        
+                                                <td scope="row">
+                                                    1626 CENTRAL PARK DR 77032<br />TR 1G-3 BLKS 6 7 10 &amp; 11                <br />
+                                                    HARBIN ACRES                            <br />
+                                                    1.6200 AC                               <br />
+                                                                                            
+                                                </td>
+                                        <td scope="row">
+                                            <table class="subtable">
+                                                <tr>
+                                                    <td scope="row">Land - Market Value:</td>
+                                                    <td scope="row">
+306,410                                                    </td>
+                                                </tr>
+
+                                                <tr>
+                                                    <td scope="row">Impr - Market Value:</td>
+                                                    <td scope="row">
+2,684,089                                                    </td>
+                                                </tr>
+
+                                                <tr>
+                                                    <td scope="row">Total Market Value:</td>
+                                                    <td scope="row">
+2,990,499                                                    </td>
+                                                </tr>
+
+                                                <tr>
+                                                    <td scope="row">Less Capped Mkt Value:</td>
+                                                    <td scope="row">
+0                                                    </td>
+                                                </tr>
+
+                                                <tr>
+                                                    <td scope="row">Appraised Value:</td>
+                                                    <td scope="row">
+2,990,499                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+
+                                        <td scope="row">
+<br />
+
+<br />
+<br />
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+
+                                        </td>
+                                    </tr>
+                                </table>
+                                <table class="jurdetails" aria-label="Taxing Jurisdiction table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Taxing Jurisdiction</th>
+                                            <th scope="col">Exemption</th>
+                                            <th scope="col">Taxable Value</th>
+                                            <th scope="col">Tax Rate</th>
+                                            <th scope="col">Taxes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+
+                                                    <tr>
+                                                        <td scope="row">Harris County</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.380960</td>
+
+                                                            <td class="num">$11,392.60</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Harris County Flood Control Dist</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.049660</td>
+
+                                                            <td class="num">$1,485.08</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Port of Houston Authority</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.005900</td>
+
+                                                            <td class="num">$176.44</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Harris County Hospital District</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.187610</td>
+
+                                                            <td class="num">$5,610.48</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Harris County Dept. of Education</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.004798</td>
+
+                                                            <td class="num">$143.48</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Lone Star College System</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.106000</td>
+
+                                                            <td class="num">$3,169.93</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Emergency Service Dist #24 (Fire)</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.098240</td>
+
+                                                            <td class="num">$2,937.87</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td scope="row">Emergency Service Dist #1  (EMS)</td>
+
+                                                                <td scope="row">0</td>
+                                                                                                                        <td scope="row">2,990,499</td>
+
+                                                            <td scope="row">0.085145</td>
+
+                                                            <td class="num">$2,546.26</td>
+                                                    </tr>
+                                    </tbody>
+                                </table>
+                                <table class="tot">
+                                    <tr>
+                                        <td class="head">Total 2025 Taxes Due by January 31, 2026:</td>
+                                        <td scope="row">$27,462.14</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="head">Payments applied to 2025 taxes:</td>
+                                        <td scope="row">$27,462.14</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="head">Total Current Taxes Due:</td>
+                                        <td scope="row">$0.00</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="head">Prior year(s) taxes due (if any):</td>
+
+                                                <td scope="row"><span class="dYears"> - </span> $0.00</td>
+
+                                    </tr>
+                                    <tr>
+                                        <td class="head">Total Amount Due For July 2026:</td>
+                                        <td scope="row">$0.00</td>
+                                    </tr>
+                                </table>
+                                <table class="jurdetails" aria-label="Penalties for lte Payments table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Penalties for Late Payments</th>
+                                            <th scope="col">Rate</th>
+                                            <th scope="col">Current</th>
+                                            <th scope="col">Delinquent</th>
+                                            <th scope="col">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td scope="row">By February 28, 2026</td>
+                                            <td scope="row">7%</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                        </tr>
+                                        <tr>
+                                            <td scope="row">By March 31, 2026</td>
+                                            <td scope="row">9%</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                        </tr>
+                                        <tr>
+                                            <td scope="row">By April 30, 2026</td>
+                                            <td scope="row">11%</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                        </tr>
+                                        <tr>
+                                            <td scope="row">By May 31, 2026</td>
+                                            <td scope="row">13%</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                        </tr>
+                                        <tr>
+                                            <td scope="row">By June 30, 2026</td>
+                                            <td scope="row">15%</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                            <td class="num">$0.00</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <p>Totals due may contain an additional section 33.07 collection penalty of 20%</p>
+                                <p>IF YOU ARE 65 YEARS OF AGE OR OLDER OR ARE DISABLED AND THE PROPERTY DESCRIBED IN THIS DOCUMENT IS YOUR RESIDENCE HOMESTEAD, YOU SHOULD CONTACT THE APPRAISAL DISTRICT REGARDING ANY ENTITLEMENT YOU MAY HAVE TO A POSTPONEMENT IN THE PAYMENT OF THESE TAXES.</p>
+                            </div>
+
+                        </fieldset>
+                    </div>
+<div id="tabs-2" style="margin-left:20px;"></div>                                                                <div id="tabs-3"></div>
+                        <div id="tabs-4"></div>
+                        <div id="tabs-5"></div>
+                        <div id="tabs-6"></div>
+                        <div id="tabs-7"></div>
+                        <div id="tabs-8"></div>
+                        <div id="tabs-9"></div>
+                        <div id="tabs-10"></div>
+                        <div id="tabs-11"></div>
+                        <div id="tabs-12"></div>
+                        <div id="tabs-13"></div>
+                        <div id="tabs-14"></div>
+                        <div id="tabs-15"></div>
+
+                </div>
+                    <script>
+        $(document).ready(function () {
+            $('#tabs-2').load('HistoryTab?Account=0612170060008')
+
+        });
+                    </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 3).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2025' + '&Remit=' + 94624433 + '&Check=' + '000000000012566');
+            $('#ui-id-'+ 3).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2025' + '&Remit=' + 94624433 + '&Check=' + '000000000012566');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 4).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2024' + '&Remit=' + 91601450 + '&Check=' + '');
+            $('#ui-id-'+ 4).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2024' + '&Remit=' + 91601450 + '&Check=' + '');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 5).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2023' + '&Remit=' + 89407481 + '&Check=' + 'WEB%20E%20CHK');
+            $('#ui-id-'+ 5).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2023' + '&Remit=' + 89407481 + '&Check=' + 'WEB%20E%20CHK');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 6).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2022' + '&Remit=' + 87067594 + '&Check=' + '000000411001348');
+            $('#ui-id-'+ 6).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2022' + '&Remit=' + 87067594 + '&Check=' + '000000411001348');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 7).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2021' + '&Remit=' + 83194626 + '&Check=' + '000000010038589');
+            $('#ui-id-'+ 7).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2021' + '&Remit=' + 83194626 + '&Check=' + '000000010038589');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 8).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2020' + '&Remit=' + 81965117 + '&Check=' + '000000075447460');
+            $('#ui-id-'+ 8).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2020' + '&Remit=' + 81965117 + '&Check=' + '000000075447460');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 9).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2019' + '&Remit=' + 78200699 + '&Check=' + '000000210108334');
+            $('#ui-id-'+ 9).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2019' + '&Remit=' + 78200699 + '&Check=' + '000000210108334');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 10).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2018' + '&Remit=' + 75834598 + '&Check=' + '000000210090037');
+            $('#ui-id-'+ 10).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2018' + '&Remit=' + 75834598 + '&Check=' + '000000210090037');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 11).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2017' + '&Remit=' + 73833590 + '&Check=' + '000000210075228');
+            $('#ui-id-'+ 11).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2017' + '&Remit=' + 73833590 + '&Check=' + '000000210075228');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 12).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2016' + '&Remit=' + 71219798 + '&Check=' + '000000210057373');
+            $('#ui-id-'+ 12).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2016' + '&Remit=' + 71219798 + '&Check=' + '000000210057373');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 13).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2015' + '&Remit=' + 69606196 + '&Check=' + '000000210040300');
+            $('#ui-id-'+ 13).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2015' + '&Remit=' + 69606196 + '&Check=' + '000000210040300');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 14).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2014' + '&Remit=' + 66945738 + '&Check=' + '000000210021449');
+            $('#ui-id-'+ 14).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2014' + '&Remit=' + 66945738 + '&Check=' + '000000210021449');
+
+        });
+                        </script>
+                        <script>
+        $(document).ready(function () {
+
+            $('#tabs-'+ 15).load('FullReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2013' + '&Remit=' + 64180371 + '&Check=' + '0209848298');
+            $('#ui-id-'+ 15).data("link", 'PrintReceipt?Account=' + 'FshVNlNCT3x+SM+OUdluPSI5IqPvnItENzp7fi/zKPU=' + '&Year=' + '2013' + '&Remit=' + 64180371 + '&Check=' + '0209848298');
+
+        });
+                        </script>
+                        <style>
+                            #cert {
+                                min-height: 1450px;
+                            }
+                        </style>
+                <script type="text/javascript" src="/Shared/js/tableSort.js"></script>
+
+
+
+
+
+</main>
+
+    <div class="footer pie">
+        
+    </div>
+
+    <script src="/Shared/js/home.js" type="text/javascript"></script>
+
+        <script>
+        $("nav:first").accessibleMegaMenu({
+            uuidPrefix: "accessible-megamenu",
+            menuClass: "nav-menu",
+            topNavItemClass: "nav-item",
+            panelClass: "sub-nav",
+            panelGroupClass: "sub-nav-group",
+            hoverClass: "hover",
+            focusClass: "focus",
+            openClass: "open"
+        });
+    </script>
+
+
+        <script>
+        $(function () {
+            $('.Main').jScrollPane({ showArrows: true, horizontalGutter: 10 });
+        });
+        $(function () {
+            $('#scroller').jScrollPane({ showArrows: true, autoReinitialize: true, horizontalGutter: 10 });
+        });
+
+        $(function () {
+            $('.scroll-pane').each(
+                function () {
+                    $(this).jScrollPane(
+                        {
+                            showArrows: $(this).is('.arrow')
+                        }
+                    );
+                    var api = $(this).data('jsp');
+                    var throttleTimeout;
+                    $(window).bind(
+                        'resize',
+                        function () {
+                            if ($.browser.msie) {
+                                if (!throttleTimeout) {
+                                    throttleTimeout = setTimeout(
+                                        function () {
+                                            api.reinitialise();
+                                            throttleTimeout = null;
+                                        },
+                                        50
+                                    );
+                                }
+                            } else {
+                                api.reinitialise();
+                            }
+                        }
+                    );
+                }
+            )
+
+        });
+    </script>
+
+
+    
+
+    <!--[if IE 9]><script type="text/javascript" src="~/Shared/Styles/pie/PIE_IE9_uncompressed.js"></script><![endif]-->
+    <!--[if lt IE 9]><script type="text/javascript" src="~/Shared/Styles/pie/PIE_IE678_uncompressed.js"></script><![endif]-->
+    <!--[if lt IE 10]><script type="text/javascript" src="~/Shared/js/ie.js"></script><![endif]-->
+    
+        <script>
+        function _gaLt(event) {
+
+            /* If GA is blocked or not loaded, or not main|middle|touch click then don't track */
+            if (!ga.hasOwnProperty("loaded") || ga.loaded != true || (event.which != 1 && event.which != 2)) {
+                return;
+            }
+
+            var el = event.srcElement || event.target;
+
+            /* Loop up the DOM tree through parent elements if clicked element is not a link (eg: an image inside a link) */
+            while (el && (typeof el.tagName == 'undefined' || el.tagName.toLowerCase() != 'a' || !el.href)) {
+                el = el.parentNode;
+            }
+
+            /* if a link with valid href has been clicked */
+            if (el && el.href) {
+
+                var link = el.href;
+
+                /* Only if it is an external link */
+                if (link.indexOf(location.host) == -1 && !link.match(/^javascript\:/i)) {
+
+                    /* Is actual target set and not _(self|parent|top)? */
+                    var target = (el.target && !el.target.match(/^_(self|parent|top)$/i)) ? el.target : false;
+
+                    /* Assume a target if Ctrl|shift|meta-click */
+                    if (event.ctrlKey || event.shiftKey || event.metaKey || event.which == 2) {
+                        target = "_blank";
+                    }
+
+                    var hbrun = false; // tracker has not yet run
+
+                    /* HitCallback to open link in same window after tracker */
+                    var hitBack = function () {
+                        /* run once only */
+                        if (hbrun) return;
+                        hbrun = true;
+                        window.location.href = link;
+                    };
+
+                    if (target) { /* If target opens a new window then just track */
+                        ga(
+                            "send", "event", "Outgoing Links", link,
+                            document.location.pathname + document.location.search
+                        );
+                    } else { /* Prevent standard click, track then open */
+                        event.preventDefault ? event.preventDefault() : event.returnValue = !1;
+                        /* send event with callback */
+                        ga(
+                            "send", "event", "Outgoing Links", link,
+                            document.location.pathname + document.location.search, {
+                            "hitCallback": hitBack
+                        }
+                        );
+
+                        /* Run hitCallback again if GA takes longer than 1 second */
+                        setTimeout(hitBack, 1000);
+                    }
+                }
+            }
+        }
+
+        var _w = window;
+        /* Use "click" if touchscreen device, else "mousedown" */
+        var _gaLtEvt = ("ontouchstart" in _w) ? "click" : "mousedown";
+        /* Attach the event to all clicks in the document after page has loaded */
+        _w.addEventListener ? _w.addEventListener("load", function () { document.body.addEventListener(_gaLtEvt, _gaLt, !1) }, !1)
+            : _w.attachEvent && _w.attachEvent("onload", function () { document.body.attachEvent("on" + _gaLtEvt, _gaLt) });
+    </script>
+
+
+</body>
+</html>
