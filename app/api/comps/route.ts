@@ -19,6 +19,7 @@ import { validCoordinates } from "@/lib/location";
 import { parseMoney } from "@/lib/money";
 import { canonicalMarket, escalationFraction } from "@/lib/markets";
 import { invalidateComps } from "@/lib/comps/cache";
+import { conflictingEvidence, sameStoredTransaction } from "@/lib/comps/conflicts";
 
 export const dynamic = "force-dynamic";
 
@@ -174,7 +175,7 @@ async function handlePOST(req: NextRequest) {
   // few hundred narrow rows.
   const existing = await readAllCompPages<any>((from, to) =>
     supabase.from("comps")
-      .select("id, comp_type, status, address, project_name, suite, latitude, longitude, rent, rent_basis, sale_price, date_commenced, closed_on, tenant_name, buyer, seller, landlord_name, market, submarket, city, asset_class, building_sf, lot_sf, yard_acres")
+      .select("*")
       .order("id").range(from, to) as any);
   const spellings = Object.fromEntries(
     NAME_FIELDS.map((f) => [f, canonicalSpellings(existing.map((e) => e[f]))])
@@ -349,7 +350,12 @@ async function handlePOST(req: NextRequest) {
       const { data: savedRow, error: rowErr } = await supabase.from("comps").insert(row)
         .select("id,address,latitude,longitude,geocode_precision,status");
       if (!rowErr) { saved++; savedComps.push(...(savedRow ?? [])); if (key) completedKeys.push(key); }
-      else if (rowErr.code === "23505") { duplicates++; if (key) completedKeys.push(key); }
+      else if (rowErr.code === "23505") {
+        const prior = existing.find(e => sameStoredTransaction(e,row)) ?? rows.find(r => r.row !== row && sameStoredTransaction(r.row,row))?.row;
+        const conflicts = prior ? conflictingEvidence(row,prior) : null;
+        if (!conflicts || conflicts.length) failed.push({address, reason: `Existing transaction preserved. Review conflicting source evidence${conflicts?.length ? `: ${conflicts.join(", ")}` : "; the stored row could not be verified"}. Open the existing comp and reconcile before retrying.`});
+        else { duplicates++; if (key) completedKeys.push(key); }
+      }
       else failed.push({ address, reason: rowErr.message });
     }
   }

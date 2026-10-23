@@ -167,7 +167,7 @@ export default function SensitivityPanel({
           <p className="hint">
             Rent grown {pct(uw.lease.escalation, 1)}/yr for {hold} years{holdYears ? " (model hold)" : " (4 years; no model hold)"}, divided by the exit cap,
             less {Math.round(SALE_COST_PCT * 100)}% selling costs. Centred on {exitCap ? "the deal's exit cap" : "6.50% (set an exit cap above)"}.
-            {cost ? " The % is against the all-in cost." : ""} A screen, not the model.
+            {cost ? " The % is against the all-in cost." : ""} Rent-only comparison: no vacancy, owner expenses, concessions, capital costs or debt payoff are deducted. This is not verified NOI, equity proceeds or an investment return.
           </p>
         </div>
       ) : (

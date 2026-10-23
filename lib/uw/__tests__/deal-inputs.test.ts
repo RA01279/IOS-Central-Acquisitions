@@ -50,6 +50,31 @@ describe("compContext", () => {
   it("has nothing without a market", () => {
     expect(compContext(ROWS, null, 8.7, AS_OF).rent).toBeNull();
   });
+  it('does not mix IOS evidence into an industrial screen or guess an unknown class',()=>{
+    const ios=ROWS.map(r=>({...r,asset_class:'ios'}));
+    expect(compContext(ios,'Fort Worth',8.7,AS_OF,36,'industrial').rent).toBeNull();
+    expect(compContext(ios,'Fort Worth',8.7,AS_OF,36,null).sale).toBeNull();
+    expect(compContext(ios,'Fort Worth',8.7,AS_OF,36,'ios').rent?.median).toBe(6250);
+  });
+});
+
+describe('live screening audit guards',()=>{
+ it('blocks the Gateway pattern of missing acres and unsupported zero rent',()=>{
+  const f={...facts,market:'Dallas',acres:null,inPlaceRentAnnual:null};
+  const c=compContext([],'Dallas',null,AS_OF),b=buildDealInputs(f,null,c);
+  expect(b.inputs.Acres).toBeNaN();expect(b.inputs.rentRoll[0].rent).toBeNaN();
+  expect(()=>runUnderwriting(engineInputs(b.inputs))).toThrow(/Acres/);
+  expect(()=>runUnderwriting(engineInputs({...b.inputs,Acres:5,Insurance:0}))).toThrow(/rent/);
+ });
+ it('preserves supported zero financing, closing costs and reserves from a model',()=>{
+  const m={...kennedale,closingCosts:0,reservesYear1:0,debt:{...kennedale.debt,rate:0,ltpp:0}};
+  const b=buildDealInputs(facts,m,compContext(ROWS,'Fort Worth',8.7,AS_OF));
+  expect(b.inputs).toMatchObject({CloseCost:0,ReservePerAcre:0,LoanRate:0,LoanLTV:0,NnnRecovered:false});
+ });
+ it('does not shift closing capex into a later year',()=>{
+  const b=buildDealInputs(facts,{...kennedale,capexByYear:[100000]},compContext(ROWS,'Fort Worth',8.7,AS_OF));
+  expect(b.inputs.capex[0].year).toBe(0);expect(()=>runUnderwriting(engineInputs(b.inputs))).toThrow(/Capex year/);
+ });
 });
 
 describe("buildDealInputs from the Excel model", () => {
@@ -84,7 +109,7 @@ describe("buildDealInputs from the Excel model", () => {
     for (const s of Object.values(b.sources)) expect(s.note.length).toBeGreaterThan(0);
   });
   it("runs, lands near the model, and compares side by side", () => {
-    const run = runUnderwriting(engineInputs(b.inputs));
+    const run = runUnderwriting(engineInputs({...b.inputs,NnnRecovered:true,MgmtPct:0}));
     expect(run.returns.unleveredIrr).not.toBeNull();
     // Same rent, NNN, similar costs: Yr-1 NOI within 5% of the model's.
     expect(Math.abs(run.returns.year1Noi / 637_776 - 1)).toBeLessThan(0.05);
@@ -92,7 +117,8 @@ describe("buildDealInputs from the Excel model", () => {
     expect(rows.find((r) => r.label === "Unlevered IRR")?.model).toBe(0.151);
   });
   it("NNN recovery removes landlord taxes; switching it off charges the reassessed tax", () => {
-    const nnn = runUnderwriting(engineInputs(b.inputs)).returns;
+    expect(b.inputs.NnnRecovered).toBe(false);
+    const nnn = runUnderwriting(engineInputs({...b.inputs,NnnRecovered:true})).returns;
     const gross = runUnderwriting(engineInputs({ ...b.inputs, NnnRecovered: false })).returns;
     expect(nnn.reassessedYear1Tax).toBe(0);
     expect(gross.year1Noi).toBeLessThan(nnn.year1Noi - 0.02 * 7_500_000 * 0.9);
@@ -163,16 +189,16 @@ describe("exitRolloverWarnings", () => {
     expect(exitRolloverWarnings({ ...b.inputs, ExitNoi: "forward" })).toHaveLength(1);
     expect(exitRolloverWarnings({ ...b.inputs, ExitNoi: "forward", Hold: 3 })).toHaveLength(0);
   });
-  it("management follows the model when its opex is recovered", () => {
-    expect(b.inputs.MgmtPct).toBe(0);
-    expect(b.sources.MgmtPct.source).toBe("model");
+  it("does not infer verified management-fee recovery from matching cached NOI", () => {
+    expect(b.inputs.MgmtPct).toBeGreaterThan(0);
+    expect(b.sources.MgmtPct.source).toBe("default");
   });
 });
 
 describe("stabilized exit", () => {
   const b = buildDealInputs(facts, kennedale, compContext(ROWS, "Fort Worth", 8.7, AS_OF));
-  const stab = runUnderwriting(engineInputs(b.inputs));
-  const fwd = runUnderwriting(engineInputs({ ...b.inputs, ExitNoi: "forward" }));
+  const stab = runUnderwriting(engineInputs({...b.inputs,NnnRecovered:true,MgmtPct:0}));
+  const fwd = runUnderwriting(engineInputs({ ...b.inputs, NnnRecovered:true,MgmtPct:0, ExitNoi: "forward" }));
   it("caps a full year of market rent, not the rollover year", () => {
     // Lease ends month 60 at a 5-year sale: Yr-6 is a full year at $660k market rent grown 4%.
     const expected = 660_000 * 1.04 ** 5 * (1 - b.inputs.levers.Vacancy[0]);
@@ -185,7 +211,7 @@ describe("stabilized exit", () => {
     expect(stab.cashFlow.noi).toEqual(fwd.cashFlow.noi);
   });
   it("the solved price still returns the target IRR", () => {
-    const at = runUnderwriting(engineInputs({ ...b.inputs, PurchPrice: stab.returns.solvedPrice, LevOn: 0 }));
+    const at = runUnderwriting(engineInputs({ ...b.inputs, NnnRecovered:true, MgmtPct:0, PurchPrice: stab.returns.solvedPrice, LevOn: 0 }));
     // Price feeds only debt sizing and the (recovered) reassessed tax, so the solve is exact.
     expect(at.returns.unleveredIrr!).toBeCloseTo(b.inputs.TgtUnlev, 6);
   });

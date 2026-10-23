@@ -23,7 +23,7 @@ const SOURCES = ["model", "comps", "deal", "default", "manual"];
 async function loadDeal(id: string) {
   const { data } = await getServiceClient()
     .from("deals")
-    .select("id, asking_price, contract_price, closed_price, in_place_rent, in_place_rent_basis, exit_cap_rate, properties(address, city, state, market, lot_sf, building_sf, occupancy_status), offers(price, offered_at), uw_versions(id, version_number, model_detail)")
+    .select("id, asset_class, asking_price, contract_price, closed_price, in_place_rent, in_place_rent_basis, exit_cap_rate, properties(address, city, state, market, lot_sf, building_sf, occupancy_status), offers(price, offered_at), uw_versions(id, version_number, model_detail)")
     .eq("id", id)
     .maybeSingle();
   return data;
@@ -77,12 +77,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       scenario: inputs.scenario,
       inputs,
       sources,
-      comp_snapshot: screen.comps,
+      comp_snapshot: {...screen.comps,evidenceRows:screen.evidenceRows},
       uw_version_id: model?.versionId ?? null,
       results: { returns: result.returns, active: result.active, sensitivity: result.sensitivity },
       created_by: user.email,
     })
-    .select("id, label, scenario, created_by, created_at, uw_version_id, inputs, sources, results")
+    .select("id, label, scenario, created_by, created_at, uw_version_id, inputs, sources, results, comp_snapshot")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   await logDealEvent(id, "uw_run_saved", { run_id: data.id, label, scenario: inputs.scenario, unlevered_irr: result.returns.unleveredIrr }, user.email);

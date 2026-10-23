@@ -268,6 +268,14 @@ export function debtForYear(
 // --- Validation -------------------------------------------------------------
 
 function validate(inputs: UwInputs): void {
+  const finite=(key:string,v:number,min=-Infinity,max=Infinity)=>{if(!Number.isFinite(v)||v<min||v>max)throw new Error(`${key} must be a supported finite number between ${min} and ${max}`);};
+  finite('PurchPrice',inputs.PurchPrice,Number.MIN_VALUE);finite('Acres',inputs.Acres,Number.MIN_VALUE);
+  for(const key of ['Insurance','OtherOpex','ReservePerAcre','CompPerAcre','MinDSCR','StepG','StepCap','LoanRate','SellerTax'] as const)finite(key,inputs[key],0);
+  for(const key of ['CloseCost','SaleCost','MgmtPct','LoanLTV','LoanFee','TaxRate'] as const)finite(key,inputs[key],0,1);
+  for(const scenario of SCENARIOS){const l=activeLevers({...inputs,scenario});finite('Vacancy',l.Vacancy,0,1);finite('ExitCap',l.ExitCap,Number.MIN_VALUE,1);finite('RentGrowth',l.RentGrowth,-.999999);finite('CapexOverrun',l.CapexOverrun,0);if(!Number.isInteger(l.LeaseDelay)||l.LeaseDelay<0)throw new Error('LeaseDelay must be whole nonnegative months');}
+  finite('ExpGrowth',inputs.ExpGrowth,-.999999);finite('TgtUnlev',inputs.TgtUnlev,-.999999);finite('TgtLev',inputs.TgtLev,-.999999);
+  for(const t of inputs.rentRoll){finite(`${t.name}: rent`,t.rent,0);if(!['Monthly','Annual'].includes(t.rentPeriod))throw new Error('rentPeriod must be Monthly or Annual');if(t.bump!=null)finite('Tenant bump',t.bump,-.999999);if(!Number.isInteger(t.startMonth)||t.startMonth<0)throw new Error('Lease start must be whole nonnegative months');if(t.leaseEndMonth!=null&&(!Number.isInteger(t.leaseEndMonth)||t.leaseEndMonth<t.startMonth))throw new Error('Lease end must follow start');if(t.include.length!==3)throw new Error('Tenant inclusion needs three scenarios');t.include.forEach(v=>finite('Tenant inclusion',v,0,1));if(t.retention!=null)finite('Tenant retention',t.retention,0,1);}
+  for(const c of inputs.capex){finite('Capex cost',c.unitCost,0);if(typeof c.units==='number')finite('Capex units',c.units,0);if(!Number.isInteger(c.year)||c.year<1)throw new Error('Capex year must be positive whole years');}
   const { Hold, IOYrs, AmortYrs } = inputs;
   if (!Number.isInteger(Hold) || Hold < 1 || Hold > 10) {
     throw new Error(`Hold must be a whole number of years from 1 to 10 (got ${Hold})`);

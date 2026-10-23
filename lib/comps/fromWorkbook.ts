@@ -191,7 +191,7 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
   if (hiddenSkipped.length) {
     warnings.push(
       `Skipped ${hiddenSkipped.length} hidden tab${hiddenSkipped.length === 1 ? "" : "s"} ` +
-        `(${hiddenSkipped.join(", ")}) — hidden tabs are a workbook's lookups and charts, not its comps.`
+        `(${hiddenSkipped.join(", ")}). Hidden tabs were not imported automatically and may contain additional comp evidence. Review them in the original workbook; unhide any intended source tab and import it explicitly.`
     );
   }
   if (!sheets.length) warnings.push("The workbook had no rows in any sheet.");

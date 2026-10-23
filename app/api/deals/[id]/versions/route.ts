@@ -49,7 +49,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   let returnsSummary;
   try {
-    returnsSummary = await parseReturnsSummary(buffer);
+    const {data: identityDeal, error: identityError} = await supabase.from("deals").select("properties(address)").eq("id",params.id).single();
+    if (identityError) throw new Error("Could not verify the deal identity for this workbook.");
+    const property = Array.isArray(identityDeal?.properties) ? identityDeal.properties[0] : identityDeal?.properties;
+    returnsSummary = await parseReturnsSummary(buffer, property?.address);
   } catch (err: any) {
     // Don't silently fail the whole upload -- surface the specific problem
     // (e.g. missing "Summary Table" tab) so the analyst knows this isn't a

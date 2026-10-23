@@ -12,7 +12,7 @@ import { readAllCompPages } from "./comps/mapData";
 import type { CompRow } from "./uw/comp-adapter";
 
 const COLUMNS =
-  "id, comp_type, address, project_name, suite, market, submarket, status, source_ref, lot_sf, building_sf, rent, rent_basis, lease_type, cam_psf_annual, escalations_pct, date_commenced, sale_price, closed_on, cap_rate, noi";
+  "id, comp_type, asset_class, address, project_name, suite, market, submarket, status, source_ref, lot_sf, building_sf, rent, rent_basis, lease_type, cam_psf_annual, escalations_pct, date_commenced, sale_price, closed_on, cap_rate, noi";
 
 async function readFresh(): Promise<CompRow[]> {
   const db = getServiceClient();

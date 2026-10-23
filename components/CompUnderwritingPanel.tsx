@@ -33,6 +33,7 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears, dealId,
       <p className="hint">
         What the comps support, to check or type into the model. The middle figure is the comps&apos; central
         value; the range is their middle half.
+        Quotes retain their stated lease structures; gross and net rents are not normalized for owner expenses here. Review the source terms before using a band as a net-rent assumption.
       </p>
 
       <h3>Lease-up</h3>
@@ -65,7 +66,7 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears, dealId,
         Growth applied: per acre {sale.growthAcre.note}; per SF {sale.growthSf.note}.
       </p>
       <table className="summary-table">
-        <thead><tr><th>Hold</th><th>Per acre</th><th>Net proceeds at per-acre rate</th><th>Per SF</th><th>Net proceeds at per-SF rate</th><th>Net proceeds at {sale.exitCap === null ? "exit cap" : `${(sale.exitCap * 100).toFixed(2)}% cap`}</th></tr></thead>
+        <thead><tr><th>Hold</th><th>Per acre</th><th>Net proceeds at per-acre rate</th><th>Per SF</th><th>Net proceeds at per-SF rate</th><th>Rent-only screen at {sale.exitCap === null ? "exit cap" : `${(sale.exitCap * 100).toFixed(2)}% cap`}</th></tr></thead>
         <tbody>
           {sale.exits.map((e) => (
             <tr key={e.months} style={modelHold === e.months ? { fontWeight: 600 } : undefined}>
@@ -82,7 +83,7 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears, dealId,
       <p className="hint">
         Per-acre and per-SF figures are gross sale prices; net proceeds are after {(SALE_COST_PCT * 100).toFixed(0)}% selling
         costs. The exit-cap column is the comps' market rent{ios ? " per acre over the lot" : " per SF over the building"}, escalated to the
-        exit and taken as NOI (net leases), divided by the exit cap.
+        exit and capitalized as a rent-only comparison, divided by the exit cap. This assumes 100% rent collection and full expense recovery; vacancy, owner expenses, concessions, capital costs and debt payoff are not deducted. These figures are not verified NOI values or equity sale proceeds. Use the underwriting cash flows for investment returns.
       </p>
     </section>
   );

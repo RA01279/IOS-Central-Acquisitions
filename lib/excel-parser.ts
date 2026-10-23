@@ -33,9 +33,12 @@ export interface ReturnsSummary {
     equityMultiple: number | null;
     stabilizedCashOnCashPct: number | null;
     warnings: string[];
+    /** Internal workbook identity and the unit evidence behind normalized rent. */
+    sourceProperty?: string | null;
+    marketRentSourceBasis?: string | null;
 }
 
-type FieldKey = keyof Omit<ReturnsSummary, "warnings">;
+type FieldKey = keyof Omit<ReturnsSummary, "warnings" | "sourceProperty" | "marketRentSourceBasis">;
 
 // ---------- shared cell-reading helper ----------
 
@@ -54,6 +57,10 @@ function readCellValue(
   // result rather than re-evaluating (we don't have a calc engine here).
   if (typeof raw === "object" && "result" in (raw as any)) {
         const result = (raw as any).result;
+        if (result && typeof result === "object" && "error" in result) {
+          warnings.push(`"${label}" contains a formula error (${result.error}) in the source workbook`);
+          return null;
+        }
         if (typeof result === "string" && result.startsWith("#")) {
                 warnings.push(`"${label}" contains a formula error (${result}) in the source workbook`);
                 return null;
@@ -85,7 +92,7 @@ const IOS_CELLS: Record<FieldKey, string> = {
     stabilizedCashOnCashPct: "G26",
 };
 
-function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
+function parseIosTemplate(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook): ReturnsSummary {
     const warnings: string[] = [];
     const summary = Object.fromEntries(
           Object.entries(IOS_CELLS).map(([key, addr]) => [
@@ -93,7 +100,22 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
                   readCellValue(sheet.getCell(addr), `${key} (${addr})`, warnings),
                 ])
         ) as Omit<ReturnsSummary, "warnings">;
-    return { ...summary, warnings };
+    // Summary Table G18 is linked to a market rate whose period can be annual,
+    // despite the template's fixed "Mo." caption. Read the actual MLA basis.
+    const rawBasis = workbook.getWorksheet("Market Leasing Summary")?.getCell("D17").value;
+    const basis = typeof rawBasis === "object" && rawBasis && "result" in rawBasis ? String(rawBasis.result ?? "") : String(rawBasis ?? "");
+    const key = basis.toLowerCase().replace(/[^a-z]/g, "");
+    if (summary.marketRentPsfMo !== null) {
+      if (/^(?:dollars)?sfyear$|^sfyr$/.test(key)) summary.marketRentPsfMo /= 12;
+      else if (!/^(?:dollars)?sfmonth$|^sfmo$/.test(key)) {
+        summary.marketRentPsfMo = null;
+        warnings.push("Market rent units are unverified: Market Leasing Summary D17 must state $/SF/month or $/SF/year. G18's fixed caption alone is insufficient.");
+      }
+    }
+    const identity = workbook.getWorksheet("Pro Forma")?.getCell("F15").value;
+    const sourceProperty = typeof identity === "string" ? identity.trim() : null;
+    warnings.push("Workbook returns are cached source values; Hopper does not recalculate Excel formulas. Verify workbook identity and recalculate/save in Excel before relying on them.");
+    return { ...summary, sourceProperty, marketRentSourceBasis: basis || null, warnings };
 }
 
 // ---------- Industrial template ("_Upload_") ----------
@@ -156,13 +178,20 @@ function parseIndustrialTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
 
 // ---------- entry point ----------
 
-export async function parseReturnsSummary(buffer: Buffer): Promise<ReturnsSummary> {
+export async function parseReturnsSummary(buffer: Buffer, expectedProperty?: string): Promise<ReturnsSummary> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
 
   const iosSheet = workbook.getWorksheet(IOS_SHEET_NAME);
     if (iosSheet) {
-          return parseIosTemplate(iosSheet);
+          const result = parseIosTemplate(iosSheet, workbook);
+          // A conflicting street number is definite evidence of an identity
+          // problem, not something the upload filename can override.
+          const sourceNumber = result.sourceProperty?.match(/^\d+(?:-\d+)?\b/)?.[0];
+          const expectedNumber = expectedProperty?.match(/^\d+(?:-\d+)?\b/)?.[0];
+          if (sourceNumber && expectedNumber && sourceNumber !== expectedNumber) throw new Error(`Workbook Pro Forma F15 identifies "${result.sourceProperty}", but this deal is "${expectedProperty}". Resolve the source identity before saving an underwriting version.`);
+          if (!result.sourceProperty) result.warnings.push("No internal workbook property identity was found at Pro Forma F15.");
+          return result;
     }
 
   const industrialSheet = workbook.getWorksheet(INDUSTRIAL_SHEET_NAME);

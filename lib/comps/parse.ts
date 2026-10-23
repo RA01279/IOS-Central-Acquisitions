@@ -262,7 +262,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(coverage|coverageratio|bldgcoverage|far)$/, "coverage"],
   [/^(saledate|closedate|closingdate|dateclosed|datesold|sold)$/, "saleDate"],
   [/^(saleprice|price|purchaseprice|consideration|salesprice|salepricedollars|saleprice\$)$/, "salePrice"],
-  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|salepricesf|psfmo|persfmo)$/, "psf"],
+  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|salepricesf)$/, "psf"],
   // Rate columns that declare their own basis. Handled as distinct fields
   // rather than aliases of "psf", because the basis is the whole point: an
   // annual $13.20 and a monthly $1.10 are the same rent, and treating either
@@ -272,8 +272,8 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // SF/Mo)" reduces. It is taken at its word here and then ARITHMETICALLY
   // CHECKED against the per-acre rate, because in that template the column is
   // mislabelled: its values are annual. See checkBuildingRateLabel below.
-  [/^(startingratemonthly|monthlyrate|ratemonthly|baserentmonthly|monthlybaserent|ratebuildingsfmo|ratebldgsfmo|ratepersfbldgmo)$/, "rateMonthly"],
-  [/^(leasetype|type|structure|leasestructure)$/, "leaseType"],
+  [/^(startingratemonthly|monthlyrate|ratemonthly|baserentmonthly|monthlybaserent|ratebuildingsfmo|ratebldgsfmo|ratepersfbldgmo|psfmo|persfmo)$/, "rateMonthly"],
+  [/^(leasetype|renttype|type|structure|leasestructure)$/, "leaseType"],
   [/^(monthlybase|monthlyrent|baserent|monthlybaserent|rent|monthly)$/, "monthlyRent"],
   [/^(leasedate|commenced|commencement|datecommenced|startdate|leasestart|executed)$/, "leaseDate"],
   [/^(caprate|cap|yield)$/, "capRate"],
@@ -297,7 +297,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(surface|surfacetype|yardsurface|paving)$/, "surfaceType"],
   [/^(zoning|zone)$/, "zoning"],
   [/^(escalations|escalation|bumps|annualincrease)$/, "escalations"],
-  [/^(freerent|freerentmonths|abatement)$/, "freeRent"],
+  [/^(freerent|freerentmonths|freerentmo|freerentmos|abatement)$/, "freeRent"],
   [/^(ti|tipsf|tiallowance|tenantimprovement)$/, "tiPsf"],
   [/^(noi|netoperatingincome)$/, "noi"],
   [/^(buyer|purchaser|grantee|buyercompanyname|buyername)$/, "buyer"],
@@ -347,7 +347,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(parkingspaces|parkingstalls|spaces|stalls|parking)$/, "parkingSpaces"],
   [/^(institutionallandlordyesno|institutionallandlord|institutional)$/, "institutionalLandlord"],
   [/^(tenantusage|tenantuse|usage|useclass|usertype)$/, "tenantUsage"],
-  [/^(newrenewal|newvsrenewal|dealtype|newrenewalexpansion|renewal)$/, "dealKind"],
+  [/^(newrenewal|newvsrenewal|dealtype|newrenewalexpansion|renewal|typenrexp)$/, "dealKind"],
   [/^(source|sourcedetail|comp source|sourcenotes)$/, "sourceRef"],
   [/^(latitude|lat)$/, "latitude"],
   [/^(longitude|long|lng|lon)$/, "longitude"],
@@ -1092,6 +1092,15 @@ export interface ParseOptions {
   includeQuotedReply?: boolean;
 }
 
+/** Only a single, fully tabular source qualifies for bypassing helper rewriting.
+ * Mixed prose and tables retain the existing assisted extraction path. */
+export function isExplicitCompTable(text: string): boolean {
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(lines.length<2 || lines.some(l=>splitRow(l).length<3)) return false;
+  if(splitRow(lines[0]).filter(c=>fieldFor(c)).length<3) return false;
+  return parseCompTable(text).comps.length===lines.length-1;
+}
+
 export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResult {
   const warnings: string[] = [];
   const body = opts.includeQuotedReply ? text : stripQuotedReply(text);
@@ -1144,7 +1153,11 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       if (mapping && rowsInTable === 0) {
         warnings.push("Found a header row with no data rows beneath it.");
       }
-      mapping = asFields;
+      // In broker tables with both Type (New/Renewal) and Rent Type (NNN),
+      // the explicit structure column owns leaseType. Do not let the earlier
+      // generic Type column silently consume it.
+      const explicitStructure = cells.findIndex(c => /^(renttype|leasetype|leasestructure|structure)$/.test(c.toLowerCase().replace(/[^a-z]/g, "")));
+      mapping = asFields.map((f, i) => f === "leaseType" && i !== explicitStructure && explicitStructure >= 0 ? "dealKind" : f);
       rowsInTable = 0;
       // Headers reveal the type more reliably than surrounding prose -- but by
       // WEIGHING the signals, not taking the first hit. A real lease tab led
@@ -1170,7 +1183,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
     // A rent roll's rows are suites in ONE building, so the address comes from
     // the caller (the property the roll belongs to) and the first column is a
     // suite number. Without this the address becomes "Ste A".
-    const suiteCell = get("suite")?.trim() || null;
+    const suiteCell = get("suite")?.trim() || get("address")?.match(/\b(?:suite|ste\.?|unit)\s+([A-Za-z0-9-]+)/i)?.[1] || null;
     const address = (get("address") ?? (suiteCell ? opts.address : null) ?? opts.address ?? cells[0] ?? "").trim();
 
     if (!address) continue;
@@ -1278,7 +1291,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       landlordName: get("landlord")?.trim() || null,
       leaseTermMonths: num(get("termMonths")),
       leaseExpiresOn: parseCompDate(get("leaseExpiry"))?.date ?? null,
-      escalationsPct: num(get("escalations")),
+      escalationsPct: pct(get("escalations")),
       freeRentMonths: num(get("freeRent")),
       tiPsf: num(get("tiPsf")),
       listingBroker: get("broker")?.trim() || null,
@@ -1369,7 +1382,8 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         parsed.rentBasis = "total_monthly";
       } else if (quotedPsf !== null) {
         parsed.rent = quotedPsf;
-        parsed.rentBasis = "per_sf_bldg_monthly";
+        parsed.rentBasis = null;
+        rowWarnings.push("Quoted rent per SF has no supported monthly/annual period. Confirm rent units before saving; no period was assumed.");
       }
       // The per-acre and per-land-SF columns are the same number in different
       // units, so they must agree. 43,560 SF to the acre.

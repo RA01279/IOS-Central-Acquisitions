@@ -97,6 +97,8 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
           </div>
         )}
         <ExcelUploadForm dealId={deal.id} />
+        <p className="hint">Uploaded returns are the workbook's saved calculation results. Hopper does not recalculate Excel formulas. Confirm the source property, assumptions and calculation date before relying on them.</p>
+        {latestVersion?.model_detail?.warnings?.length > 0 && <div className="warning"><p>Source workbook discrepancies:</p><ul>{latestVersion.model_detail.warnings.map((w:string,i:number)=><li key={i}>{w}</li>)}</ul></div>}
       </section>
 
       <CompUnderwritingPanel

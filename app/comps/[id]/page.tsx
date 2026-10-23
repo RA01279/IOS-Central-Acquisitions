@@ -239,7 +239,7 @@ export default async function CompDetailPage(props: { params: Promise<{ id: stri
                 <Metric label="Landlord" value={comp.landlord_name ?? "—"} />
                 <Metric
                   label="Escalations"
-                  value={comp.escalations_pct ? `${comp.escalations_pct}% / yr` : "—"}
+                  value={comp.escalations_pct == null ? "—" : `${pct(comp.escalations_pct)} / yr`}
                 />
                 <Metric
                   label="Free rent"

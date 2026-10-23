@@ -22,6 +22,7 @@ import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
 import CompDecimalInput from "./CompDecimalInput";
 import { validCoordinates } from "@/lib/location";
+import { isExplicitCompTable } from "@/lib/comps/parse";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
 import { aiReadComps, readableText } from "@/lib/comps/ai-read";
 import { helperOnline } from "@/lib/agent-client";
@@ -238,6 +239,9 @@ export default function CompIntakeForm({
     setError(null);
     setStep("Reading the comps with the Hopper helper… (usually under a minute)");
     try {
+      if (isExplicitCompTable(readableText(html,text))) {
+        return await sendParts([rules("Read directly from the labeled source table. Original columns were not rewritten by the helper; compare each row with the source before saving.")]);
+      }
       if (!(await helperOnline())) {
         return await sendParts([rules("The Hopper helper is offline, so this was read by rules only and unusual layouts may be misread. Start the helper and paste again for a better read.")]);
       }

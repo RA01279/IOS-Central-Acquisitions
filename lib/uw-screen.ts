@@ -57,16 +57,19 @@ export async function screenFor(deal: any, today = new Date().toISOString().slic
   modelPending: boolean;
   comps: CompContext;
   build: DealUwBuild;
+  evidenceRows: Awaited<ReturnType<typeof loadUwComps>>;
 }> {
   const facts = dealFacts(deal, today);
   const model = latestModel(deal);
-  const comps = compContext(await loadUwComps(), facts.market, facts.acres, today);
+  const evidenceRows = await loadUwComps();
+  const comps = compContext(evidenceRows, facts.market, facts.acres, today,36,deal.asset_class ?? null);
   return {
     facts,
     model,
     modelPending: !model && (deal.uw_versions ?? []).length > 0,
     comps,
     build: buildDealInputs(facts, model?.snapshot ?? null, comps),
+    evidenceRows,
   };
 }
 
@@ -79,17 +82,17 @@ export interface SavedRunRow {
   uw_version_id: string | null;
   inputs: unknown;
   sources?: Record<string, { source: string; note: string }>;
+  comp_snapshot?: CompContext;
   results: { returns?: { unleveredIrr: number | null; leveredIrr: number | null; solvedPrice: number; year1Noi: number } } | null;
 }
 
 export async function listRuns(dealId: string): Promise<SavedRunRow[]> {
   const { data, error } = await getServiceClient()
     .from("uw_runs")
-    .select("id, label, scenario, created_by, created_at, uw_version_id, inputs, sources, results")
+    .select("id, label, scenario, created_by, created_at, uw_version_id, inputs, sources, results, comp_snapshot")
     .eq("deal_id", dealId)
     .order("created_at", { ascending: false })
     .limit(50);
-  // The table arrives with its migration; until then the tab still works.
-  if (error) return [];
+  if (error) throw new Error(`Saved underwriting runs could not be loaded: ${error.message}`);
   return (data ?? []) as SavedRunRow[];
 }

@@ -224,7 +224,7 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
     leaseTermMonths: v(comp.lease_term_months),
     tenantName: v(comp.tenant_name),
     landlordName: v(comp.landlord_name),
-    escalationsPct: v(comp.escalations_pct),
+    escalationsPct: asPct(comp.escalations_pct),
     freeRentMonths: v(comp.free_rent_months),
     tiPsf: v(comp.ti_psf),
     renewalOptions: v(comp.renewal_options),
@@ -279,6 +279,9 @@ export default function CompEditor({ comp }: { comp: CompRow }) {
       const saleOnly = ["salePrice", "closedOn", "capRate", "noi", "buyer", "seller", "saleBroker", "occupancyAtSale"];
       const keys = [...shared, ...(isLease ? leaseOnly : saleOnly)];
       const payload = Object.fromEntries(keys.map((k) => [k, form[k] ?? ""]));
+      // This control is explicitly percent, including a sub-1% bump. Preserve
+      // the unit instead of asking the API to guess from numeric magnitude.
+      if (isLease && form.escalationsPct?.trim()) payload.escalationsPct = `${form.escalationsPct}%`;
       // Unchanged coordinates are not a new manual pin. An address edit must
       // trigger verification instead of carrying the old site's point along.
       if (form.latitude === v(comp.latitude) && form.longitude === v(comp.longitude)) {

@@ -5,3 +5,4 @@ node_modules
 *.tsbuildinfo
 docs/tax-acceptance-*
 docs/tax-evidence-*
+docs/investment-audit-*

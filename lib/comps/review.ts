@@ -130,7 +130,7 @@ export function findDuplicate(c: DupCandidate, existing: DupCandidate[]): DupCan
       (c.latitude != null && c.longitude != null && e.latitude != null && e.longitude != null &&
         haversineMiles(Number(c.latitude), Number(c.longitude), Number(e.latitude), Number(e.longitude)) <= SAME_SITE_MILES);
     if (!sameSite) continue;
-    if ((cleanName(c.suite) ?? "") !== (cleanName(e.suite) ?? "")) continue;
+    if ((cleanName(c.suite) ?? "").toLowerCase() !== (cleanName(e.suite) ?? "").toLowerCase()) continue;
     if ((cleanName(c.project_name) ?? "").toLowerCase() !== (cleanName(e.project_name) ?? "").toLowerCase()) continue;
     const ed = dateOf(e);
     if (!ed || days(d, ed) > DUPLICATE_WINDOW_DAYS) continue;

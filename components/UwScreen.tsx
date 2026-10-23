@@ -135,7 +135,8 @@ export default function UwScreen(props: {
   ios: boolean;
   runs: SavedRunRow[];
 }) {
-  const { initial, comps, model } = props;
+  const { initial, model } = props;
+  const [comps,setComps] = useState(props.comps);
   const [inputs, setInputs] = useState<DealUwInputs>(initial.inputs);
   const [sources, setSources] = useState<Record<SourceKey, Sourced>>(initial.sources);
   const [runs, setRuns] = useState<SavedRunRow[]>(props.runs);
@@ -193,11 +194,13 @@ export default function UwScreen(props: {
     if (res.ok) setRuns((r) => r.filter((x) => x.id !== runId));
   }
   function load(run: SavedRunRow & { sources?: Record<SourceKey, Sourced> }) {
+    if(run.comp_snapshot) setComps(run.comp_snapshot);
     setInputs(run.inputs as DealUwInputs);
     if (run.sources) setSources((cur) => ({ ...cur, ...run.sources }));
     setMsg({ ok: true, text: `Loaded "${run.label ?? new Date(run.created_at).toLocaleDateString()}". Its numbers are re-run on today's engine.` });
   }
   function reset() {
+    setComps(props.comps);
     setInputs(initial.inputs);
     setSources(initial.sources);
     setMsg(null);

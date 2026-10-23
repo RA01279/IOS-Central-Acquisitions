@@ -72,12 +72,12 @@ function range(s: ValueStats): CompRange | null {
   return { n: w.n, min: w.min, p25: w.p25, median: w.median, p75: w.p75, max: w.max, basis: s.basis, band: s.subjectBand, ...(s.reference ? { reference: s.reference } : {}), compIds: w.compIds };
 }
 
-export function compContext(rows: readonly CompRow[], market: string | null, acres: number | null, asOf: string, months: 24 | 36 = 36): CompContext {
+export function compContext(rows: readonly CompRow[], market: string | null, acres: number | null, asOf: string, months: 24 | 36 = 36, assetClass?: string | null): CompContext {
   const empty = { confirmed: 0, screened: 0, verified: 0 };
   if (!market) {
     return { market, asOf, months, rent: null, sale: null, rentByBand: {}, exitCap: { source: "manual", n: 0, message: "No market on the deal, so no comps." }, escalation: null, tiers: { lease: empty, sale: empty }, messages: ["No market on the deal, so no comp-driven inputs."] };
   }
-  const comps = adaptComps(rows);
+  const comps = adaptComps(assetClass === undefined ? rows : rows.filter(r=>assetClass != null && r.asset_class===assetClass));
   const leases = selectComps(comps.filter((c): c is LeaseComp => c.compType === "lease"), "lease", { market, asOf, months });
   const sales = selectComps(comps.filter((c): c is SaleComp => c.compType === "sale"), "sale", { market, asOf, months });
   const rentStats = valueStats(leases.usable, "lease", acres);
@@ -242,8 +242,8 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
   };
 
   const acres = facts.acres;
-  const Acres = acres && acres > 0 ? set("Acres", acres, "deal", "Lot SF / 43,560") : set("Acres", 1, "default", "No lot size on the deal; enter acres");
-  if (!(acres && acres > 0)) warnings.push("The deal has no lot size; acres default to 1 and every per-acre figure is wrong until it is entered.");
+  const Acres = acres && acres > 0 ? set("Acres", acres, "deal", "Lot SF / 43,560") : set("Acres", NaN, "default", "No lot size on the deal; enter supported acres before calculation");
+  if (!(acres && acres > 0)) warnings.push("The deal has no lot size. Enter supported acres before calculating per-acre assumptions or returns.");
 
   // Price: the model's, else the deal's, else comps x acres.
   let PurchPrice: number;
@@ -251,7 +251,7 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
   else if (facts.price) PurchPrice = set("PurchPrice", facts.price, "deal", facts.priceLabel);
   else if (comps.sale?.median && acres) PurchPrice = set("PurchPrice", Math.round(comps.sale.median * acres), "comps", `Median sale comp ${usd(comps.sale.median)}/ac x ${acres.toFixed(2)} ac (n ${comps.sale.n})`);
   else {
-    PurchPrice = set("PurchPrice", 0, "default", "No price on the deal; enter one");
+    PurchPrice = set("PurchPrice", NaN, "default", "No price on the deal; enter one");
     warnings.push("No price on the deal or in a model, and too few sale comps to suggest one: enter a price.");
   }
 
@@ -275,7 +275,7 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
   } else {
     const rent = compMonthlyRent(comps, acres);
     rentRoll = [{
-      name: "Lease-up at market rent", status: "Pipeline", acres, rent: rent ?? 0, rentPeriod: "Monthly", bump: null,
+      name: "Lease-up at market rent", status: "Pipeline", acres, rent: rent ?? NaN, rentPeriod: "Monthly", bump: null,
       startMonth: DEFAULTS.LeaseUpMonths, leaseEndMonth: null, retention: null, renewalProbOverride: null,
       renewalRent: null, newDealRent: null, newDealDowntimeMonths: 0, newDealFreeRentMonths: 0, include: ALL,
     }];
@@ -293,7 +293,10 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
   const capex: CapexItem[] = [];
   if (model) {
     model.capexByYear.forEach((amt, y) => {
-      if (amt > 0) capex.push({ name: `Capex (model, Yr ${Math.max(1, y)})`, unitCost: Math.round(amt), units: 1, year: Math.min(10, Math.max(1, y)), include: ALL });
+      if (amt > 0) {
+        capex.push({ name: `Capex (model, Yr ${y})`, unitCost: Math.round(amt), units: 1, year: y, include: ALL });
+        if(y===0) warnings.push('The workbook has closing-date capex. This annual screen cannot silently shift it to Year 1; reconcile the acquisition basis and capital plan before calculating.');
+      }
     });
   }
   set("capex", null, model ? "model" : "default", model ? (capex.length ? "Capex costs by year from the Excel model's cash flow" : "The Excel model has no capex costs") : "No capex: add items");
@@ -329,7 +332,7 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
     RenewProb: set("RenewProb", DEFAULTS.RenewProb, "default", "Used where a tenant has no renewal % of its own"),
   };
 
-  const closing = model?.closingCosts && model.purchasePrice ? model.closingCosts / model.purchasePrice : null;
+  const closing = model?.closingCosts != null && model.purchasePrice && model.purchasePrice > 0 ? model.closingCosts / model.purchasePrice : null;
   const CloseCost = closing !== null
     ? set("CloseCost", Math.round(closing * 10000) / 10000, "model", "Excel model acquisition / financing costs and broker fee, on price")
     : set("CloseCost", DEFAULTS.CloseCost, "default", "Default");
@@ -337,10 +340,10 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
   const Hold = hold ? set("Hold", hold, "model", "Excel model hold") : set("Hold", DEFAULTS.Hold, "default", "Default hold");
 
   const taxRate = facts.state ? TAX_RATE_BY_STATE[facts.state] : undefined;
-  const reserves = model?.reservesYear1 && acres ? Math.round(model.reservesYear1 / acres) : null;
+  const reserves = model?.reservesYear1 != null && acres ? Math.round(model.reservesYear1 / acres) : null;
 
   const d = model?.debt;
-  const rate = d?.rate && d.rate > 0 && d.rate < 0.2 ? d.rate : null;
+  const rate = d?.rate != null && d.rate >= 0 && d.rate < 0.2 ? d.rate : null;
   const io = d?.ioMonths !== null && d?.ioMonths !== undefined ? Math.round(d.ioMonths / 12) : null;
   const amort = d?.amortMonths ? Math.max(1, Math.round(d.amortMonths / 12)) : null;
 
@@ -360,23 +363,21 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
     MinDSCR: set("MinDSCR", DEFAULTS.MinDSCR, "default", "DSCR floor"),
     StepG: 0.01,
     StepCap: 0.005,
-    NnnRecovered: set("NnnRecovered", true, rentRollSource === "model" ? "model" : "default", rentRollSource === "model" ? "The Excel model's leases are net" : "IOS leases assumed NNN; switch off if the landlord pays taxes and insurance"),
+    NnnRecovered: set("NnnRecovered", false, "default", "Expense recovery is unverified. Confirm the leases before assuming full recovery of taxes, insurance and other expenses."),
     TaxSwitch: set("TaxSwitch", 1 as const, "default", "Reassessed at the purchase price"),
     TaxRate: taxRate ? set("TaxRate", taxRate, "default", `Typical effective rate, ${facts.state}`) : set("TaxRate", DEFAULTS.TaxRate, "default", "Typical effective rate"),
     SellerTax: set("SellerTax", 0, "default", "Seller's current tax unknown; used only if reassessment is off"),
     Insurance: set("Insurance", Math.round(DEFAULTS.InsurancePerAcre * Acres), "default", `${usd(DEFAULTS.InsurancePerAcre)}/ac`),
-    MgmtPct: modelRecoversOpex(model)
-      ? set("MgmtPct", 0, "model", "Excel model: Yr-1 NOI is rent less vacancy, so management and opex are recovered")
-      : set("MgmtPct", DEFAULTS.MgmtPct, "default", "Management fee on collected revenue, not recovered"),
+    MgmtPct: set("MgmtPct", DEFAULTS.MgmtPct, "default", "Management fee estimate on collected revenue. Cached NOI equality does not establish management-fee recovery; verify the lease and model expenses."),
     ExitNoi: model
       ? set("ExitNoi", "stabilized" as const, "model", "Exit capped on stabilized NOI (full year at in-lease or market rent, no rollover gap), as the Excel model sells")
       : set("ExitNoi", "stabilized" as const, "default", "Exit capped on stabilized NOI (full year at in-lease or market rent, no rollover gap)"),
-    ReservePerAcre: reserves ? set("ReservePerAcre", reserves, "model", "Excel model Yr-1 capex reserves / acres") : set("ReservePerAcre", DEFAULTS.ReservePerAcre, "default", "Default reserves"),
+    ReservePerAcre: reserves !== null ? set("ReservePerAcre", reserves, "model", "Excel model Yr-1 capex reserves / acres") : set("ReservePerAcre", DEFAULTS.ReservePerAcre, "default", "Default reserves"),
     OtherOpex: set("OtherOpex", 0, "default", "None"),
     ExpGrowth: set("ExpGrowth", DEFAULTS.ExpGrowth, "default", "Default"),
     LevOn: set("LevOn", 1 as const, "default", "Levered"),
-    LoanLTV: d?.ltpp ? set("LoanLTV", d.ltpp, "model", "Excel model loan to purchase price") : set("LoanLTV", DEFAULTS.LoanLTV, "default", "Default"),
-    LoanRate: rate ? set("LoanRate", Math.round(rate * 100000) / 100000, "model", "Excel model index + spread") : set("LoanRate", DEFAULTS.LoanRate, "default", "Default"),
+    LoanLTV: d?.ltpp != null ? set("LoanLTV", d.ltpp, "model", "Excel model loan to purchase price") : set("LoanLTV", DEFAULTS.LoanLTV, "default", "Default"),
+    LoanRate: rate !== null ? set("LoanRate", Math.round(rate * 100000) / 100000, "model", "Excel model index + spread") : set("LoanRate", DEFAULTS.LoanRate, "default", "Default"),
     AmortYrs: amort ? set("AmortYrs", amort, "model", "Excel model amortization") : set("AmortYrs", DEFAULTS.AmortYrs, "default", "Default"),
     IOYrs: io !== null ? set("IOYrs", io, "model", "Excel model interest-only period") : set("IOYrs", DEFAULTS.IOYrs, "default", "Default"),
     LoanFee: closing !== null ? set("LoanFee", 0, "model", "Financing costs are in the model's closing costs") : set("LoanFee", DEFAULTS.LoanFee, "default", "Default"),
@@ -480,7 +481,7 @@ export function compareWithModel(result: UwResult, inputs: UwInputs, model: UwMo
 
 // --- Saved runs ---------------------------------------------------------------
 
-export const SCREEN_VERSION = "uw-screen-v1";
+export const SCREEN_VERSION = "uw-screen-audit-20261023";
 export const MAX_TENANTS = 40;
 export const MAX_CAPEX = 30;
 

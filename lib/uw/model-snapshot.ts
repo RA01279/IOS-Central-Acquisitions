@@ -133,8 +133,10 @@ export function modelSnapshot(m: ModelSummary): UwModelSnapshot {
 export function modelDetailOf(m: ModelSummary): Record<string, unknown> {
   return {
     ...(m.sensitivities.deal || m.sensitivities.lp
-      ? { sensitivities: m.sensitivities, exitCap: m.yields.exitCap, warnings: m.warnings.filter((w) => /sensitivity/i.test(w)) }
+      ? { sensitivities: m.sensitivities, exitCap: m.yields.exitCap }
       : {}),
+    warnings: m.warnings,
+    sourceProperty: m.property.address,
     uw: modelSnapshot(m),
   };
 }

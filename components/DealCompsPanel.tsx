@@ -79,11 +79,12 @@ export default function DealCompsPanel({
   // built on comps from 18 months ago means something different in a market
   // that has moved 15% since.
   const wide = useMemo(() => {
-    const cls = subject.assetClass === "industrial" ? "industrial" : subject.assetClass === "ios" ? "ios" : null;
-    if (!cls || !subject.market) return null;
-    const v = marketView(comps, compType, cls, { market: subject.market, face: true });
+    const evidenceSubject=snapshotSubject ?? subject;
+    const cls = evidenceSubject.assetClass === "industrial" ? "industrial" : evidenceSubject.assetClass === "ios" ? "ios" : null;
+    if (!cls || !evidenceSubject.market) return null;
+    const v = marketView(snapshotComps ?? comps, compType, cls, { market: evidenceSubject.market, face: true, today: analysisDate.slice(0,10) });
     return v.overall.current.median === null ? null : { cls, unit: v.unit, row: v.overall };
-  }, [comps, compType, subject.assetClass, subject.market]);
+  }, [comps, snapshotComps, snapshotSubject, compType, subject, analysisDate]);
 
   const eligible = scored.filter((s) => !s.excluded);
   const rows = showAll ? scored : scored.slice(0, Math.max(12, eligible.length));
@@ -151,6 +152,7 @@ export default function DealCompsPanel({
           setSnapshotComps(saved.comps);setSnapshotSubject(saved.subject??null);setAnalysisDate(saved.analysisDate);
         }} />
       {snapshotComps && <p className="hint">Using saved comp evidence and property assumptions. <button type="button" className="secondary" onClick={()=>{setSnapshotComps(null);setSnapshotSubject(null);setAnalysisDate(new Date().toISOString());}}>Use latest comps</button></p>}
+      <p className="hint">Save the reviewed version to retain selections and source values. Enter the supported rent explicitly in MLA or underwriting; this review does not apply assumptions automatically.</p>
       <label><input type="checkbox" checked={allowOtherClasses} onChange={e=>setAllowOtherClasses(e.target.checked)}/> Include unclassified or other-class comps in my analysis</label>
       {!allowOtherClasses && <p className="hint">Only comps with a matching asset class contribute to the range. Unclassified comps remain listed for review.</p>}
       {allowOtherClasses && <p className="warning">Class matching is overridden. Review each comp before relying on the suggested range.</p>}

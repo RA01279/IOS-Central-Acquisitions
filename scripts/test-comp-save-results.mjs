@@ -22,13 +22,13 @@ const dependencies = {
   "@/lib/comps/match": match,
   "@/lib/comps/review": load("../lib/comps/review.ts", { "./match": match }),
   "@/lib/comps/mapData": load("../lib/comps/mapData.ts"),
+  "@/lib/comps/conflicts": load("../lib/comps/conflicts.ts"),
   "@/lib/supabase": { getServiceClient: () => ({ from: () => ({
-    // The review checks read the repository first; it's empty here.
-    select: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }),
+    select: () => ({ order: () => ({ range: async (from) => ({ data: from ? [] : ['Duplicate','Conflict'].map(address=>({id:address,address,comp_type:'lease',rent:4000,rent_basis:'per_acre_monthly',date_commenced:'2026-09-01',status:'confirmed',asset_class:'ios'})), error: null }) }) }),
     insert: (rows) => ({
       select: async () => {
         calls++;
-        if (Array.isArray(rows) || rows.address === "Duplicate") return { data: null, error: { code: "23505" } };
+        if (Array.isArray(rows) || ['Duplicate','Conflict'].includes(rows.address)) return { data: null, error: { code: "23505" } };
         return { data: [{ id: rows.address, ...rows }], error: null };
       },
     }),
@@ -42,6 +42,7 @@ const response = await exports.POST({ json: async () => ({ comps: [
   { _key: "lease", assetClass: "ios", address: "Austin yard", compType: "lease", rent: 4000, rentBasis: "per_acre_monthly", dateCommenced: "2026-09-01", latitude: 30.26, longitude: -97.74 },
   { _key: "sale", assetClass: "industrial", address: "Austin sale", compType: "sale", salePrice: "$4.2M", closedOn: "2026-09-01", latitude: 30.26, longitude: -97.74 },
   { _key: "duplicate", assetClass: "ios", address: "Duplicate", compType: "lease", rent: 4000, rentBasis: "per_acre_monthly", dateCommenced: "2026-09-01", latitude: 30.26, longitude: -97.74 },
+  { _key: "conflict", assetClass: "ios", address: "Conflict", compType: "lease", rent: 4500, rentBasis: "per_acre_monthly", dateCommenced: "2026-09-01", latitude: 30.26, longitude: -97.74 },
   { _key: "unlocated", assetClass: "ios", address: "Unknown yard", compType: "lease", rent: 4000, rentBasis: "per_acre_monthly", dateCommenced: "2026-09-01" },
   { _key: "invalid", assetClass: "ios", address: "Bad date", compType: "lease", rent: 4000, rentBasis: "per_acre_monthly", dateCommenced: "2026-02-30" },
 ] }) });
@@ -55,5 +56,7 @@ assert.equal(response.body.rejected.length, 2);
 assert.match(response.body.rejected.find((r) => r.address === "Unknown yard").reason, /^Needs manual fix: Only a partial match: East Dr, Texas 77302, USA\. Correct the address/, "an unlocated comp says why");
 assert.equal(response.body.savedComps[1].sale_price, 4200000);
 assert.equal(JSON.stringify(response.body.completedKeys), JSON.stringify(["lease","sale","duplicate"]));
-assert.equal(calls, 4);
+assert.equal(response.body.failed.length,1);
+assert.match(response.body.failed[0].reason,/Existing transaction preserved.*rent/);
+assert.equal(calls, 5);
 console.log("Comp save regression checks passed: lease/sale batch fallback, saved record links, duplicate exclusion and location totals.");

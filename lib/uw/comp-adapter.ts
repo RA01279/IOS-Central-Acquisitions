@@ -32,6 +32,7 @@ export type CompFlag = "suspect_duplicate" | "not_convertible" | "review_extreme
 
 /** The `comps` columns the adapter reads. Numerics may arrive as strings from PostgREST. */
 export interface CompRow {
+  asset_class?: string | null;
   id: string;
   comp_type: CompType;
   address: string;

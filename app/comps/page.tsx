@@ -69,7 +69,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
         // that -- the rows come back typed as GenericStringError[].
         .select("id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, rent, rent_basis, sale_price, closed_on, date_commenced, tenant_name, buyer, geocode_precision")
         // A rejected comp is kept for the record, not shown as evidence.
-        .neq("status", "rejected")
+        .eq("status", "confirmed")
         .order("id")
         .range(from, to)),
       // The full-detail list stays capped -- it renders forty fields per row

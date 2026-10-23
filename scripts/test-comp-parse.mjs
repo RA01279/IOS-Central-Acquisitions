@@ -329,7 +329,7 @@ check("usable yard acres", d0.yardAcres, 4.2);
 check("surface mapped to enum", d0.surfaceType, "crushed_stone");
 check("trailer stalls", d0.trailerStalls, 40);
 check("zoning", d0.zoning, "LI-2");
-check("escalations", d0.escalationsPct, 3.5);
+check("escalations normalized to fraction", d0.escalationsPct, 0.035);
 check("free rent months", d0.freeRentMonths, 2);
 check("TI psf", d0.tiPsf, 1.5);
 check("lease type", d0.leaseType, "nnn");
