@@ -220,10 +220,10 @@ export default function UwScreen(props: {
       <div className="warning" role="note" style={{ marginTop: 0 }}>
         <strong>Screening underwriting.</strong>{" "}
         {model
-          ? `Started from Excel model v${model.versionNumber} (${model.snapshot.fileName}). The Excel model remains the approved underwriting for IC.`
+          ? `Started from uploaded workbook v${model.versionNumber} (${model.snapshot.fileName}). This screening run does not establish workbook approval for IC.`
           : props.modelPending
             ? "There is an Excel model on this deal, but it was uploaded before Hopper kept its rent roll -- these inputs come from the deal and comps until it is re-uploaded or backfilled."
-            : "No Excel model yet: inputs come from the deal and its comps. The Excel model, once uploaded, is the approved underwriting."}
+            : "No Excel model yet: inputs come from the deal and its comps. Review the source evidence and assumptions before relying on the screening returns."}
         {!props.ios && " This engine is built for IOS (rent and price per acre); read industrial results with care."}
       </div>
 
@@ -246,7 +246,7 @@ export default function UwScreen(props: {
       {compare && (
         <section className="panel">
           <h2>Hopper vs the Excel model</h2>
-          <p className="hint">Same deal, two engines. Differences point at assumptions worth a second look; the Excel model is the one that goes to IC.</p>
+          <p className="hint">Hopper calculations versus saved workbook outputs. Differences require review of source identity, assumptions and formulas; uploading a workbook does not establish approval.</p>
           <div className="table-scroll">
             <table className="summary-table">
               <thead><tr><th scope="col"></th><th scope="col">Hopper ({inputs.scenario})</th><th scope="col">Excel model v{model!.versionNumber}</th><th scope="col">Difference</th></tr></thead>
