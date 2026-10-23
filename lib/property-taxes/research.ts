@@ -1,6 +1,6 @@
 // Server-side only. Fixed official endpoints; never fetch a user-supplied URL.
 import { geocodeAddress, normaliseState, resolveState } from "../geocode";
-import { emptyTaxState, type TaxState, type TaxSource, type TaxParcel } from "./types";
+import { emptyTaxState, type TaxState, type TaxSource, type TaxParcel, type RetainTaxEvidence } from "./types";
 import { matchParcel, parcelKey, mergeResearch } from "./model";
 import {normalizedAddress} from './address';
 import {researchAccount} from './collector-research';
@@ -51,7 +51,7 @@ export function texasParcel(attributes: Record<string,unknown>, subject: TaxSubj
   const rawYear = numeric(a.tax_year), year = rawYear && Number.isInteger(rawYear) && rawYear >= 1900 && rawYear <= 2200 ? rawYear : null;
   return { parcel: { key, accountId, county, state: "TX", address: text(a.situs_addr), owner: text(a.owner_name), legal: text(a.legal_desc), sourceIds: [source.id], matchEvidence: match.evidence, review: "pending", reviewNote: "", component: "unknown", assessmentGroup: text(a.geo_id) || accountId }, year, market: numeric(a.mkt_value) };
 }
-export async function researchTaxes(subject: TaxSubject, existing: TaxState, emit: Emit, fetcher: typeof fetch = fetch): Promise<TaxState> {
+export async function researchTaxes(subject: TaxSubject, existing: TaxState, emit: Emit, fetcher: typeof fetch = fetch, retain?:RetainTaxEvidence): Promise<TaxState> {
   const report = emptyTaxState(), gaps: string[] = [];
   const upstream=fetcher,deadline=AbortSignal.timeout(90000);
   fetcher=(input,init)=>upstream(input,{...init,signal:init?.signal?AbortSignal.any([deadline,init.signal]):deadline});
@@ -135,7 +135,7 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
     if(index<0)report.parcels.push(structuredClone(parcel));else report.parcels[index]=structuredClone(parcel);
     for(const id of parcel.sourceIds){const source=existing.sources.find(s=>s.id===id);if(source&&!report.sources.some(s=>s.id===id))report.sources.push(structuredClone(source));}
     emit(`Checking historical bills: ${parcel.accountId} · ${parcel.county}, ${parcel.state}`,report);
-    const result=await researchAccount(parcel,fetcher);attempts.push(result.attempt);report.sources.push(...result.sources);
+    const result=await researchAccount(parcel,fetcher,retain);attempts.push(result.attempt);report.sources.push(...result.sources);
     report.parcels.find(p=>p.key===parcel.key)!.sourceIds.push(...result.sources.map(s=>s.id));
     for(const row of result.records){const prior=report.records.find(r=>r.parcelKey===row.parcelKey&&r.year===row.year);if(prior){Object.assign(prior.facts,row.facts);prior.jurisdictions=row.jurisdictions;prior.billEvidence=row.billEvidence;}else report.records.push(row);}
     if(result.attempt.status!=='retrieved')gaps.push(`${parcel.accountId}: ${result.attempt.message}`);

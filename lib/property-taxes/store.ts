@@ -38,6 +38,7 @@ export function validateTaxState(input: unknown): TaxState {
       if (typeof f.value === "string") string(f.value,2000);
     }
     for (const j of array(r.jurisdictions,50)) { string(j.name); rateFraction(j.rate,j.unit); sourceRef(j.sourceId); if (!["proposed","adopted"].includes(j.stage)) throw new TaxError("Rate needs its adoption status."); }
+    if(r.billEvidence?.obligationStatus!==undefined&&!['partial','temporary','unverified','reconciled'].includes(r.billEvidence.obligationStatus))throw new TaxError('Invalid annual obligation status.');
     if(r.billEvidence){if(!['issued_statement','collector_history'].includes(r.billEvidence.kind))throw new TaxError('Invalid bill evidence type.');sourceRef(r.billEvidence.sourceId);string(r.billEvidence.scope,2000);string(r.billEvidence.notes,4000);if(r.billEvidence.collectorAccount!==undefined)string(r.billEvidence.collectorAccount,100);if(!r.facts.levied||r.facts.levied.sourceId!==r.billEvidence.sourceId)throw new TaxError('Historical bill needs a matching sourced levy.');}
   }
   for (const o of array(s.overrides,1800)) {

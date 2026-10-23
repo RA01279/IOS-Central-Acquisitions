@@ -2,3 +2,6 @@
 node_modules
 .next
 .env*
+*.tsbuildinfo
+docs/tax-acceptance-*
+docs/tax-evidence-*

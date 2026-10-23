@@ -1,6 +1,6 @@
 import {CollectorSession,collectorAmount} from './collector-http';
 import {nameKey,normalizedAddress} from './address';
-import type {TaxParcel,TaxSource,TaxRecord} from './types';
+import type {TaxParcel,TaxSource,TaxRecord,RetainTaxEvidence} from './types';
 export interface PdfCell {text:string;x:number;y:number}
 export function travisCollectorAccount(parcel:TaxParcel){const raw=parcel.assessmentGroup.replace(/\D/g,'');if(/^\d{14}$/.test(raw))return raw;if(/^\d{10}$/.test(raw))return raw+'0000';throw Error('No verified Travis geographic parcel ID; collector account was not guessed.');}
 export function parseTravisHistory(cells:PdfCell[],firstPage:string,parcel:TaxParcel,source:TaxSource):TaxRecord[]{
@@ -13,7 +13,11 @@ export function parseTravisHistory(cells:PdfCell[],firstPage:string,parcel:TaxPa
  if(years.length<2||years.length>6||new Set(years.map(c=>c.text)).size!==years.length)throw Error('Historical tax-year columns are ambiguous.');
  const records:TaxRecord[]=[];
  for(const year of years){
-  const total=within.filter(c=>c.text==='Total'&&Math.abs(c.x-year.x)<35&&c.y<year.y-20&&c.y>year.y-150).sort((a,b)=>b.y-a.y)[0];
+  const nextYear=years.filter(c=>Math.abs(c.x-year.x)<35&&c.y<year.y).sort((a,b)=>b.y-a.y)[0];
+  const lower=Math.max(year.y-150,nextYear?.y??bottom.y+2);
+  const totals=within.filter(c=>c.text==='Total'&&Math.abs(c.x-year.x)<35&&c.y<year.y-20&&c.y>lower);
+  if(totals.length>1)throw Error(`Duplicate historical total for ${year.text}; review revised or supplemental bills.`);
+  const total=totals[0];
   if(!total)continue;
   const amounts=within.filter(c=>/^\$?[\d,]+\.\d{2}$/.test(c.text)&&Math.abs(c.y-total.y)<1.2&&c.x>year.x+120&&c.x<year.x+260);
   if(amounts.length!==1)throw Error(`Historical total is ambiguous for ${year.text}.`);
@@ -23,11 +27,13 @@ export function parseTravisHistory(cells:PdfCell[],firstPage:string,parcel:TaxPa
   const actualYear=Number(year.text);if(actualYear>new Date().getFullYear())throw Error('Future bill year cannot be classified as historical.');
   records.push({parcelKey:parcel.key,year:actualYear,facts:{levied:{value:amount,sourceId:source.id,stage:'reported',reviewed:false}},jurisdictions:[],billEvidence:{kind:'collector_history',sourceId:source.id,collectorAccount:account,scope:'Travis County collector bill history; verify whether all acquisition parcels and separately billed authorities are covered.',notes:'Tax Imposed / Total from the official bill Five Year Tax History. PDF columns and jurisdiction-charge sums verified. Historical bills are not current balances or proof of payment.'}});
  }
+ for(const row of records)row.billEvidence!.obligationStatus='unverified';
  return records.sort((a,b)=>b.year-a.year).slice(0,5);
 }
-export async function researchTravisHistory(parcel:TaxParcel,fetcher:typeof fetch=fetch){
+export async function researchTravisHistory(parcel:TaxParcel,fetcher:typeof fetch=fetch,retain?:RetainTaxEvidence){
  const account=travisCollectorAccount(parcel),url='https://travis.go2gov.net/export?'+new URLSearchParams({account,type:'org'});
  const response=await new CollectorSession(fetcher).read(url,{binary:true});if(new TextDecoder().decode(response.bytes.slice(0,5))!=='%PDF-')throw Error('Official collector did not return a bill PDF; interactive access may be required.');
+ const original=response.bytes.slice();
  const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs'),doc=await getDocument({data:response.bytes,isEvalSupported:false,useSystemFonts:true}).promise;
  try{
   if(doc.numPages<2||doc.numPages>5)throw Error('Official bill page count is outside the supported format.');
@@ -36,6 +42,7 @@ export async function researchTravisHistory(parcel:TaxParcel,fetcher:typeof fetc
   const source:TaxSource={id:crypto.randomUUID(),label:'Travis County official bill · five-year historical tax charges',url,retrievedAt:new Date().toISOString(),taxYear:null,kind:'official',evidence:JSON.stringify({collectorAccount:account,firstPage,historyCells:cells}).slice(0,60000)};
   const records=parseTravisHistory(cells,firstPage,parcel,source);if(!records.length)throw Error('Official bill contains no verified historical totals.');
   source.taxYears=records.map(r=>r.year);
+  if(retain)await retain(source,original,'application/pdf');
   return {source,records};
  }finally{await doc.destroy();}
 }

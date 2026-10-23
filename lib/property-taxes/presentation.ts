@@ -12,6 +12,7 @@ export function taxAvailability(state:TaxState){
 }
 export function combinedDisplay(state:TaxState,year:number,metric:Metric){
  try{const result=annualTotal(state,year,metric);if(result.total!==null)return taxMoney(result.total);
+  if(result.limitations.length)return `${taxMoney(result.knownSubtotal)} partial subtotal — ${result.limitations.join('; ')}`;
   if(state.parcels.some(p=>p.review==='pending'))return 'Parcel review required';
   if(!state.parcels.some(p=>p.review==='included'))return 'No subject accounts included';
   return `Missing or unreviewed figure${result.knownSubtotal?` (${taxMoney(result.knownSubtotal)} reviewed subtotal)`:''}`;

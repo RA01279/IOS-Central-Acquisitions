@@ -7,6 +7,8 @@ export function parseGwinnettBill(raw:string, account:string, address:string, so
  if(!text.replace(/\s/g,'').includes(id) || !(` ${nameKey(text)} `).includes(` ${normalizeAddress(address)} `)) throw new Error('Bill identity does not match the subject account and address.');
  const header=text.match(/\b(20\d{2})\s+R\d{4}\s*\d{3}[A-Z]?\s+(\d{2})-(\d{2})-(20\d{2})\s+\$([\d,]+\.\d{2})/);
  if(!header || header[1]!==header[4]) throw new Error('Dated bill header could not be verified.');
+ const headerAccount=text.match(/\b20\d{2}\s+(R\d{4}\s*\d{3}[A-Z]?)\s+\d{2}-\d{2}-20\d{2}/)?.[1];
+ if(headerAccount?.replace(/\s/g,'').toUpperCase()!==id.toUpperCase())throw new Error('Dated bill header account does not match the selected parcel.');
  const money=(label:RegExp)=>{const m=text.match(label);if(!m)throw new Error('Required bill total is missing.');return Number(m[1].replace(/,/g,''));};
  const market=money(/TOTAL VALUE:\s*\$([\d,]+(?:\.\d{2})?)/), assessed=money(/ASSESSED VALUE:\s*\$([\d,]+(?:\.\d{2})?)/);
  const adValorem=money(/TOTAL AD VALOREM TAXES:\s*([\d,]+\.\d{2})/), special=money(/TOTAL OTHER ASSESSMENTS:\s*([\d,]+\.\d{2})/), total=money(/TOTAL AMOUNT DUE\s+([\d,]+\.\d{2})/);
@@ -14,7 +16,7 @@ export function parseGwinnettBill(raw:string, account:string, address:string, so
  const fact=(value:number|string)=>({value,sourceId:source.id,stage:'issued' as const,reviewed:false});
  source.taxYear=Number(header[1]);
  const rate=text.match(/TOTAL MILLAGE RATE:\s*([\d.]+)/);
- return {parcelKey:key,year:Number(header[1]),facts:{market:fact(market),assessed:fact(assessed),levied:fact(total),dueDate:fact(`${header[4]}-${header[2]}-${header[3]}`),...(/value is under appeal/i.test(text)?{appeal:fact('Official bill states property value is under appeal; temporary bill.')}:{})},jurisdictions:rate?[{name:'Combined ad valorem rate; bill also includes separately stated assessments (see source)',rate:Number(rate[1]),unit:'decimal',taxable:null,exemption:null,sourceId:source.id,stage:'adopted'}]:[]};
+ return {parcelKey:key,year:Number(header[1]),facts:{market:fact(market),assessed:fact(assessed),levied:fact(total),dueDate:fact(`${header[4]}-${header[2]}-${header[3]}`),...(/value is under appeal/i.test(text)?{appeal:fact('Official bill states property value is under appeal; temporary bill.')}:{})},billEvidence:{kind:'issued_statement',sourceId:source.id,collectorAccount:account,scope:'Issued county bill including its separately stated assessments; acquisition parcel and authority coverage require review.',notes:'Page 1: Combined Taxes and Assessments / Total Amount Due, checked against ad valorem taxes plus other assessments and the remittance header. Temporary/appeal status is retained separately.'},jurisdictions:rate?[{name:'Combined ad valorem rate; bill also includes separately stated assessments (see source)',rate:Number(rate[1]),unit:'decimal',taxable:null,exemption:null,sourceId:source.id,stage:'adopted'}]:[]};
 }
 
 export async function gwinnettPdfText(bytes:Uint8Array) {

@@ -1,4 +1,6 @@
 import { normalizedAddress, nameKey } from "./address";
+import {billAccountMatches} from './bill-account';
+import {obligationLimitation} from './obligation';
 import { METRICS, type TaxState, type TaxParcel, type TaxRecord, type Metric, type RateUnit, type TaxScenario, type ProjectionYear, type TaxSchedule } from "./types";
 
 export function rateFraction(value: number, unit: RateUnit): number {
@@ -34,19 +36,26 @@ export function effectiveFact(state: TaxState, record: TaxRecord, metric: Metric
   return override ? { value: override.value, sourceId: override.sourceId, stage: override.stage ?? "reported" as const, reviewed: true, manual: true } : record.facts[metric];
 }
 export function annualTotal(state: TaxState, year: number, metric: Metric) {
-  const parcels = includedParcels(state), missing: string[] = state.parcels.filter(p=>p.review==="pending").map(p=>p.accountId); let total = 0;
+  const parcels = includedParcels(state), missing: string[] = state.parcels.filter(p=>p.review==="pending").map(p=>p.accountId),limitations:string[]=[]; let total = 0;
   for (const parcel of parcels) {
+    if(state.records.filter(r=>r.parcelKey===parcel.key&&r.year===year).length>1){missing.push(parcel.accountId);continue;}
     const row = state.records.find(r => r.parcelKey === parcel.key && r.year === year);
+    if(row&&!billAccountMatches(parcel,row)){missing.push(parcel.accountId);continue;}
     const fact = row && effectiveFact(state, row, metric);
-    if (!fact || typeof fact.value !== "number" || fact.stage === "proposed" || !fact.reviewed) missing.push(parcel.accountId);
-    else total += fact.value;
+    if (!fact || typeof fact.value !== "number" || !Number.isFinite(fact.value) || fact.stage === "proposed" || !fact.reviewed) missing.push(parcel.accountId);
+    else {
+      total += Math.round(fact.value*100);
+      const limitation=metric==='levied'&&row?obligationLimitation(parcel,row):undefined;
+      if(limitation){missing.push(parcel.accountId);limitations.push(limitation);}
+    }
   }
-  return { total: parcels.length && !missing.length ? total : null, knownSubtotal: total, missing };
+  return { total: parcels.length && !missing.length ? total/100 : null, knownSubtotal: total/100, missing,limitations };
 }
 /** Keep manual overrides and reviewer decisions. Changed research facts lose review. */
 export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
   const next = structuredClone(current);
   const correctedAccounts=new Set<string>();
+  const retainedBills:string[]=[];
   for (const source of incoming.sources) if (!next.sources.some(s => s.id === source.id)) next.sources.push(source);
   for (const parcel of incoming.parcels) {
     const index = next.parcels.findIndex(p => p.key === parcel.key);
@@ -66,12 +75,17 @@ export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
     if(correctedAccounts.has(row.parcelKey)) continue;
     const old = next.records.find(r => r.parcelKey === row.parcelKey && r.year === row.year);
     if (!old) { next.records.push(row); continue; }
+    const retainLevy=row.facts.levied?.stage==='proposed'&&old.facts.levied&&old.facts.levied.stage!=='proposed';
+    if(retainLevy)retainedBills.push(`${row.parcelKey}, ${row.year}: saved levy retained; new proposed amount is not an issued bill. Conflicting source evidence is retained in Sources.`);
     for (const metric of METRICS) {
+      if(metric==='levied'&&retainLevy)continue;
       const fact = row.facts[metric], prior = old.facts[metric];
       if (fact) old.facts[metric] = { ...fact, reviewed: prior?.value === fact.value && prior?.stage === fact.stage ? prior.reviewed : false, ...(prior && prior.value !== fact.value ? { previous: prior.value } : prior?.previous!==undefined ? {previous:prior.previous} : {}) };
     }
-    if(row.billEvidence)old.billEvidence=structuredClone(row.billEvidence);
-    else if(row.facts.levied&&old.billEvidence?.sourceId!==row.facts.levied.sourceId)delete old.billEvidence;
+    if(!retainLevy){
+      if(row.billEvidence)old.billEvidence=structuredClone(row.billEvidence);
+      else if(row.facts.levied&&old.billEvidence?.sourceId!==row.facts.levied.sourceId)delete old.billEvidence;
+    }
     if(row.jurisdictions.length) {
       const manual=old.jurisdictions.filter(j=>current.sources.some(s=>s.id===j.sourceId && s.kind!=="official"));
       old.jurisdictions=[...row.jurisdictions,...manual.filter(j=>!row.jurisdictions.some(n=>n.name===j.name&&n.sourceId===j.sourceId))];
@@ -84,6 +98,7 @@ export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
   }
   if(incoming.records.some(r=>r.facts && Object.values(r.facts).some(Boolean)) || incoming.parcels.length) next.scenarios=next.scenarios.map(s=>({...s,rulesReviewed:false}));
   next.research = incoming.research ? {...incoming.research,gaps:[...incoming.research.gaps,...[...correctedAccounts].map(key=>`Manual account correction retained for ${key}. New figures from the old account were not imported; verify the corrected account's dated records.`)]} : next.research;
+  if(retainedBills.length&&next.research)next.research.gaps.push(...retainedBills);
   return next;
 }
 const round = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;

@@ -27,5 +27,6 @@ export function importGwinnettHistory(raw:string,url:string,parcel:TaxParcel){
   rows.push({parcelKey:parcel.key,year,facts:{levied:fact(levied),paid:fact(paid),balance:fact(balance),penalties:fact(penalties),interest:fact(interest),dueDate:fact(iso)},jurisdictions:[],billEvidence:{kind:'collector_history',sourceId:source.id,collectorAccount:parcel.accountId,scope:'County collector account history; confirm separately billed authorities and acquisition parcels.',notes:'User-imported capture of the official Tax Bills table after interactive county access. Net Tax is the published bill amount; Total Paid and Amount Due are retained separately. Fees remain in the raw evidence. Not an automated server verification.'}});
  }
  const records=rows.sort((a,b)=>b.year-a.year).slice(0,5);if(!records.length)throw Error('No dated tax bill rows found.');source.taxYears=records.map(r=>r.year);
+ for(const row of records)row.billEvidence!.obligationStatus='unverified';
  return {source,records};
 }

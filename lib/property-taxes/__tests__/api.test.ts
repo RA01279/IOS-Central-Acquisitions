@@ -58,3 +58,23 @@ it('imports verified account text with preserved provenance and rejects mismatch
  expect(result.state.scenarios).toHaveLength(0);
  expect((await POST(request(body),props)).status).toBe(409);
 });
+it('retains original county bytes during research and reloads the saved source link',async()=>{
+ const files=new Map<string,Uint8Array>();
+ mocks.db.storage={from:()=>({upload:async(path:string,bytes:Uint8Array)=>{files.set(path,bytes.slice());return {error:null};},createSignedUrl:async(path:string)=>({data:{signedUrl:`https://storage.example.test/${path}`},error:null})})};
+ const bytes=new TextEncoder().encode('%PDF-1.7\nindependent retained original');
+ mocks.research.mockImplementation(async(_subject:any,_state:any,_emit:any,_fetch:any,retain:any)=>{
+  const report=taxFixture();report.sources[0].id='retained-county-original';report.sources[0].kind='official';
+  for(const f of Object.values(report.records[0].facts) as any[])f.sourceId=report.sources[0].id;
+  report.parcels[0].sourceIds=[report.sources[0].id];
+  await retain(report.sources[0],bytes,'application/pdf');return report;
+ });
+ const current=await(await GET(new NextRequest('http://localhost'),props)).json();
+ const response=await POST(request({action:'research',revision:current.revision}),props);
+ const events=(await response.text()).trim().split('\n').map(line=>JSON.parse(line));
+ expect(events.at(-1).type).toBe('complete');
+ const loaded=await(await GET(new NextRequest('http://localhost'),props)).json();
+ const source=loaded.state.sources.find((s:any)=>s.id==='retained-county-original');
+ expect(source.storagePath).toMatch(/retained-county-original-[a-f0-9]{64}\.pdf$/);
+ expect(files.get(source.storagePath)).toEqual(bytes);
+ const signed=await GET(new NextRequest(`http://localhost?source=${source.id}`),props);expect(signed.status).toBe(307);
+});

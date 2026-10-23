@@ -1,0 +1,16 @@
+{
+  "method": "Independent transcription from retained county PDF page images and ordinary county portal screens; not parser output.",
+  "amwiler": {
+    "account": "R6250 010",
+    "window": [2026, 2025, 2024, 2023, 2022],
+    "rows": [
+      {"year":2026,"levy":7259.41,"school":3705.19,"county":2638.68,"stormwater":735.54,"commercialService":180,"paid":0,"balance":7259.41,"meaning":"Temporary issued bill under appeal"},
+      {"year":2025,"levy":7079.41,"school":3705.19,"county":2638.68,"stormwater":735.54,"commercialService":0,"paid":7079.41,"balance":0,"billNumber":"27141096","receipts":[6079.22,1000.19]},
+      {"year":2024,"levy":7152.96,"school":3778.74,"county":2638.68,"stormwater":735.54,"commercialService":0,"paid":7152.96,"balance":0,"billNumber":"25988941","receipts":[7152.96]},
+      {"year":2023,"levy":7171.35,"school":3797.13,"county":2638.68,"stormwater":735.54,"commercialService":0,"paid":7171.35,"balance":0,"billNumber":"25311303","receipts":[7171.35]},
+      {"year":2022,"levy":7371.54,"school":3915.24,"county":2720.76,"stormwater":735.54,"commercialService":0,"paid":7371.54,"balance":0,"billNumber":"24944092","receipts":[7371.54]}
+    ]
+  },
+  "travis": {"account":"02371408060000","sourceLocation":"Original PDF page 2, Five Year Tax History, Tax Imposed / Total for each printed year","rows":[[2025,157106.14],[2024,152141.43],[2023,153718.49],[2022,157993.84],[2021,156720.89]]},
+  "harris": {"account":"0612170060008","sourceLocation":"5 Year Account History, Years heading aligned with Total Tax Bill by Year; collector scope only","rows":[[2025,27462.14],[2024,26947.83],[2023,25333.80],[2022,3450.45],[2021,2505.29]]}
+}

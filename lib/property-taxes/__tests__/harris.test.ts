@@ -27,6 +27,7 @@ it('rejects wrong accounts, incorrect situs identity and non-reconciling totals'
  expect(()=>parseHarrisHistory(html,statement,{...subject,accountId:'0612170060009'},source)).toThrow('account');
  expect(()=>parseHarrisHistory(html,statement,{...subject,address:'1628 Central Park Dr'},source)).toThrow('situs');
  expect(()=>parseHarrisHistory(html.replace('$27,462.14','$27,000.00'),statement,subject,source)).toThrow('reconcile');
+ expect(()=>parseHarrisHistory(html+html,statement,subject,source)).toThrow('ambiguous');
 });
 it('keeps unavailable historical totals missing instead of manufacturing zero bills',()=>{
  const rows=parseHarrisHistory(html.replace('$2,505.29',''),statement,subject,source);

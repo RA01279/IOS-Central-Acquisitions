@@ -7,6 +7,7 @@ import { mergeResearch } from "@/lib/property-taxes/model";
 import { researchTaxes } from "@/lib/property-taxes/research";
 import {importGwinnettHistory} from '@/lib/property-taxes/gwinnett-history-import';
 import {emptyTaxState} from '@/lib/property-taxes/types';
+import {createHash} from 'node:crypto';
 export const dynamic="force-dynamic";
 export const maxDuration=120;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -96,7 +97,13 @@ export async function POST(req:NextRequest,props:{params:Promise<{id:string}>}) 
     const stream=new ReadableStream({async start(controller) {
       const send=(data:unknown)=>{try{controller.enqueue(encoder.encode(JSON.stringify(data)+"\n"));}catch{/* disconnected; still preserve completed evidence */}};
       try {
-        const findings=await researchTaxes({address:p.address,city:p.city,state:p.state,latitude:p.latitude==null?null:Number(p.latitude),longitude:p.longitude==null?null:Number(p.longitude),precision:p.geocode_precision,existingEvidence:events?.length?events:undefined},current.state,(message,partial)=>send({type:"progress",message,partial}));
+        const findings=await researchTaxes({address:p.address,city:p.city,state:p.state,latitude:p.latitude==null?null:Number(p.latitude),longitude:p.longitude==null?null:Number(p.longitude),precision:p.geocode_precision,existingEvidence:events?.length?events:undefined},current.state,(message,partial)=>send({type:"progress",message,partial}),fetch,async(source,bytes,contentType)=>{
+          const hash=createHash('sha256').update(bytes).digest('hex');
+          const path=`deals/${id}/property-taxes/${source.id}-${hash}.${contentType==='application/pdf'?'pdf':'json'}`;
+          const {error}=await db.storage.from('documents').upload(path,bytes,{contentType,upsert:false});
+          if(error)throw new Error('County evidence retrieved but original document could not be retained. Retry; saved history is preserved.');
+          source.storagePath=path;
+        });
         const state=mergeResearch(current.state,findings);
         const saved=await saveTaxWorkspace(db,id,current.revision,state,user.email,"research");
         revalidatePath(`/deals/${id}/property-taxes`);

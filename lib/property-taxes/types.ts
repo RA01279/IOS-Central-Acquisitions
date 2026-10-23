@@ -2,9 +2,10 @@ export type RateUnit = "per_100" | "mills" | "percent" | "decimal";
 export type Metric = "market" | "assessed" | "taxable" | "exemptions" | "levied" | "paid" | "balance" | "penalties" | "interest" | "dueDate" | "delinquency" | "appeal";
 export const METRICS: Metric[] = ["market", "assessed", "taxable", "exemptions", "levied", "paid", "balance", "penalties", "interest", "dueDate", "delinquency", "appeal"];
 export interface TaxSource { id: string; label: string; url: string; retrievedAt: string; taxYear: number | null; taxYears?: number[]; kind: "official" | "manual" | "upload"; evidence: string; storagePath?: string; captureMethod?:'user_import' }
+export type RetainTaxEvidence = (source:TaxSource, bytes:Uint8Array, contentType:string)=>Promise<void>;
 export interface Fact { value: number | string | null; sourceId: string; stage: "proposed" | "adopted" | "issued" | "reported"; reviewed: boolean; previous?: number | string | null }
 export interface Jurisdiction { name: string; rate: number; unit: RateUnit; taxable: number | null; exemption: number | null; sourceId: string; stage: "proposed" | "adopted" }
-export interface BillEvidence { kind: 'issued_statement' | 'collector_history'; sourceId: string; scope: string; notes: string; collectorAccount?: string }
+export interface BillEvidence { kind: 'issued_statement' | 'collector_history'; sourceId: string; scope: string; notes: string; collectorAccount?: string; obligationStatus?:'partial'|'temporary'|'unverified'|'reconciled' }
 export interface TaxRecord { parcelKey: string; year: number; facts: Partial<Record<Metric, Fact>>; jurisdictions: Jurisdiction[]; billEvidence?: BillEvidence }
 export interface TaxParcel { key: string; accountId: string; county: string; state: string; address: string; owner: string; legal: string; sourceIds: string[]; matchEvidence: string[]; review: "pending" | "included" | "excluded"; reviewNote: string; component: "combined" | "land" | "building" | "unknown"; assessmentGroup: string; identityOverride?: boolean }
 export interface TaxRules { jurisdiction: string; sourceIds: string[]; notes: string; reviewed: boolean }
