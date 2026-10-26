@@ -43,6 +43,8 @@ export default function SourcingWorkspace() {
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState<"sweep" | "agent" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
   const [recent, setRecent] = useState<RunInfo[]>([]);
   const [run, setRun] = useState<RunInfo | null>(null);
@@ -130,6 +132,17 @@ export default function SourcingWorkspace() {
     } catch (e: any) { setAdded((a) => ({ ...a, [s.ref]: { error: e.message } })); }
   }
 
+  async function exportSites(sites: Site[], label: string, research?: SourcedSite[]) {
+    if (!sites.length || exporting) return;
+    setExporting(true); setExportError(null);
+    try {
+      const { downloadSourcingWorkbook } = await import("@/lib/sourcing/export");
+      await downloadSourcingWorkbook(sites, label, research);
+    } catch {
+      setExportError("Could not export the workbook. Please try again.");
+    } finally { setExporting(false); }
+  }
+
   const inBox = (s: Site) => s.parcel?.acres != null && s.parcel.acres >= buyBox.minAcres && s.parcel.acres <= buyBox.maxAcres;
   const visible = useMemo(() => {
     const list = (sweep?.sites ?? []).filter((s) => (showKnown || !s.known) && (!hidePublic || s.parcel?.ownerClass !== "public") && (!inBoxOnly || inBox(s)));
@@ -205,6 +218,8 @@ export default function SourcingWorkspace() {
       {(sweep || report) && (
         <section className="panel">
           <h2>{report ? "3. Qualified sites" : "2. Pick sites to qualify"}</h2>
+          {exportError && <p role="alert" className="error">{exportError}</p>}
+          {exporting && <p role="status">Preparing Excel export...</p>}
           {sweep && !report && (
             <p className="hint">
               {sweep.label}: {sweep.sites.length - knownCount} new yard site{sweep.sites.length - knownCount === 1 ? "" : "s"}
@@ -220,6 +235,10 @@ export default function SourcingWorkspace() {
                 <label><input type="checkbox" checked={hidePublic} onChange={(e) => setHidePublic(e.target.checked)} /> Hide publicly owned</label>
                 <label><input type="checkbox" checked={inBoxOnly} onChange={(e) => setInBoxOnly(e.target.checked)} /> Only {buyBox.minAcres}–{buyBox.maxAcres} acres</label>
                 <label><input type="checkbox" checked={ownerUsersFirst} onChange={(e) => setOwnerUsersFirst(e.target.checked)} /> Owner-users first</label>
+              </p>
+              <p style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button type="button" className="secondary" disabled={exporting || !selected.length} onClick={() => exportSites(sweep.sites.filter((s) => selected.includes(s.ref)), sweep.label)}>Export selected to Excel ({selected.length})</button>
+                <button type="button" className="secondary" disabled={exporting || !visible.length} onClick={() => exportSites(visible, sweep.label)}>Export visible to Excel ({visible.length})</button>
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
@@ -249,6 +268,7 @@ export default function SourcingWorkspace() {
           {run?.status === "failed" && <p className="error">The agent run failed: {run.error ?? "unknown error"}</p>}
           {report && (
             <>
+              <button type="button" className="secondary" disabled={exporting || !report.sites.length} onClick={() => exportSites(report.saved.sites.filter((s) => report.sites.some((r) => r.ref === s.ref)), report.saved.market, report.sites)}>Export qualified sites to Excel ({report.sites.length})</button>
               <p className="hint">Agent research from public records. Verify the owner and parcel against the appraisal district before reaching out. Buy box: {report.saved.buyBox.minAcres}–{report.saved.buyBox.maxAcres} usable acres, ≤{report.saved.buyBox.maxCoveragePct}% coverage. <button type="button" className="link-button" onClick={() => { setReport(null); setRun(null); }}>Back to sweep</button></p>
               {report.sites.map((s) => {
                 const site = report.saved.sites.find((x) => x.ref === s.ref);

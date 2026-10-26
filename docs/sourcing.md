@@ -13,6 +13,14 @@
 
 Sweep results and their run link are kept in the browser that ran them (localStorage); re-open recent runs from the same browser.
 
+## Broker Excel Export
+
+Use **Export selected to Excel** for checked sweep sites or **Export visible to Excel** for the current filtered list. Selected exports include checked sites even when a later filter hides them. After qualification, **Export qualified sites to Excel** includes the research for the reported sites.
+
+The `.xlsx` workbook includes property addresses, operators, owners and mailing addresses, acreage, parcel IDs, available qualification research, sources and map links, plus blank Broker Comments and Next Step columns. It has filters and frozen headers; missing information stays blank. Outreach drafts are excluded. ExcelJS loads only when an export is requested, and generation uses the results already in the browser.
+
+Validation: `node scripts/test-sourcing-export.mjs` checks saved and reopened XLSX data, numeric acreage, parcel IDs, text safety, map links, filters, frozen headers and outreach exclusion.
+
 ## Notes on the parcel layer
 
 - `DATE_ACQ` is TxGIO's data refresh date, not the owner's purchase date. It is ignored; hold period comes from deed research.
