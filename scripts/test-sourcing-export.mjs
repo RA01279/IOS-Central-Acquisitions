@@ -8,6 +8,11 @@ const require = createRequire(import.meta.url);
 const module = new Module(process.cwd() + '/export-test.cjs'); module.paths = Module._nodeModulePaths(process.cwd());
 const src = ts.transpileModule(readFileSync('lib/sourcing/export.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
 module._compile(src, process.cwd() + '/export-test.cjs');
+assert.equal(module.exports.sourcingExportFilename('Houston: Northwest (US-290 / Beltway 8)', {brokerName:'Preston Fleenor',firmName:'Younger Partners'}), 'Houston_Northwest_Preston Fleenor.xlsx');
+assert.equal(module.exports.sourcingExportFilename('Houston: Northwest (US-290 / Beltway 8) | 1 mi | Profiles: Equipment', {firmName:'Younger Partners'}), 'Houston_Northwest_Younger Partners.xlsx');
+assert.equal(module.exports.sourcingExportFilename('Houston: North (IAH / Aldine)'), 'Houston_North_Unassigned.xlsx');
+assert.equal(module.exports.sourcingExportFilename('Houston'), 'Houston_Unspecified submarket_Unassigned.xlsx');
+assert.equal(module.exports.sourcingExportFilename('Houston: East', {brokerName:'A/B: Smith?'}), 'Houston_East_A-B- Smith-.xlsx');
 const site = { ref: 'S1', address: '=1+1', lat: 30, lng: -95, operators: [{ name: 'Test Yard' }], categories: ['Trucking'], ownerUser: true, parcel: { owner: 'Owner LLC', acres: 0, propId: '00123', source: 'County roll' } };
 for (const qualified of [false, true]) {
  const research = { ref: 'S1', ownerType: 'unknown', acres: 2.5, signals: [], sources: [], unverified: [], outreach: 'PRIVATE DRAFT' };

@@ -3,6 +3,16 @@ import type { Site } from "./sweep";
 import type { SourcedSite } from "../agents/sourcing";
 import type { ExportAssignment } from "./export-assignment";
 
+/** Use the completed search geography, not the current search form controls. */
+export function sourcingExportFilename(searchLabel: string, assignment?: ExportAssignment) {
+  const area = searchLabel.split(" | ")[0].trim();
+  const divider = area.indexOf(": ");
+  const market = divider >= 0 ? area.slice(0, divider) : area;
+  const submarket = divider >= 0 ? area.slice(divider + 2).replace(/\s*\([^)]*\)\s*$/, "") : "Unspecified submarket";
+  const safe = (value: string) => value.replace(/[<>:"/\\|?*\x00-\x1f]/g, "-").replace(/_/g, " ").replace(/\s+/g, " ").trim().replace(/^[. ]+|[. ]+$/g, "").slice(0, 70).trim() || "Unspecified";
+  return `${safe(market)}_${safe(submarket)}_${safe(assignment?.brokerName || assignment?.firmName || "Unassigned")}.xlsx`;
+}
+
 export async function buildSourcingWorkbook(sites: Site[], label: string, research?: SourcedSite[], assignment?: ExportAssignment) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Hopper";
@@ -82,7 +92,7 @@ export async function downloadSourcingWorkbook(sites: Site[], label: string, res
   const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `off-market-opportunities-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  link.download = sourcingExportFilename(label, assignment);
   document.body.appendChild(link);
   link.click();
   link.remove();

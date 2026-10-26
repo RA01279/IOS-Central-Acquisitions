@@ -3,7 +3,7 @@ import { readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import ExcelJS from 'exceljs';
 
 const dir = 'C:/Users/randerson/Downloads';
-const filename = readdirSync(dir).filter((p) => /^off-market-opportunities-\d{4}-\d{2}-\d{2}.*\.xlsx$/.test(p)).sort((a, b) => statSync(`${dir}/${b}`).mtimeMs - statSync(`${dir}/${a}`).mtimeMs)[0];
+const filename = process.argv[2] ?? readdirSync(dir).filter((p) => /^off-market-opportunities-\d{4}-\d{2}-\d{2}.*\.xlsx$/.test(p) || /^.+_.+_.+\.xlsx$/.test(p)).sort((a, b) => statSync(`${dir}/${b}`).mtimeMs - statSync(`${dir}/${a}`).mtimeMs)[0];
 assert.ok(filename, 'Browser download exists');
 const reference = JSON.parse(readFileSync('.scratch/profile-evidence/google-records.json', 'utf8')).find((r) => r.selection.length === 2);
 const expected = reference.sites.filter((s) => s.parcel?.ownerClass !== 'public');

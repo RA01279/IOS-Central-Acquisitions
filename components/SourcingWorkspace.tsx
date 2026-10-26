@@ -16,7 +16,7 @@ import SourcingExportAssignment from "./SourcingExportAssignment";
 import { assignmentFor, type ExportAssignee } from "@/lib/sourcing/export-assignment";
 
 type Sweep = { center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string; criteriaKey?: string; profileIds?: string[]; searches?: { profileId: string; profile: string; keyword: string; failed: boolean; returned: number; limited: boolean }[]; contacts?: { requested: number; failed: number } };
-type Saved = { market: string; buyBox: BuyBox; sites: Site[] };
+type Saved = { market: string; buyBox: BuyBox; sites: Site[]; searchLabel?: string };
 type RunInfo = { id: string; status: string; error?: string | null; created_at?: string };
 
 const STORE = "hopper-sourcing:";
@@ -187,7 +187,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
       const r = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: "off-market-sourcing", text }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Could not start the agent.");
-      save(d.id, { market: market.label, buyBox, sites });
+      save(d.id, { market: market.label, buyBox, sites, searchLabel: sweep.label });
       setRun({ id: d.id, status: "queued" });
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   }
@@ -360,7 +360,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           {run?.status === "failed" && <p className="error">The agent run failed: {run.error ?? "unknown error"}</p>}
           {report && (
             <>
-              <button type="button" className="secondary" disabled={exporting || !report.sites.length} onClick={() => exportSites(report.saved.sites.filter((s) => report.sites.some((r) => r.ref === s.ref)), report.saved.market, report.sites)}>Export qualified sites to Excel ({report.sites.length})</button>
+              <button type="button" className="secondary" disabled={exporting || !report.sites.length} onClick={() => exportSites(report.saved.sites.filter((s) => report.sites.some((r) => r.ref === s.ref)), report.saved.searchLabel ?? report.saved.market, report.sites)}>Export qualified sites to Excel ({report.sites.length})</button>
               <p className="hint">Agent research from public records. Verify the owner and parcel against the appraisal district before reaching out. Buy box: {report.saved.buyBox.minAcres}–{report.saved.buyBox.maxAcres} usable acres, ≤{report.saved.buyBox.maxCoveragePct}% coverage. <button type="button" className="link-button" onClick={() => { setReport(null); setRun(null); }}>Back to sweep</button></p>
               {report.sites.map((s) => {
                 const site = report.saved.sites.find((x) => x.ref === s.ref);
