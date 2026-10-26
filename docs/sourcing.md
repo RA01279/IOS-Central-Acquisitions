@@ -15,6 +15,12 @@ Research runs and their sweep link are kept in the browser that ran them (localS
 
 ## Broker Excel Export
 
+### Broker / Firm Assignment
+
+Choose **Assign export to broker / firm** in the results before downloading. Search by broker name, firm or email, then select a broker contact or a firm. Broker choices include the linked firm and available contact details; firm-only assignments leave individual broker fields blank. The workbook shows Assigned to in its header and repeats Assigned Broker, Assigned Firm, Assigned Broker Email and Assigned Broker Phone on every exported property row. It applies to selected, filtered and qualified exports without changing their membership.
+
+The signed-in directory reuses broker-classified contacts, contacts at brokerage firms and contacts historically linked in broker roles. Firms linked to those brokers are selectable too. Records are selected by IDs and paged completely; duplicate names do not identify an assignment. Missing/deleted selections must be reselected or cleared before export. Directory errors are reported with Retry, and exports can remain unassigned. The choice persists with results in viewer-scoped session storage; it labels the workbook, does not create a shared assignment history, does not change deal ownership or broker scorecard credit, and sends nothing.
+
 ### Business / Occupier Profiles
 
 Profiles are the existing Google Places yard-use categories, not employees. All ten are visibly selected initially. Clear selects none and disables Sweep; the server rejects empty, missing or unknown profile IDs. Selecting multiple profiles runs the union of their keyword searches. Definitions remain shared with the IOS demand map:

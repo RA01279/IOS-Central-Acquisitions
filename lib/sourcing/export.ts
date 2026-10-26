@@ -1,8 +1,9 @@
 import ExcelJS from "exceljs";
 import type { Site } from "./sweep";
 import type { SourcedSite } from "../agents/sourcing";
+import type { ExportAssignment } from "./export-assignment";
 
-export async function buildSourcingWorkbook(sites: Site[], label: string, research?: SourcedSite[]) {
+export async function buildSourcingWorkbook(sites: Site[], label: string, research?: SourcedSite[], assignment?: ExportAssignment) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Hopper";
   workbook.created = new Date();
@@ -18,11 +19,16 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
     ["broker", "Broker Comments", 40], ["next", "Next Step", 35],
     ["phone", "Business Phone (Google)", 38], ["website", "Business Website (Google)", 55],
     ["google", "Google Business Source", 65], ["matches", "Business / Matched Profiles", 55],
+    ["assignedBroker", "Assigned Broker", 28], ["assignedFirm", "Assigned Firm", 30],
+    ["brokerEmail", "Assigned Broker Email", 35], ["brokerPhone", "Assigned Broker Phone", 24],
   ] as const;
   sheet.columns = columns.map(([key, , width]) => ({ key, width }));
   sheet.mergeCells("A1:F1");
   sheet.getCell("A1").value = "OFF-MARKET SOURCING OPPORTUNITIES";
   sheet.getCell("A1").font = { name: "Calibri", size: 16, bold: true, color: { argb: "FF0A2540" } };
+  sheet.mergeCells("H1:O1");
+  sheet.getCell("H1").value = `Assigned to: ${[assignment?.brokerName, assignment?.firmName].filter(Boolean).join(" · ") || "Unassigned"}`;
+  sheet.getCell("H1").font = { name: "Calibri", size: 12, bold: true, color: { argb: "FF0E5AA7" } };
   sheet.mergeCells("A2:F2");
   sheet.getCell("A2").value = `${label} | ${sites.length} opportunities | Exported ${workbook.created.toISOString().slice(0, 10)}`;
   sheet.mergeCells("A3:W3");
@@ -53,6 +59,8 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
       website: site.operators.filter((o) => o.website).map((o) => `${o.name}: ${o.website}`).join("\n"),
       google: site.operators.map((o) => `${o.name}: ${o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`}`).join("\n"),
       matches: site.operators.map((o) => `${o.name}: ${(o.categories ?? [o.category]).join(", ")}`).join("\n"),
+      assignedBroker: assignment?.brokerName, assignedFirm: assignment?.firmName,
+      brokerEmail: assignment?.brokerEmail, brokerPhone: assignment?.brokerPhone,
     });
     row.height = 62;
     row.eachCell({ includeEmpty: true }, (cell) => {
@@ -68,8 +76,8 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
   return workbook;
 }
 
-export async function downloadSourcingWorkbook(sites: Site[], label: string, research?: SourcedSite[]) {
-  const workbook = await buildSourcingWorkbook(sites, label, research);
+export async function downloadSourcingWorkbook(sites: Site[], label: string, research?: SourcedSite[], assignment?: ExportAssignment) {
+  const workbook = await buildSourcingWorkbook(sites, label, research, assignment);
   const buffer = await workbook.xlsx.writeBuffer();
   const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   const link = document.createElement("a");

@@ -12,6 +12,8 @@ import { MAX_SOURCING_SITES, parseSourcing, type SourcedSite } from "@/lib/agent
 import type { Site } from "@/lib/sourcing/sweep";
 import { SOURCING_PROFILES, selectedProfiles } from "@/lib/sourcing/profiles";
 import SourcingProfilePicker from "./SourcingProfilePicker";
+import SourcingExportAssignment from "./SourcingExportAssignment";
+import { assignmentFor, type ExportAssignee } from "@/lib/sourcing/export-assignment";
 
 type Sweep = { center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string; criteriaKey?: string; profileIds?: string[]; searches?: { profileId: string; profile: string; keyword: string; failed: boolean; returned: number; limited: boolean }[]; contacts?: { requested: number; failed: number } };
 type Saved = { market: string; buyBox: BuyBox; sites: Site[] };
@@ -50,6 +52,11 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportAssigneeKey, setExportAssigneeKey] = useState("");
+  const [exportAssignees, setExportAssignees] = useState<ExportAssignee[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [directoryRevision, setDirectoryRevision] = useState(0);
   const [online, setOnline] = useState<boolean | null>(null);
   const [recent, setRecent] = useState<RunInfo[]>([]);
   const [run, setRun] = useState<RunInfo | null>(null);
@@ -76,6 +83,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
         if (saved.report) setReport(saved.report);
         if (saved.run?.id && saved.run?.status) setRun(saved.run);
         if (saved.added) setAdded(saved.added);
+        if (typeof saved.exportAssigneeKey === "string") setExportAssigneeKey(saved.exportAssigneeKey);
       }
     } catch { /* storage may be unavailable */ }
     setRestored(true);
@@ -83,8 +91,26 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   }, [viewerKey]);
   useEffect(() => {
     if (!restored) return;
-    try { sessionStorage.setItem(`sourcing-results-v2:${viewerKey}`, JSON.stringify({ profileIds, marketKey, submarketKey, mode, address, radius, buyBox, sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, selected, report, run, added })); } catch { /* quota or storage unavailable */ }
-  }, [restored, viewerKey, profileIds, marketKey, submarketKey, mode, address, radius, buyBox, sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, selected, report, run, added]);
+    try { sessionStorage.setItem(`sourcing-results-v2:${viewerKey}`, JSON.stringify({ profileIds, marketKey, submarketKey, mode, address, radius, buyBox, sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, selected, report, run, added, exportAssigneeKey })); } catch { /* quota or storage unavailable */ }
+  }, [restored, viewerKey, profileIds, marketKey, submarketKey, mode, address, radius, buyBox, sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, selected, report, run, added, exportAssigneeKey]);
+
+  const hasResults = !!(sweep || report);
+  useEffect(() => {
+    if (!hasResults) return;
+    const controller = new AbortController();
+    let live = true;
+    setDirectoryLoading(true); setDirectoryError(null);
+    void (async () => {
+      try {
+        const response = await fetch("/api/sourcing/export-assignees", { signal: controller.signal, cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Could not load broker directory.");
+        if (live) setExportAssignees(data.assignees ?? []);
+      } catch (e: any) { if (live && e.name !== "AbortError") { setExportAssignees([]); setDirectoryError(e.message); } }
+      finally { if (live) setDirectoryLoading(false); }
+    })();
+    return () => { live = false; controller.abort(); };
+  }, [hasResults, directoryRevision]);
 
   function cancelPendingSweep() {
     sweepRequest.current.version++;
@@ -182,10 +208,15 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
 
   async function exportSites(sites: Site[], label: string, research?: SourcedSite[]) {
     if (!sites.length || exporting) return;
+    const assignment = assignmentFor(exportAssignees, exportAssigneeKey);
+    if (exportAssigneeKey && (directoryLoading || directoryError || !assignment)) {
+      setExportError("Choose an available broker / firm, or clear the assignment before exporting.");
+      return;
+    }
     setExporting(true); setExportError(null);
     try {
       const { downloadSourcingWorkbook } = await import("@/lib/sourcing/export");
-      await downloadSourcingWorkbook(sites, label, research);
+      await downloadSourcingWorkbook(sites, label, research, assignment);
     } catch {
       setExportError("Could not export the workbook. Please try again.");
     } finally { setExporting(false); }
@@ -280,6 +311,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           </>}
           {exportError && <p role="alert" className="error">{exportError}</p>}
           {exporting && <p role="status">Preparing Excel export...</p>}
+          <SourcingExportAssignment assignees={exportAssignees} value={exportAssigneeKey} onChange={(key) => { setExportAssigneeKey(key); setExportError(null); }} loading={directoryLoading} error={directoryError} retry={() => setDirectoryRevision((v) => v + 1)} />
           {sweep && !report && (
             <p className="hint">
               {sweep.label}: {sweep.sites.length - knownCount} new yard site{sweep.sites.length - knownCount === 1 ? "" : "s"}
