@@ -21,12 +21,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCES = ["model", "comps", "deal", "default", "manual"];
 
 async function loadDeal(id: string) {
-  const { data } = await getServiceClient()
+  return getServiceClient()
     .from("deals")
-    .select("id, asset_class, asking_price, contract_price, closed_price, in_place_rent, in_place_rent_basis, exit_cap_rate, properties(address, city, state, market, lot_sf, building_sf, occupancy_status), offers(price, offered_at), uw_versions(id, version_number, model_detail)")
+    .select("id, asset_class, asking_price, contract_price, closed_price, in_place_rent, in_place_rent_basis, exit_cap_rate, properties(address, city, market, lot_sf, building_sf, occupancy_status), offers(price, offered_at), uw_versions(id, version_number, model_detail)")
     .eq("id", id)
     .maybeSingle();
-  return data;
 }
 
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -56,7 +55,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   }
   const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 120) : null;
 
-  const deal = await loadDeal(id);
+  const {data:deal,error:dealError} = await loadDeal(id);
+  if (dealError) return NextResponse.json({ error: "Could not load the deal for underwriting. Retry or report the save failure." }, { status: 500 });
   if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
 
   let result;
