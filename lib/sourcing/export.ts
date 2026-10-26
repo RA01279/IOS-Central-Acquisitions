@@ -16,6 +16,8 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
     ["fit", "Buy Box Fit", 16], ["reason", "Fit Reason", 50], ["signals", "Off-market Signals", 50],
     ["unverified", "Unverified Items", 50], ["sources", "Sources", 60], ["map", "Map", 22],
     ["broker", "Broker Comments", 40], ["next", "Next Step", 35],
+    ["phone", "Business Phone (Google)", 38], ["website", "Business Website (Google)", 55],
+    ["google", "Google Business Source", 65], ["matches", "Business / Matched Profiles", 55],
   ] as const;
   sheet.columns = columns.map(([key, , width]) => ({ key, width }));
   sheet.mergeCells("A1:F1");
@@ -24,7 +26,7 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
   sheet.mergeCells("A2:F2");
   sheet.getCell("A2").value = `${label} | ${sites.length} opportunities | Exported ${workbook.created.toISOString().slice(0, 10)}`;
   sheet.mergeCells("A3:W3");
-  sheet.getCell("A3").value = "Public-record research; verify ownership, parcel boundaries and outdoor-storage permissions before outreach. Blank fields are unknown.";
+  sheet.getCell("A3").value = "Google business contacts are occupier contacts, not verified property-owner contacts. Verify ownership and parcel facts. Blank fields are unknown. Google results are a limited sample.";
   sheet.getRow(3).font = { name: "Calibri", size: 10, color: { argb: "FF6B7A88" } };
   sheet.getRow(4).values = columns.map(([, header]) => header);
   sheet.getRow(4).eachCell((cell) => {
@@ -47,6 +49,10 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
       signals: r?.signals.join("\n"), unverified: r?.unverified.join("\n"),
       sources: [...new Set([...(r?.sources ?? []), ...(p?.source ? [p.source] : [])])].join("\n"),
       map: { text: "View on Google Maps", hyperlink: `https://www.google.com/maps/search/?api=1&query=${site.lat},${site.lng}` },
+      phone: site.operators.filter((o) => o.phone).map((o) => `${o.name}: ${o.phone}`).join("\n"),
+      website: site.operators.filter((o) => o.website).map((o) => `${o.name}: ${o.website}`).join("\n"),
+      google: site.operators.map((o) => `${o.name}: ${o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`}`).join("\n"),
+      matches: site.operators.map((o) => `${o.name}: ${(o.categories ?? [o.category]).join(", ")}`).join("\n"),
     });
     row.height = 62;
     row.eachCell({ includeEmpty: true }, (cell) => {

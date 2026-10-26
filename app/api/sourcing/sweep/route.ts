@@ -1,4 +1,4 @@
-// POST { submarket } | { address } | { lat, lng }, radiusMiles -> yard sites.
+// POST { submarket } | { address } | { lat, lng }, radiusMiles, profileIds -> yard sites.
 // Searches Google Places for businesses that operate from outdoor yards, groups
 // them into sites, and marks the ones Hopper already has (deals of any stage,
 // including archived targets; owned assets; comps).
@@ -10,7 +10,8 @@ import { readAllCompPages } from "@/lib/comps/mapData";
 import { geocodeAddress } from "@/lib/geocode";
 import { validCoordinates } from "@/lib/location";
 import { findSubmarket } from "@/lib/sourcing/markets";
-import { attachParcels, buildSites, searchYardUsers, type KnownPoint } from "@/lib/sourcing/sweep";
+import { attachParcels, buildSites, searchYardUsers, enrichBusinessContacts, type KnownPoint } from "@/lib/sourcing/sweep";
+import { selectedProfiles } from "@/lib/sourcing/profiles";
 import { lookupParcels } from "@/lib/sourcing/parcels";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,8 @@ export async function POST(req: NextRequest) {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY;
   if (!key) return NextResponse.json({ error: "Google Maps is not configured." }, { status: 503 });
   const body = await req.json().catch(() => null);
+  const profiles = selectedProfiles(body?.profileIds);
+  if (!profiles) return NextResponse.json({ error: "Select at least one valid business / occupier profile." }, { status: 400 });
   const radiusMiles = Number(body?.radiusMiles);
   if (!Number.isFinite(radiusMiles) || radiusMiles < 0.5 || radiusMiles > 10) return NextResponse.json({ error: "Choose a radius from 0.5 to 10 miles." }, { status: 400 });
 
@@ -54,14 +57,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 
-  const { places, screened, failedSearches, totalSearches } = await searchYardUsers(center, radiusMiles, key);
+  const { places, screened, failedSearches, totalSearches, searches } = await searchYardUsers(center, radiusMiles, key, fetch, profiles);
   if (failedSearches === totalSearches) return NextResponse.json({ error: "Google Places searches failed. Retry in a minute." }, { status: 502 });
   const grouped = buildSites(center, radiusMiles, places, known);
   // Owner of record for every site (~150 ms each, 8 at a time).
-  const sites = attachParcels(grouped, await lookupParcels(grouped));
+  const [parcels, contacts] = await Promise.all([lookupParcels(grouped), enrichBusinessContacts(grouped, key)]);
+  const sites = attachParcels(grouped, parcels);
   return NextResponse.json({
     center, label, radiusMiles, sites,
-    screened, failedSearches, totalSearches,
-    note: "Google returns at most 20 businesses per search term, so a sweep is a sample of the area, not an inventory. Sweep tighter radii around clusters for more.",
+    screened, failedSearches, totalSearches, searches, contacts, profileIds: profiles.map((p) => p.id),
+    note: "First page only: up to 20 Google results per keyword. Additional Google pages are not fetched; this is a sample, not an inventory. Radius is checked against each business pin. Business contact details are not verified property-owner contacts.",
   });
 }

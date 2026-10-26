@@ -18,6 +18,7 @@ function load(path, deps = {}) {
 }
 const match = load("lib/comps/match.ts");
 const yard = load("lib/sourcing/yard-users.ts");
+const profiles = load("lib/sourcing/profiles.ts", { "./yard-users": yard });
 const parcels = load("lib/sourcing/parcels.ts");
 const sweep = load("lib/sourcing/sweep.ts", { "@/lib/comps/match": match, "./yard-users": yard, "./parcels": parcels });
 const sourcing = load("lib/agents/sourcing.ts");
@@ -28,21 +29,21 @@ const center = { lat: 30, lng: -95 };
 const place = (id, name, lat, lng, vicinity, extra = {}) => ({ place_id: id, name, vicinity, geometry: { location: { lat, lng } }, category: "Trucking & Towing", business_status: "OPERATIONAL", ...extra });
 const places = [
   place("a", "Acme Trucking", 30.001, -95.001, "100 Yard Rd, Testville"),
-  place("b", "Bravo Crane", 30.0012, -95.0012, "102 Yard Rd, Testville"),            // ~30 m away: same site
+  place("b", "Bravo Crane", 30.0012, -95.0012, "102 Yard Rd, Testville"),            // ~30 m away, different property
   place("c", "Charlie Brick", 30.02, -95.02, "500 Industrial Pkwy E, Testville"),
   place("d", "Delta Stone", 30.0215, -95.0205, "500 Industrial Pkwy E Ste 4, Testville"), // same street address, other suite
   place("e", "Echo Fence", 30.05, -95.05, "900 Fence Ln, Testville"),
-  place("f", "ACME TRUCKING", 30.03, -95.03, "1 Other Rd, Testville"),                // duplicate listing of a chain
+  place("f", "ACME TRUCKING", 30.03, -95.03, "1 Other Rd, Testville"),                // another branch of a chain
   place("g", "Far Away Hauling", 31, -95, "Far"),                                      // outside radius
 ];
 const sites = sweep.buildSites(center, 5, places, [{ kind: "deal", id: "d1", label: "900 Fence Ln (archived)", href: "/deals/d1", lat: 30.0505, lng: -95.0502 }]);
-assert.equal(sites.length, 3, "two shared yards and one known site");
-assert.equal(sites[0].operators.length, 2, "operators within ~400 ft are one site");
-assert.equal(JSON.stringify(sites[1].operators.map((o) => o.name)), JSON.stringify(["Charlie Brick", "Delta Stone"]), "same street address, different suite, is one site");
-assert.equal(sites[2].known?.kind, "deal", "a deal of any stage marks the site as known");
-assert(!sites.some((s) => s.operators.some((o) => o.name === "ACME TRUCKING")), "chain duplicates collapse");
+assert.equal(sites.length, 5, "adjacent different addresses and separate chain branches remain distinct");
+assert.equal(sites[0].operators.length, 1, "proximity alone does not combine different properties");
+assert.equal(JSON.stringify(sites[2].operators.map((o) => o.name)), JSON.stringify(["Charlie Brick", "Delta Stone"]), "same street address, different suite, is one site");
+assert.equal(sites[4].known?.kind, "deal", "a deal of any stage marks the site as known");
+assert(sites.some((s) => s.operators.some((o) => o.name === "ACME TRUCKING")), "separate chain locations survive");
 assert(!sites.some((s) => s.address === "Far"), "radius is enforced");
-assert.equal(JSON.stringify(sites.map((s) => s.ref)), JSON.stringify(["S1", "S2", "S3"]));
+assert.equal(JSON.stringify(sites.map((s) => s.ref)), JSON.stringify(["S1", "S2", "S3", "S4", "S5"]));
 assert(markets.findSubmarket("hou-n") && !markets.findSubmarket("nope"));
 
 // ---- parcels -------------------------------------------------------------------
@@ -65,7 +66,7 @@ assert(!parcels.likelyOwnerUser("HOUSTON SUPPLY HOLDINGS LLC", ["Summit Supply C
 // Two pins on one parcel are one site; owner-user flag set from the merged operators.
 const merged = sweep.attachParcels(sites.slice(0, 2), [{ ...p1, propId: "X1", county: "HARRIS" }, { ...p1, propId: "X1", county: "HARRIS" }]);
 assert.equal(merged.length, 1, "same parcel, one acquisition");
-assert.equal(merged[0].operators.length, 4);
+assert.equal(merged[0].operators.length, 2);
 assert.equal(merged[0].ref, "S1");
 
 // Places screening reuses the demand map's yard rules.
@@ -110,14 +111,15 @@ globalThis.fetch = async (url) => ({ json: async () => ({ status: "OK", results:
 try {
   const sweepRoute = load("app/api/sourcing/sweep/route.ts", { "next/server": { NextResponse }, "@/lib/auth": auth, "@/lib/supabase": { getServiceClient: () => db },
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/geocode": { geocodeAddress: async () => null }, "@/lib/location": load("lib/location.ts"),
-    "@/lib/sourcing/markets": markets, "@/lib/sourcing/sweep": sweep, "@/lib/sourcing/parcels": parcels });
+    "@/lib/sourcing/markets": markets, "@/lib/sourcing/profiles": profiles, "@/lib/sourcing/sweep": sweep, "@/lib/sourcing/parcels": parcels });
   const req = (body) => ({ json: async () => body });
-  const r = await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3 }));
+  const r = await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3, profileIds: ["trucking-towing"] }));
   assert.equal(r.status, 200);
   assert.equal(r.body.sites.length, 1);
   assert.equal(r.body.sites[0].known?.href, "/deals/d9", "an archived deal at the site is flagged");
-  assert.equal((await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 50 }))).status, 400, "radius capped");
-  assert.equal((await sweepRoute.POST(req({ address: "nowhere", radiusMiles: 3 }))).status, 400, "unresolvable address");
+  assert.equal((await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 50, profileIds: ["trucking-towing"] }))).status, 400, "radius capped");
+  assert.equal((await sweepRoute.POST(req({ address: "nowhere", radiusMiles: 3, profileIds: ["trucking-towing"] }))).status, 400, "unresolvable address");
+  for (const profileIds of [undefined, [], ["employee-id"], ["trucking-towing", "unknown"]]) assert.equal((await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3, profileIds }))).status, 400, "missing or unknown profiles never broaden search");
 
   const created = [], events = [];
   let dupe = false;
@@ -154,6 +156,7 @@ try {
   user = { email: "someone@else.com" }; runFilters.length = 0;
   assert.equal((await prospectRoute.POST(req(body))).status, 404, "another user's run can't be used");
   user = null;
+  assert.equal((await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3, profileIds: ["trucking-towing"] }))).status, 401);
   assert.equal((await prospectRoute.POST(req(body))).status, 401);
 } finally { globalThis.fetch = realFetch; }
 console.log("PASS: appraisal-roll parcels (owner, Mercator acreage, DATE_ACQ ignored, public/institutional, owner-user), same-parcel merge, yard-site grouping (proximity, street address, chains, radius), Hopper de-dup incl. archived deals, Places screening, report contract (sources, refs, enums, limits), sweep and add-prospect routes (owner-scoped, SLB for owner-users, verified pin, research attached, duplicates refused).");

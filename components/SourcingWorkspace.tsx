@@ -4,14 +4,16 @@
 // yards, pick the sites worth chasing, have the agent find the owner of record
 // and draft outreach, then add the good ones to the pipeline as prospects.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import MapView, { type MapPoint } from "./MapView";
 import { MARKETS, DEFAULT_BUY_BOX, type BuyBox } from "@/lib/sourcing/markets";
 import { MAX_SOURCING_SITES, parseSourcing, type SourcedSite } from "@/lib/agents/sourcing";
 import type { Site } from "@/lib/sourcing/sweep";
+import { SOURCING_PROFILES, selectedProfiles } from "@/lib/sourcing/profiles";
+import SourcingProfilePicker from "./SourcingProfilePicker";
 
-type Sweep = { center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string };
+type Sweep = { center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string; criteriaKey?: string; profileIds?: string[]; searches?: { profileId: string; profile: string; keyword: string; failed: boolean; returned: number; limited: boolean }[]; contacts?: { requested: number; failed: number } };
 type Saved = { market: string; buyBox: BuyBox; sites: Site[] };
 type RunInfo = { id: string; status: string; error?: string | null; created_at?: string };
 
@@ -28,7 +30,10 @@ function SourceLine({ text }: { text: string }) {
   return <>{before}<a href={m[0]} target="_blank" rel="noopener noreferrer">{m[0].replace(/^https?:\/\//, "").slice(0, 60)}</a>{after}</>;
 }
 
-export default function SourcingWorkspace() {
+export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) {
+  const [profileIds, setProfileIds] = useState<string[]>(SOURCING_PROFILES.map((p) => p.id));
+  const [restored, setRestored] = useState(false);
+  const sweepRequest = useRef<{ version: number; controller?: AbortController }>({ version: 0 });
   const [marketKey, setMarketKey] = useState(MARKETS[0].key);
   const [submarketKey, setSubmarketKey] = useState(MARKETS[0].submarkets[0].key);
   const [mode, setMode] = useState<"submarket" | "address">("submarket");
@@ -51,6 +56,41 @@ export default function SourcingWorkspace() {
   const [report, setReport] = useState<{ sites: SourcedSite[]; saved: Saved } | null>(null);
   const [added, setAdded] = useState<Record<string, { dealId?: string; error?: string; busy?: boolean }>>({});
   const market = MARKETS.find((m) => m.key === marketKey)!;
+  const criteriaKey = JSON.stringify({ profileIds: [...profileIds].sort(), mode, geography: mode === "submarket" ? submarketKey : address.trim(), radius });
+
+  // Keep the reviewed dataset and controls together across property navigation.
+  // Session storage is scoped to the signed-in viewer and this browser tab.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(`sourcing-results-v2:${viewerKey}`) ?? "null");
+      if (saved) {
+        if (Array.isArray(saved.profileIds) && (!saved.profileIds.length || selectedProfiles(saved.profileIds))) setProfileIds(saved.profileIds);
+        if (MARKETS.some((m) => m.key === saved.marketKey && m.submarkets.some((s) => s.key === saved.submarketKey))) { setMarketKey(saved.marketKey); setSubmarketKey(saved.submarketKey); }
+        if (["submarket", "address"].includes(saved.mode)) setMode(saved.mode);
+        if (typeof saved.address === "string") setAddress(saved.address);
+        if ([1, 2, 3, 5, 7, 10].includes(saved.radius)) setRadius(saved.radius);
+        if (saved.buyBox) setBuyBox(saved.buyBox);
+        if (saved.sweep?.sites) setSweep(saved.sweep);
+        for (const [key, setter] of [["showKnown", setShowKnown], ["hidePublic", setHidePublic], ["inBoxOnly", setInBoxOnly], ["ownerUsersFirst", setOwnerUsersFirst]] as const) if (typeof saved[key] === "boolean") setter(saved[key]);
+        if (Array.isArray(saved.selected)) setSelected(saved.selected);
+        if (saved.report) setReport(saved.report);
+        if (saved.run?.id && saved.run?.status) setRun(saved.run);
+        if (saved.added) setAdded(saved.added);
+      }
+    } catch { /* storage may be unavailable */ }
+    setRestored(true);
+    return () => { sweepRequest.current.controller?.abort(); sweepRequest.current.version++; };
+  }, [viewerKey]);
+  useEffect(() => {
+    if (!restored) return;
+    try { sessionStorage.setItem(`sourcing-results-v2:${viewerKey}`, JSON.stringify({ profileIds, marketKey, submarketKey, mode, address, radius, buyBox, sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, selected, report, run, added })); } catch { /* quota or storage unavailable */ }
+  }, [restored, viewerKey, profileIds, marketKey, submarketKey, mode, address, radius, buyBox, sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, selected, report, run, added]);
+
+  function cancelPendingSweep() {
+    sweepRequest.current.version++;
+    sweepRequest.current.controller?.abort();
+    if (busy === "sweep") setBusy(null);
+  }
 
   // Helper status and recent sourcing runs.
   useEffect(() => {
@@ -94,14 +134,22 @@ export default function SourcingWorkspace() {
   }, [run?.id, run?.status]);
 
   async function runSweep() {
-    setBusy("sweep"); setError(null); setSweep(null); setSelected([]);
+    if (!profileIds.length) { setError("Select at least one business / occupier profile."); return; }
+    cancelPendingSweep();
+    const version = sweepRequest.current.version;
+    const controller = new AbortController();
+    sweepRequest.current.controller = controller;
+    setBusy("sweep"); setError(null); setRun(null);
     try {
       const r = await fetch("/api/sourcing/sweep", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mode === "submarket" ? { submarket: submarketKey, radiusMiles: radius } : { address, radiusMiles: radius }) });
+        signal: controller.signal,
+        body: JSON.stringify({ ...(mode === "submarket" ? { submarket: submarketKey } : { address }), radiusMiles: radius, profileIds }) });
       const d = await r.json();
+      if (version !== sweepRequest.current.version) return;
       if (!r.ok) throw new Error(d.error ?? "Sweep failed.");
-      setSweep(d);
-    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+      setSweep({ ...d, criteriaKey }); setSelected([]); setReport(null); setAdded({});
+    } catch (e: any) { if (version === sweepRequest.current.version && e.name !== "AbortError") setError(e.message); }
+    finally { if (version === sweepRequest.current.version) setBusy(null); }
   }
 
   async function qualify() {
@@ -151,7 +199,7 @@ export default function SourcingWorkspace() {
   const publicCount = (sweep?.sites ?? []).filter((s) => s.parcel?.ownerClass === "public").length;
   const knownCount = (sweep?.sites ?? []).filter((s) => s.known).length;
   const points: MapPoint[] = useMemo(() => {
-    const src = report ? report.saved.sites : visible;
+    const src = report ? report.saved.sites.filter((s) => report.sites.some((r) => r.ref === s.ref)) : visible;
     const fit = new Map(report?.sites.map((s) => [s.ref, s.fit]) ?? []);
     return [
       ...(sweep && !report ? [{ id: "center", lat: sweep.center.lat, lng: sweep.center.lng, color: "132B46", title: sweep.label, lines: [`${sweep.radiusMiles} mi sweep centre`], emphasis: true }] : []),
@@ -174,6 +222,9 @@ export default function SourcingWorkspace() {
 
       <section className="panel">
         <h2>1. Sweep</h2>
+        <form onSubmit={(e) => { e.preventDefault(); void runSweep(); }}>
+        <SourcingProfilePicker selected={profileIds} onChange={(ids) => { cancelPendingSweep(); setProfileIds(ids); }} />
+        <div onChangeCapture={cancelPendingSweep}>
         <div className="grid-2">
           <label>Search around
             <select value={mode} onChange={(e) => setMode(e.target.value as any)}>
@@ -211,13 +262,22 @@ export default function SourcingWorkspace() {
           <label>Usable acres, max<input type="number" min={0} step={0.5} value={buyBox.maxAcres} onChange={(e) => setBuyBox({ ...buyBox, maxAcres: Number(e.target.value) })} /></label>
           <label>Max building coverage %<input type="number" min={0} max={100} step={5} value={buyBox.maxCoveragePct} onChange={(e) => setBuyBox({ ...buyBox, maxCoveragePct: Number(e.target.value) })} /></label>
         </fieldset>
-        <button type="button" onClick={runSweep} disabled={busy !== null || (mode === "address" && !address.trim())}>{busy === "sweep" ? "Sweeping… (about 20 seconds)" : "Sweep"}</button>
+        </div>
+        <button type="submit" disabled={!restored || !profileIds.length || busy !== null || (mode === "address" && !address.trim())}>{busy === "sweep" ? "Sweeping… (about 20 seconds)" : "Sweep"}</button>
+        {!profileIds.length && <p className="hint">Select at least one profile to run Google sourcing.</p>}
         {error && <p role="alert" className="error">{error}</p>}
+        </form>
       </section>
 
       {(sweep || report) && (
         <section className="panel">
           <h2>{report ? "3. Qualified sites" : "2. Pick sites to qualify"}</h2>
+          {sweep && !report && <>
+            <p><strong>Reviewed search:</strong> {sweep.label}, {sweep.radiusMiles} miles. Profiles: {SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All existing yard-use profiles (previous sweep)"}. <strong>{visible.length} filtered properties</strong> / {sweep.sites.length} discovered properties. Map and filtered export use these same {visible.length} properties.</p>
+            {sweep.criteriaKey && criteriaKey !== sweep.criteriaKey && <p role="status">Search criteria changed. Run Sweep to replace these results; the displayed list and export still reflect the reviewed search above.</p>}
+            {sweep.searches && <details><summary>Google search coverage ({sweep.searches.filter((s) => !s.failed).length}/{sweep.searches.length} searches succeeded)</summary><ul>{sweep.searches.map((s) => <li key={`${s.profileId}:${s.keyword}`}>{s.profile}: {s.keyword} — {s.failed ? "failed; results incomplete" : `${s.returned} returned${s.limited ? "; first-page limit reached / additional results may exist" : ""}`}</li>)}</ul></details>}
+            {!!sweep.contacts?.failed && <p role="status">Business contact lookup incomplete for {sweep.contacts.failed} of {sweep.contacts.requested} businesses. Unavailable phone and website fields remain blank.</p>}
+          </>}
           {exportError && <p role="alert" className="error">{exportError}</p>}
           {exporting && <p role="status">Preparing Excel export...</p>}
           {sweep && !report && (
@@ -238,17 +298,17 @@ export default function SourcingWorkspace() {
               </p>
               <p style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button type="button" className="secondary" disabled={exporting || !selected.length} onClick={() => exportSites(sweep.sites.filter((s) => selected.includes(s.ref)), sweep.label)}>Export selected to Excel ({selected.length})</button>
-                <button type="button" className="secondary" disabled={exporting || !visible.length} onClick={() => exportSites(visible, sweep.label)}>Export visible to Excel ({visible.length})</button>
+                <button type="button" className="secondary" disabled={exporting || !visible.length} onClick={() => exportSites(visible, `${sweep.label} | ${sweep.radiusMiles} mi | Profiles: ${SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All profiles"} | ${sweep.failedSearches} failed searches | Google first-page sample`)}>Export filtered results to Excel ({visible.length})</button>
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
                   <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Acres</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th></tr></thead>
                   <tbody>
                     {visible.map((s) => (
-                      <tr key={s.ref}>
+                      <tr key={s.ref} data-site-ref={s.ref}>
                         <td>{!s.known && <input type="checkbox" aria-label={`Select ${s.ref}`} checked={selected.includes(s.ref)} onChange={() => toggle(s.ref)} disabled={!selected.includes(s.ref) && selected.length >= MAX_SOURCING_SITES} />}</td>
                         <td>{s.ref}</td>
-                        <td>{s.operators.map((o) => o.name).join(", ")}<br /><span className="hint">{s.categories.join(", ")}</span></td>
+                        <td>{s.operators.map((o) => <div key={o.placeId} data-place-id={o.placeId} data-profile-ids={o.profileIds?.join(",")}><strong>{o.name}</strong><br /><span className="hint">Matched profiles: {(o.categories ?? [o.category]).join(", ")}</span><br />{o.phone && <>Business phone: {o.phone}<br /></>}{o.website && <><a href={o.website} target="_blank" rel="noopener noreferrer">Business website</a>{" · "}</>}<a href={o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`} target="_blank" rel="noopener noreferrer">Google business source</a></div>)}<span className="hint">Business contacts are not verified owner contacts.</span></td>
                         <td>{s.parcel?.owner ?? "—"}{s.ownerUser && <strong title="Owner name matches an operator: a sale-leaseback lead"> · owner-user</strong>}{s.parcel && s.parcel.ownerClass !== "private" && <span className="hint"> · {s.parcel.ownerClass}</span>}</td>
                         <td style={{ fontWeight: inBox(s) ? 600 : 400, color: s.parcel?.acres != null && !inBox(s) ? "#8a8f98" : undefined }}>{s.parcel?.acres ?? "—"}</td>
                         <td>{s.parcel?.yearBuilt ?? "—"}</td>
