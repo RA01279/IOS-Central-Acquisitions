@@ -17,6 +17,8 @@ Research runs and their sweep link are kept in the browser that ran them (localS
 
 ### Broker / Firm Assignment
 
+Filenames use `market_submarket_broker name.xlsx`, for example `Houston_Northwest_Preston Fleenor.xlsx`. Firm-only assignments use the firm name; unassigned exports use `Unassigned`. Submarket names omit the parenthetical road description, and unsafe filename characters are replaced. The completed search label supplies geography; new qualified reports preserve it as well. Older reports without a submarket use `Unspecified submarket`.
+
 Choose **Assign export to broker / firm** in the results before downloading. Search by broker name, firm or email, then select a broker contact or a firm. Broker choices include the linked firm and available contact details; firm-only assignments leave individual broker fields blank. The workbook shows Assigned to in its header and repeats Assigned Broker, Assigned Firm, Assigned Broker Email and Assigned Broker Phone on every exported property row. It applies to selected, filtered and qualified exports without changing their membership.
 
 The signed-in directory reuses broker-classified contacts, contacts at brokerage firms and contacts historically linked in broker roles. Firms linked to those brokers are selectable too. Records are selected by IDs and paged completely; duplicate names do not identify an assignment. Missing/deleted selections must be reselected or cleared before export. Directory errors are reported with Retry, and exports can remain unassigned. The choice persists with results in viewer-scoped session storage; it labels the workbook, does not create a shared assignment history, does not change deal ownership or broker scorecard credit, and sends nothing.
