@@ -37,7 +37,7 @@ export function withoutComments(buffer: Buffer): Buffer | null {
 }
 
 /** Cell -> text, resolving the shapes ExcelJS returns for formulas and links. */
-function cellText(value: unknown): string {
+function cellText(value: unknown, preserveWhitespace = false): string {
   let out: string;
   if (value === null || value === undefined) return "";
   if (value instanceof Date) out = value.toISOString().slice(0, 10);
@@ -85,6 +85,7 @@ function cellText(value: unknown): string {
   //
   // Replaced with a slash rather than dropped, so a comment that used pipes to
   // separate clauses stays readable.
+  if (preserveWhitespace) return out;
   return out
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\|/g, "/")
@@ -98,6 +99,8 @@ export interface SheetText {
   text: string;
   /** Rows the sheet contributed, for reporting what was skipped and why. */
   rows: number;
+  /** Parallel to text lines: physical sheet row and unflattened source cells. */
+  sourceRows?: { row: number; cells: { text: string; format?: string; note?: string }[] }[];
 }
 
 export interface WorkbookText {
@@ -153,7 +156,7 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
     if (!stripped) throw new Error(`Could not read that workbook: ${err.message}`);
     try {
       await workbook.xlsx.load(stripped as any);
-      warnings.push("This workbook's cell comments were skipped; they can't be read and aren't needed for comps.");
+      warnings.push("This workbook's cell comments could not be read. Review them in the original file for additional terms or unit evidence; missing units have not been inferred.");
     } catch (retryErr: any) {
       throw new Error(`Could not read that workbook: ${retryErr.message}`);
     }
@@ -175,6 +178,7 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
       continue;
     }
     const lines: string[] = [];
+    const sourceRows: NonNullable<SheetText["sourceRows"]> = [];
     sheet.eachRow({ includeEmpty: false }, (row) => {
       const cells: string[] = [];
       // row.values is 1-based with a leading hole; slice it off.
@@ -183,9 +187,14 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
       while (cells.length && cells[cells.length - 1] === "") cells.pop();
       if (!cells.length) return;
       lines.push(cells.join(" | "));
+      sourceRows.push({ row: row.number, cells: cells.map((_, i) => {
+        const cell = row.getCell(i + 1);
+        const note = typeof cell.note === "string" ? cell.note : cell.note?.texts?.map((t) => t.text).join("");
+        return { text: cellText(cell.value, true), ...(cell.numFmt && cell.numFmt !== "General" ? { format: cell.numFmt } : {}), ...(note ? { note } : {}) };
+      }) });
     });
     if (lines.length === 0) warnings.push(`Sheet "${sheet.name}" was empty.`);
-    else sheets.push({ name: sheet.name, text: lines.join("\n"), rows: lines.length });
+    else sheets.push({ name: sheet.name, text: lines.join("\n"), rows: lines.length, sourceRows });
   }
 
   if (hiddenSkipped.length) {

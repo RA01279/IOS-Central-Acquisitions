@@ -21,6 +21,7 @@ import type { CompSourcePart } from "./OutlookCompPicker";
 import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
 import CompDecimalInput from "./CompDecimalInput";
+import CompDateInput from "./CompDateInput";
 import { validCoordinates } from "@/lib/location";
 import { isExplicitCompTable } from "@/lib/comps/parse";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
@@ -52,6 +53,8 @@ interface DraftComp {
   submarket: string | null;
   yearBuilt: number | null;
   buildingSf: number | null;
+  leasedSf?: number | null;
+  projectName?: string | null;
   lotSf: number | null;
   acres: number | null;
   yardAcres?: number | null;
@@ -959,6 +962,7 @@ export default function CompIntakeForm({
                         )}
                         {d.yardAcres != null && <div className="muted">Usable yard: {d.yardAcres} acres</div>}
                         {d.notes && <details><summary>Original broker wording</summary><pre style={{whiteSpace: "pre-wrap", maxWidth: 320}}>{d.notes}</pre></details>}
+                        {d.projectName && <label>Building / project identifier<input value={d.projectName} onChange={e => update(i, { projectName: e.target.value })} /></label>}
                       </td>
                       <td>
                         <label>City<input disabled={busy} value={d.city ?? ""} onChange={e => update(i, { city: e.target.value })} /></label>
@@ -979,20 +983,7 @@ export default function CompIntakeForm({
                         <label>Submarket<input value={d.submarket ?? ""} onChange={e => update(i, { submarket: e.target.value })} /></label>
                       </td>
                       <td>
-                        <input
-                          type="date"
-                          value={(d.compType === "sale" ? d.closedOn : d.dateCommenced) ?? ""}
-                          onChange={(e) =>
-                            update(
-                              i,
-                              d.compType === "sale"
-                                ? { closedOn: e.target.value || null }
-                                : // Typing a real date makes it no longer an
-                                  // estimate, so the flag has to clear.
-                                  { dateCommenced: e.target.value || null, dateEstimated: false }
-                            )
-                          }
-                        />
+                        <CompDateInput value={d.compType === "sale" ? d.closedOn : d.dateCommenced} precision={d.datePrecision} onChange={(value, precision) => update(i, { ...(d.compType === "sale" ? { closedOn: value } : { dateCommenced: value, dateEstimated: false }), datePrecision: precision })} />
                         {d.dateEstimated && (
                           <div
                             className="muted"
@@ -1025,6 +1016,7 @@ export default function CompIntakeForm({
                           }
                           style={{ width: 80 }}
                         />
+                        {d.leasedSf != null && <div className="hint">SF Leased: {d.leasedSf.toLocaleString()} (tenancy only)</div>}
                       </td>
                       <td>
                         <input

@@ -3,6 +3,7 @@ import LocationPreview from "./LocationPreview";
 import { validCoordinates } from "@/lib/location";
 import { RENT_BASES } from "@/lib/comps/intake-validation";
 import CompDecimalInput from "./CompDecimalInput";
+import CompDateInput from "./CompDateInput";
 
 export default function CompIntakeCard({ draft: d, update, issue }: { draft: any; update: (patch: any) => void; issue: string | null }) {
   const text = (label: string, key: string, type = "text") => <label>{label}<input type={type} value={d[key] ?? ""} onChange={e => update({ [key]: e.target.value || null })} /></label>;
@@ -15,10 +16,12 @@ export default function CompIntakeCard({ draft: d, update, issue }: { draft: any
       {d.compType === "lease" ? <>
         {number("Rent as quoted", "rent")}
         <label>Rent units<select value={d.rentBasis ?? ""} onChange={e=>update({rentBasis:e.target.value})}><option value="">Choose rent units</option>{RENT_BASES.map(b=><option key={b} value={b}>{b.replace(/_/g," ")}</option>)}</select></label>
-        {text("Commencement date", "dateCommenced", "date")}{text("Tenant", "tenantName")}{text("Suite", "suite")}
+        <label>Lease date<CompDateInput value={d.dateCommenced} precision={d.datePrecision} onChange={(value, precision) => update({ dateCommenced: value, datePrecision: precision })} /></label>{text("Tenant", "tenantName")}{text("Suite", "suite")}
       </> : <>{number("Total sale price ($)", "salePrice")}{text("Closing date", "closedOn", "date")}</>}
       {number("Building SF", "buildingSf")}{number("Land acres", "acres")}
+      {text("Building / project identifier", "projectName")}
     </div>
+    {d.leasedSf != null && <p>SF Leased: {d.leasedSf.toLocaleString()} (tenancy area; total building area unknown)</p>}
     <LocationPreview key={JSON.stringify([d.address,d.city,d.state,d.market])} address={d.address ?? ""} city={d.city} state={d.state} market={d.market}
       value={validCoordinates(d) ? { latitude:Number(d.latitude), longitude:Number(d.longitude), geocode_precision:d.geocodePrecision || "supplied" } : null}
       onChange={p=>update({latitude:p?.latitude ?? null,longitude:p?.longitude ?? null,geocodePrecision:p?.geocode_precision ?? null})} />

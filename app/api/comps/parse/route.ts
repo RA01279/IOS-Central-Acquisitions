@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
             : undefined;
         const parsed = parseCompInput(
           { text: sheet.text },
-          { ...context, defaultCompType: nameHint }
+          { ...context, defaultCompType: nameHint, sourceRows: sheet.sourceRows }
         );
         const asProperties = asPropertyReport(parsed.comps);
         if (asProperties) {
