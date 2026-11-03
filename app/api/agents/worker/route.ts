@@ -8,10 +8,12 @@ import { parsePortfolioImport } from "@/lib/agents/portfolio-import";
 import { parseMarketReport } from "@/lib/agents/market-report";
 import { parseMarketNarrative } from "@/lib/agents/market-narrative";
 import { parseCompImport } from "@/lib/agents/comp-import";
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
+import { autoExecSummary } from "@/lib/ic-deck/auto";
 import { workerContext, json, reap } from "@/lib/agents/server";
 import { UUID } from "@/lib/agents/catalog";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 export async function GET(req: NextRequest) {
  try {
   const ctx = await workerContext(req); if (!ctx) return json({ error: "Pairing expired." }, 401);
@@ -39,7 +41,7 @@ export async function POST(req: NextRequest) {
   if (!body.error && (!r || typeof r.report !== "string" || !r.report.trim() || r.report.length > 100000 ||
     typeof r.model !== "string" || r.model.length > 200 || !Array.isArray(r.limitations) || r.limitations.length > 30 || r.limitations.some((v: unknown) => typeof v !== "string" || v.length > 1000))) return json({ error: "Malformed report." }, 400);
   const { db, helper } = ctx;
-  const job = await db.from("agent_runs").select("agent,prompt,sources").eq("id", body.id).eq("helper_id", helper.id).eq("owner_email", helper.owner_email).eq("status", "processing").maybeSingle();
+  const job = await db.from("agent_runs").select("agent,prompt,sources,deal_id").eq("id", body.id).eq("helper_id", helper.id).eq("owner_email", helper.owner_email).eq("status", "processing").maybeSingle();
   if (job.error) throw job.error;
   if (!job.data) return json({ error: "Run no longer active." }, 409);
   if (!body.error && job.data.agent === "investment-memo" && job.data.prompt?.includes(MEMO_VERSION) && !parseMemo(r.report)) {
@@ -82,6 +84,9 @@ export async function POST(req: NextRequest) {
     finished_at: new Date().toISOString() }).eq("id", body.id).eq("helper_id", helper.id).eq("owner_email", helper.owner_email)
     .eq("status", "processing").select("id").maybeSingle();
   if (update.error) throw update.error;
+  // Finished IC research: rebuild that deal's executive summary with the drafted text.
+  if (update.data && !body.error && job.data.agent === "ic-narrative" && job.data.deal_id)
+    after(() => autoExecSummary(job.data!.deal_id, helper.owner_email, "research_done", body.id));
   return update.data ? json({ ok: true }) : json({ error: "Run no longer active." }, 409);
  } catch { return json({ error: "Could not save report." }, 500); }
 }

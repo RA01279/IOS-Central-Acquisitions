@@ -1,4 +1,5 @@
 import { startAgentLoop } from "./agents.mjs";
+import { startExecSummaryLoop, DEFAULT_ROOT } from "./exec-summaries.mjs";
 import { OutlookConnection, searchResult, emailResult } from "./codex.mjs";
 import { fetchOm, fetchComps } from "./om.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -59,7 +60,8 @@ try {
       }
       if (!persisted) {
         await writeFile(configPath, JSON.stringify({ origin: base.origin, token: protect(token) }), { mode: 0o600 });
-        persisted = true; stopAgents = startAgentLoop({ base, token, launcher: option("--codex-launcher") }); console.log("Connected to Hopper. Search for an email in Comps.");
+        persisted = true; stopAgents = startAgentLoop({ base, token, launcher: option("--codex-launcher") });
+        if (!args.includes("--no-exec-summaries")) { startExecSummaryLoop({ base, token, root: option("--exec-summary-root") || DEFAULT_ROOT }); console.log("Exec summaries will be copied to deal folders under " + (option("--exec-summary-root") || DEFAULT_ROOT) + "."); } console.log("Connected to Hopper. Search for an email in Comps.");
       }
       if (job) {
         let result, error;

@@ -56,8 +56,8 @@ export default function ExcelUploadForm({ dealId, hasModel = false }: { dealId: 
       if (!res.ok) throw new Error(body.error ?? "Processing failed");
       setWarnings(workbookWarnings(body.warnings));
       setSuccess(typeof body.version?.version_number === "number"
-        ? `Underwriting uploaded as version ${body.version.version_number}.`
-        : "Underwriting uploaded successfully.");
+        ? `Underwriting uploaded as version ${body.version.version_number}. The executive summary draft is building and will appear in Documents.`
+        : "Underwriting uploaded successfully. The executive summary draft is building and will appear in Documents.");
       setFile(null);
       router.refresh();
     } catch (err: any) {

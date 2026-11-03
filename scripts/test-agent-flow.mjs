@@ -43,7 +43,7 @@ function builder(table) {
 }
 const db={from:builder}; let email="owner@example.com";
 const json=(body,status=200)=>({body,status});
-const deps={"node:crypto":crypto,"next/server":{NextResponse:{json:(body,options)=>({body,status:options?.status||200})}},
+const deps={"node:crypto":crypto,"next/server":{after:fn=>{globalThis.__afterCalls=(globalThis.__afterCalls||[]);globalThis.__afterCalls.push(fn);},NextResponse:{json:(body,options)=>({body,status:options?.status||200})}},
  "@/lib/auth":{getCurrentUser:async()=>email?{email}:null},"@/lib/supabase":{getServiceClient:()=>db}};
 const helper=load("lib/outlook-helper.ts",deps); deps["@/lib/outlook-helper"]=helper;
 const lib=load("lib/agents/server.ts",deps); deps["@/lib/agents/server"]=lib;
@@ -55,6 +55,7 @@ deps["@/lib/sourcing/snapshot"]=load("lib/sourcing/snapshot.ts",deps);
 deps["@/lib/sourcing/fit"]=load("lib/sourcing/fit.ts",deps);
 for (const m of ["deal-import","comp-import","portfolio-import","market-report","market-narrative"]) deps["./"+m]=deps["@/lib/agents/"+m]=load("lib/agents/"+m+".ts",deps);
 deps["@/lib/agents/catalog"]=load("lib/agents/catalog.ts",deps);
+const autoCalls=[];deps["@/lib/ic-deck/auto"]={autoExecSummary:async(...a)=>{autoCalls.push(a);}};
 deps["@/lib/agents/context"]={loadEvidence:async()=>[{label:"Synthetic test",data:{address:"123 Example Road"}}]};
 const browser=load("app/api/agents/route.ts",deps),worker=load("app/api/agents/worker/route.ts",deps);
 function req(body,options={}) {return {text:async()=>JSON.stringify(body),nextUrl:new URL("https://hopper.test/api/agents"+(options.path||"")),headers:new Headers({host:"hopper.test",origin:options.origin||"https://hopper.test",...(options.token?{authorization:"Bearer "+options.token}:{})})};}

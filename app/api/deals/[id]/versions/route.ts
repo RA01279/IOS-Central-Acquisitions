@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent } from "@/lib/deals";
 import { fireStageChangeWebhook } from "@/lib/webhooks";
@@ -8,6 +8,10 @@ import { createStageTasks } from "@/lib/stage-tasks-db";
 import { openWorkbook } from "@/lib/ic-deck/xlsx-lite";
 import { extractModel } from "@/lib/ic-deck/model";
 import { modelDetailOf } from "@/lib/uw/model-snapshot";
+import { execSummaryAfterUpload } from "@/lib/ic-deck/auto";
+
+// The exec summary draft builds after the response (see lib/ic-deck/auto).
+export const maxDuration = 300;
 
 // POST /api/deals/[id]/versions
 // body: { storagePath, fileName } -- the browser has ALREADY uploaded the
@@ -153,5 +157,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // Surface parser warnings (e.g. #REF! errors, non-numeric cells) back to
   // the analyst rather than burying them -- a version with a warning still
   // saves, but the analyst should know a number might be missing.
-  return NextResponse.json({ version, warnings: returnsSummary.warnings }, { status: 201 });
+  // Draft the executive summary from this workbook and queue its research,
+  // after the analyst already has their response.
+  after(() => execSummaryAfterUpload(params.id, user.email));
+  return NextResponse.json({ version, warnings: returnsSummary.warnings, execSummary: "building" }, { status: 201 });
 }

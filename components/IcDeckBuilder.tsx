@@ -31,6 +31,7 @@ export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string
   const [uploading, setUploading] = useState(false);
   const [pendingBuild, setPendingBuild] = useState(false);
   const [progress, setProgress] = useState("");
+  const [auto, setAuto] = useState<any>(null);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +40,7 @@ export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string
       const body = await response.json();
       if (!active) return;
       setReferences(body.references ?? []);
+      setAuto(body.auto ?? null);
       setReferenceId(body.references?.find((ref: { file_name: string }) => ref.file_name.startsWith("IC Source - "))?.id ?? "");
       if (!response.ok) throw new Error(body.error);
       if (body.saved) { setModel(body.saved.model); setSavedVersion(body.saved.version); }
@@ -178,6 +180,21 @@ export default function IcDeckBuilder({ dealId, fileNameStem }: { dealId: string
         Returns, rent roll, cash flow and sensitivities come from Excel; comps, maps, portfolio and terms come from Hopper.
         Attach this property’s existing executive summary once to retain its photos, tenant overview, market canvas and diligence budget.
       </p>
+      {auto?.built && (
+        <div className="panel-inset" role="status">
+          <p><strong>Automatic draft:</strong> {auto.built.fileName} · {new Date(auto.built.at).toLocaleString()}
+            {auto.built.researched ? " · with research" : " · research pending"}</p>
+          <p className="hint">
+            {auto.delivered?.outcome === "saved" || auto.delivered?.outcome === "exists" ? `Copied to ${auto.delivered.path}`
+              : auto.delivered?.outcome === "no_folder" ? "No matching deal folder on the F: drive; it is in Documents only."
+              : auto.delivered?.outcome === "failed" ? `Copy to the deal folder failed (${auto.delivered.note ?? "unknown error"}); it is in Documents.`
+              : "In Documents. It is copied to the deal's 01. Exec Sum folder while the Hopper helper is running."}
+            {!auto.built.researched && auto.researchSkipped === "helper_offline" ? " Research runs when you upload with the Hopper helper running, or press Build below." : ""}
+          </p>
+          {auto.built.checks?.length > 0 && <details><summary>{auto.built.checks.length} model checks to review</summary><ul>{auto.built.checks.map((c: string, i: number) => <li key={i}>{c}</li>)}</ul></details>}
+        </div>
+      )}
+      {auto?.failed && <p className="warning">The automatic draft failed: {auto.failed.error}</p>}
       {loadingSaved && <p role="status">Loading the current saved underwriting model…</p>}
       {savedVersion != null && <p className="hint">Using saved UW version {savedVersion}. Choose a local workbook below only to use a different model.</p>}
       <label>

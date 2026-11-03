@@ -12,6 +12,7 @@ import { UUID } from "@/lib/agents/catalog";
 import { loadSavedDeckModel } from "@/lib/ic-deck/saved-model";
 import { bindModelSubject } from "@/lib/ic-deck/model-subject";
 import { buildExecSummary, saveExecSummary, BuildError } from "@/lib/ic-deck/build";
+import { BUILT_EVENT, DELIVERED_EVENT, FAILED_EVENT } from "@/lib/ic-deck/auto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,9 +28,21 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         .ilike("file_name", "%Exec%Summary%.pptx").order("uploaded_at", { ascending: false }).limit(20),
       getServiceClient().from("deals").select("properties(address)").eq("id", id).maybeSingle(),
     ]);
+    // Automatic-draft status is informational; it never blocks the panel.
+    let events: any[] | null = null;
+    try { events = await Promise.resolve(getServiceClient().from("deal_events").select("event_type,detail,created_at").eq("deal_id", id)
+      .in("event_type", [BUILT_EVENT, DELIVERED_EVENT, FAILED_EVENT, "exec_summary_research_skipped"]).order("created_at", { ascending: false }).limit(20))
+      .then((r: any) => r?.data ?? null, () => null); } catch { events = null; }
+    const lastBuilt: any = events?.find(e => e.event_type === BUILT_EVENT);
+    const auto = {
+      built: lastBuilt ? { ...lastBuilt.detail, at: lastBuilt.created_at } : null,
+      delivered: lastBuilt ? (events?.find((e: any) => e.event_type === DELIVERED_EVENT && e.detail?.documentId === lastBuilt.detail?.documentId)?.detail ?? null) : null,
+      failed: (() => { const f: any = events?.find(e => e.event_type === FAILED_EVENT); return f && (!lastBuilt || f.created_at > lastBuilt.created_at) ? { ...f.detail, at: f.created_at } : null; })(),
+      researchSkipped: (() => { const r: any = events?.find(e => e.event_type === "exec_summary_research_skipped"); return r && (!lastBuilt || r.created_at >= lastBuilt.created_at) ? r.detail?.why ?? null : null; })(),
+    };
     if (error) throw new Error("Could not load source decks.");
     const property: any = Array.isArray(selectedDeal?.properties) ? selectedDeal.properties[0] : selectedDeal?.properties;
-    return NextResponse.json({ saved: saved ? { ...saved, model: bindModelSubject(saved.model, property?.address ?? "") } : null, references: docs ?? [] }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ saved: saved ? { ...saved, model: bindModelSubject(saved.model, property?.address ?? "") } : null, references: docs ?? [], auto }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 422 }); }
 }
 
