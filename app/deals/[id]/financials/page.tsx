@@ -21,6 +21,7 @@ import DecisionContext from "@/components/DecisionContext";
 import { incomePosition, latestVersion as selectedVersion, modelIdentity } from "@/lib/investment-review";
 import { compReview } from "@/lib/comps/reviewed-evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
+import { workbookWarnings } from "@/lib/workbook-messages";
 
 export const metadata = { title: "Financials" };
 
@@ -41,7 +42,7 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
   const versionsDesc = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
   const sourceVersion=selectedVersion(deal);
   const latestVersion = modelIdentity(deal,sourceVersion).authoritative ? sourceVersion : null;
-  const sourceWarnings=returns?.warnings??sourceVersion?.returns_summary?.warnings??[];
+  const sourceWarnings=workbookWarnings(returns?.warnings??sourceVersion?.returns_summary?.warnings);
   const dealExitCap = deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null;
   const reviewed=compReview(deal,evidence.comps,subjectOf(deal));
   const uw = compUnderwriting(reviewed.comps as UwComp[], reviewed.subject, { exitCap: dealExitCap ?? returns?.exitCapPct ?? null });
@@ -97,7 +98,7 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         )}
         {sourceWarnings.length > 0 && (
           <div className="warning">
-            <p>Parser flagged on this version:</p>
+            <p>Workbook issues to review:</p>
             <ul>
               {sourceWarnings.map((w: string, i: number) => (
                 <li key={i}>{w}</li>

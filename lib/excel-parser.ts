@@ -55,21 +55,24 @@ function readCellValue(
     }
     const raw = cell.value;
     if (raw === null || raw === undefined) return null;
-    // Formula cells come back as { formula, result } -- use the cached
-  // result rather than re-evaluating (we don't have a calc engine here).
-  if (typeof raw === "object" && "result" in (raw as any)) {
-        const result = (raw as any).result;
-        if (result && typeof result === "object" && "error" in result) {
-          warnings.push(`"${label}" contains a formula error (${result.error}) in the source workbook`);
-          return null;
-        }
-        if (typeof result === "string" && result.startsWith("#")) {
-                warnings.push(`"${label}" contains a formula error (${result}) in the source workbook`);
-                return null;
-        }
-        return typeof result === "number" ? result : null;
-  }
-    if (typeof raw === "number") return raw;
+    // Reading a saved formula result is normal; a missing or erroneous
+    // result is a workbook issue that needs a specific, actionable warning.
+    const isFormula = typeof raw === "object" && ("formula" in raw || "sharedFormula" in raw);
+    // ExcelJS's cell.value getter omits falsy formula results, including 0.
+    // cell.result preserves the actual saved value.
+    const value = isFormula ? cell.result : raw;
+    const error = value && typeof value === "object" && "error" in value
+      ? value.error
+      : typeof value === "string" && value.startsWith("#") ? value : null;
+    if (error) {
+      warnings.push(`"${label}" contains a formula error (${error}) in the source workbook`);
+      return null;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (isFormula) {
+      warnings.push(`"${label}" has no saved numeric calculation result. Recalculate and save the workbook in Excel, then upload it again.`);
+      return null;
+    }
     // Non-numeric value where a number was expected (e.g. someone typed
   // "TBD", or the model uses "n/a" for an inactive refi) -- flag it
   // rather than silently returning null.
@@ -116,7 +119,6 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook):
     }
     const identity = workbook.getWorksheet("Pro Forma")?.getCell("F15").value;
     const sourceProperty = typeof identity === "string" ? identity.trim() : null;
-    warnings.push("Workbook returns are cached source values; Hopper does not recalculate Excel formulas. Verify workbook identity and recalculate/save in Excel before relying on them.");
     const text = (addr: string) => { const v:any=sheet.getCell(addr).value; return typeof v==="string"?v:typeof v?.result==="string"?v.result:null; };
     return { ...summary, sourceProperty, sourceIdentity: { address: text("C8") ?? sourceProperty, city: text("C9"), acres:readCellValue(sheet.getCell("C10"),"Identity acres",warnings), buildingSf:readCellValue(sheet.getCell("C12"),"Identity building SF",warnings) }, marketRentSourceBasis: basis || null, warnings };
 }

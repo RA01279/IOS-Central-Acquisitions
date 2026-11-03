@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { workbookWarnings } from "@/lib/workbook-messages";
 
 export default function ExcelUploadForm({ dealId }: { dealId: string }) {
   const router = useRouter();
@@ -16,12 +17,14 @@ export default function ExcelUploadForm({ dealId }: { dealId: string }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [success, setSuccess] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
     setError(null);
     setWarnings([]);
+    setSuccess(null);
 
     try {
       // 1. Get a signed upload slot.
@@ -51,7 +54,10 @@ export default function ExcelUploadForm({ dealId }: { dealId: string }) {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Processing failed");
-      setWarnings(body.warnings ?? []);
+      setWarnings(workbookWarnings(body.warnings));
+      setSuccess(typeof body.version?.version_number === "number"
+        ? `Underwriting uploaded as version ${body.version.version_number}.`
+        : "Underwriting uploaded successfully.");
       setFile(null);
       router.refresh();
     } catch (err: any) {
@@ -80,9 +86,10 @@ export default function ExcelUploadForm({ dealId }: { dealId: string }) {
       </button>
 
       {error && <p className="error">{error}</p>}
+      {success && <p role="status">{success}</p>}
       {warnings.length > 0 && (
         <div className="warning">
-          <p>Uploaded, but the parser flagged:</p>
+          <p>Workbook issues to review:</p>
           <ul>
             {warnings.map((w, i) => (
               <li key={i}>{w}</li>
