@@ -19,6 +19,10 @@ import { compReview } from "@/lib/comps/reviewed-evidence";
 import { loadSavedDeckModel } from "@/lib/ic-deck/saved-model";
 import { validateReference, referenceNarrative, referenceBudget } from "@/lib/ic-deck/reference";
 import { bindModelSubject } from "@/lib/ic-deck/model-subject";
+import { parcelFootprint, highwayAccess, highwayCaption, parcelPaths, type ParcelFootprint, type HighwayAccess } from "@/lib/ic-deck/site-geo";
+
+/** Resolve within ms or give up with null -- these exhibits never hold up the deck. */
+const within = <T,>(p: Promise<T | null>, ms: number) => Promise.race([p.catch(() => null), new Promise<null>(r => setTimeout(() => r(null), ms))]);
 
 export class BuildError extends Error { constructor(public status: number, message: string) { super(message); } }
 
@@ -185,6 +189,11 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
 
   // ---- maps (in parallel; each falls back to a placeholder) -----------------
   const maps: Record<string, Picture | undefined> = {};
+  let parcel: ParcelFootprint | null = null, highway: HighwayAccess | null = null;
+  if (lat !== null && lng !== null) {
+    const dealAcres = model.property.acres ?? (prop?.lot_sf ? Number(prop.lot_sf) / 43560 : null);
+    [parcel, highway] = await Promise.all([within(parcelFootprint(lat, lng, dealAcres), 20000), within(highwayAccess(lat, lng), 40000)]);
+  }
   if (lat !== null && lng !== null) {
     const at = `${lat},${lng}`, pin = `color:red|${at}`;
     const src = (what: string) => `Google Maps ${what} of the Hopper-recorded pin (${prop.geocode_precision}), retrieved ${new Date().toISOString().slice(0, 10)}.`;
@@ -192,10 +201,19 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
       list.filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lng)).map((c, i) => `color:${color}|label:${label(i + 1)}|${c.lat},${c.lng}`);
     const jobs: Array<[string, Promise<Picture | undefined>]> = [
       ["coverPhoto", staticMap({ center: at, zoom: "18", size: sized(5.25, 3.77), maptype: "satellite" }, "jpeg", src("satellite imagery"))],
-      ["coverAerial", staticMap({ center: at, zoom: "16", size: sized(4.75, 3.77), maptype: "satellite", markers: pin }, "jpeg", src("satellite imagery"))],
+      ["coverAerial", staticMap({ center: at, zoom: "16", size: sized(4.75, 3.77), maptype: "satellite", ...(parcel ? { path: parcelPaths(parcel) } : { markers: pin }) }, "jpeg", src(parcel ? "satellite imagery with the parcel outline" : "satellite imagery"))],
       ["location", staticMap({ center: at, zoom: "11", size: sized(9.4, 5.45), markers: pin }, "png", src("road map"))],
-      ["aerial", staticMap({ center: at, zoom: "16", size: sized(9.4, 5.0), maptype: "satellite", markers: pin }, "jpeg", src("satellite imagery"))],
-      ["aerialClose", staticMap({ center: at, zoom: "18", size: sized(9.4, 5.0), maptype: "satellite" }, "jpeg", src("satellite imagery"))],
+      ["aerial", highway
+        // Fitted to the site and both routes: the drive to the highway (white)
+        // and to the nearest on-ramp (yellow), with H and R markers.
+        ? staticMap({ size: sized(9.4, 5.0), maptype: "satellite",
+            markers: [pin, `color:white|label:H|${highway.toHighway.point.join(",")}`, ...(highway.toRamp ? [`color:yellow|label:R|${highway.toRamp.point.join(",")}`] : [])],
+            path: [...(highway.toHighway.polyline ? [`color:0xffffffcc|weight:5|enc:${highway.toHighway.polyline}`] : []), ...(highway.toRamp?.polyline ? [`color:0xffd400cc|weight:5|enc:${highway.toRamp.polyline}`] : []), ...(parcel ? parcelPaths(parcel) : [])] },
+            "jpeg", src("satellite imagery with Google Routes drives to the highway and on-ramp"))
+        : staticMap({ center: at, zoom: "16", size: sized(9.4, 5.0), maptype: "satellite", markers: pin }, "jpeg", src("satellite imagery"))],
+      ["aerialClose", parcel
+        ? staticMap({ size: sized(9.4, 5.0), maptype: "satellite", path: parcelPaths(parcel) }, "jpeg", src("satellite imagery with the parcel outline"))
+        : staticMap({ center: at, zoom: "18", size: sized(9.4, 5.0), maptype: "satellite" }, "jpeg", src("satellite imagery"))],
     ];
     if (leaseComps.length) jobs.push(["leaseComps", staticMap({ size: sized(9.4, 5.45), markers: [pin, ...markers(leaseComps as any, "blue")] }, "png", src("road map with Hopper lease comps"))]);
     if (saleComps.length) jobs.push(["saleComps", staticMap({ size: sized(9.4, 5.45), markers: [pin, ...markers(saleComps as any, "green")] }, "png", src("road map with Hopper sale comps"))]);
@@ -214,6 +232,10 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
       ddEndOn: deal.dd_end_on ?? null, closingOn: deal.closing_on ?? null, loi,
     },
     leaseComps, saleComps, compRadiusMiles: COMP_POLICY.radiusMiles, compRadii, assets, maps, narrative, reference, preparedOn: new Date(),
+    site: {
+      parcel: parcel ? { acres: parcel.acres, parcelCount: parcel.parcelCount, dealAcres: parcel.dealAcres, matchesDeal: parcel.matchesDeal, owner: parcel.owner, source: parcel.source } : null,
+      highway: highway ? { caption: highwayCaption(highway), source: "Nearest numbered highway from OpenStreetMap; drive distance and time from Google Routes (no traffic), from the Hopper-recorded pin." } : null,
+    },
   });
   const name = `${(prop?.address ?? "Deal").replace(/[^\w .-]+/g, "").trim()} - IC Exec Summary (draft).pptx`;
   return { buffer: Buffer.from(buffer), name, warnings: model.warnings };

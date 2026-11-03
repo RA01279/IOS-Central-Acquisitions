@@ -63,6 +63,11 @@ export interface IcDeckInput {
   assets: DeckAsset[];
   /** Sourced agent drafts for the sections Hopper can't fill. Optional. */
   narrative?: { sections: Record<NarrativeKey, NarrativeSection>; runAt: string };
+  /** Computed site exhibits (parcel outline, highway access); null = not found. */
+  site?: {
+    parcel: { acres: number; parcelCount: number; dealAcres: number | null; matchesDeal: boolean | null; owner: string | null; source: string } | null;
+    highway: { caption: string; source: string } | null;
+  };
   maps: Partial<Record<"coverPhoto" | "coverAerial" | "location" | "aerial" | "aerialClose" | "leaseComps" | "saleComps" | "portfolio", Picture>>;
   preparedOn: Date;
   reference?: { bytes: Uint8Array; name: string };
@@ -211,10 +216,17 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     mapOrPlaceholder(s, "location", "Location map of the subject in its metro.", { x: 0.3, y: 1.42, w: 9.4, h: 5.45 });
     const s4 = slide("Aerial Overview");
     mapOrPlaceholder(s4, "aerial", "Aerial of the subject with highway access annotated.", { x: 0.3, y: 1.42, w: 9.4, h: 5.0 });
-    s4.text([OPEN("annotate nearest highway / interchange and drive time")], { x: 0.3, y: 6.47, w: 9.4, h: 0.45 }, { size: 9 });
+    const hw = input.site?.highway;
+    s4.text([hw ? { runs: [{ text: hw.caption, bold: true, color: NAVY }] } : OPEN("annotate nearest highway / interchange and drive time")], { x: 0.3, y: 6.47, w: 9.4, h: 0.45 }, { size: 10 });
+    if (hw) s4.notes.push(hw.source, "Map: H = closest point of the highway (white route); R = nearest on-ramp (yellow route).");
     const s5 = slide("Aerial Snapshot");
     mapOrPlaceholder(s5, "aerialClose", "Close aerial of the site with the yard outlined.", { x: 0.3, y: 1.42, w: 9.4, h: 5.0 });
-    s5.text([OPEN("outline the parcel and usable outdoor-storage acreage")], { x: 0.3, y: 6.47, w: 9.4, h: 0.45 }, { size: 9 });
+    const pc = input.site?.parcel;
+    const parcelLine: Para | null = !pc ? null : pc.matchesDeal === false
+      ? { runs: [{ text: `Parcel outline: ${pc.acres.toFixed(2)} AC (${pc.parcelCount} parcel${pc.parcelCount === 1 ? "" : "s"} of ${pc.owner ?? "the owner of record"}) vs ${pc.dealAcres?.toFixed(2)} AC underwritten — confirm the site boundary.`, bold: true, color: "B4541A" }] }
+      : { runs: [{ text: `Parcel outline: ${pc.acres.toFixed(2)} AC${pc.parcelCount > 1 ? ` across ${pc.parcelCount} parcels` : ""}${pc.matchesDeal ? `, matching the ${pc.dealAcres?.toFixed(2)} AC underwritten` : ""}.`, bold: true, color: NAVY }] };
+    s5.text([...(parcelLine ? [parcelLine] : [OPEN("outline the parcel")]), OPEN("usable outdoor-storage acreage")], { x: 0.3, y: 6.42, w: 9.4, h: 0.55 }, { size: 9 });
+    if (pc) s5.notes.push(`Parcel boundary: ${pc.source}; owner of record ${pc.owner ?? "unknown"}. Touching parcels with the same owner are included. Acreage computed from the boundary.`);
   }
 
   // 6. Property snapshots ------------------------------------------------
@@ -227,17 +239,19 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   // 7. Tenant overview ---------------------------------------------------
   {
     const s = slide("Tenant Overview");
-    const t = drafted("tenant");
+    const t = drafted("tenant"), credit = drafted("tenantCredit");
     s.text([
-      ...(t ? [{ runs: [{ text: tenants.join(", ") || "Tenant", bold: true, color: NAVY }, DRAFT_TAG] } as Para, ...t.bullets.map((b): Para => ({ runs: [{ text: b }], bullet: true }))]
+      ...(t ? [{ runs: [{ text: tenants.join(", ") || "Tenant", bold: true, color: NAVY }, DRAFT_TAG] } as Para, ...t.bullets.slice(0, credit ? 4 : 5).map((b): Para => ({ runs: [{ text: b }], bullet: true }))]
         : [OPEN(`${tenants.join(", ") || "tenant"}: business, history, ownership, end markets and use of the site`)]),
-      OPEN("credit: financials reviewed, guaranty, security deposit — do not assert creditworthiness without them"),
-    ], { x: 0.3, y: 1.45, w: 9.4, h: t ? 3.3 : 1.5 }, { size: t ? 10 : 11 });
+      ...(credit ? [{ runs: [{ text: "Credit — public information only; verify with tenant financials", bold: true, color: NAVY }, DRAFT_TAG], spaceAfter: 1 } as Para, ...credit.bullets.slice(0, 3).map((b): Para => ({ runs: [{ text: b }], bullet: true }))] : []),
+      OPEN("tenant financials reviewed, guaranty and security deposit — do not assert creditworthiness without them"),
+    ], { x: 0.3, y: 1.45, w: 9.4, h: t ? (credit ? 3.5 : 3.3) : 1.5 }, { size: t ? (credit ? 9 : 10) : 11 });
     s.table(["Tenant", "SF", "Lease Start", "Expiration", "Remaining (mo.)", "Rent / Yr.", "$ / SF / Yr.", "$ / SF / Mo."],
       m.rentRoll.rows.map((r) => [r.tenant, n0(r.sf), date(r.start), date(r.expiration), n0(r.remainingMonths), usd(r.sbrAnnual), r.sbrAnnual && r.sf ? usd(r.sbrAnnual / r.sf, 2) : "—", r.sbrPsfMonthly == null ? "—" : usd(r.sbrPsfMonthly, 2)]),
-      { x: 0.3, y: t ? 4.1 : 3.1, w: 9.4, h: 1.2 }, { size: 9, widths: [2.2, 0.9, 1, 1, 1, 1.1, 1, 1], align: ["l", "r", "r", "r", "r", "r", "r", "r"] });
+      { x: 0.3, y: t ? (credit ? 5.05 : 4.1) : 3.1, w: 9.4, h: 1.2 }, { size: 9, widths: [2.2, 0.9, 1, 1, 1, 1.1, 1, 1], align: ["l", "r", "r", "r", "r", "r", "r", "r"] });
     s.notes.push(source + ": Rent Roll.");
     noteDraft(s, "tenant", "Tenant Overview");
+    noteDraft(s, "tenantCredit", "Tenant Credit (public information)");
   }
 
   // 8. Model — base case -------------------------------------------------

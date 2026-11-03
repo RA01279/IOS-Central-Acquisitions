@@ -17,7 +17,7 @@ function load(path, deps = {}) {
   if (cache.has(path)) return cache.get(path);
   const module = { exports: {} };
   const source = ts.transpileModule(readFileSync(new URL("../" + path.split("?")[0], import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(source, { exports: module.exports, module, require: (n) => deps[n] ?? (n === "@/lib/ic-deck/auto" ? { BUILT_EVENT: "exec_summary_built", DELIVERED_EVENT: "exec_summary_delivered", FAILED_EVENT: "exec_summary_failed" } : n === "@/lib/ic-deck/build" ? load("lib/ic-deck/build.ts?" + path, deps) : n.startsWith("./") ? load("lib/ic-deck/" + n.slice(2) + ".ts", deps) : require(n)), Buffer, process, console, URL });
+  vm.runInNewContext(source, { exports: module.exports, module, require: (n) => deps[n] ?? (n === "@/lib/ic-deck/site-geo" ? { parcelFootprint: async () => null, highwayAccess: async () => null, highwayCaption: () => "", parcelPaths: () => [] } : n === "@/lib/ic-deck/auto" ? { BUILT_EVENT: "exec_summary_built", DELIVERED_EVENT: "exec_summary_delivered", FAILED_EVENT: "exec_summary_failed" } : n === "@/lib/ic-deck/build" ? load("lib/ic-deck/build.ts?" + path, deps) : n.startsWith("./") ? load("lib/ic-deck/" + n.slice(2) + ".ts", deps) : require(n)), Buffer, process, console, URL, setTimeout, clearTimeout });
   cache.set(path, module.exports);
   return module.exports;
 }
@@ -230,8 +230,11 @@ console.log("PASS: same-property source exhibits preserved, stale financial slid
 {
   const nar = load("lib/agents/ic-narrative.ts");
   const sec = (bullets) => ({ bullets, sources: bullets.length ? ["https://example.gov/zoning (accessed 2026-10-01)"] : [], unverified: [] });
-  const good = { version: nar.NARRATIVE_VERSION, sections: { locationHighlights: sec(["1.1 miles to SH-249 <exit> & ramp."]), zoning: sec(["City has no zoning; deed restrictions govern."]), tenant: sec(["Example Tenant makes widgets."]), market: sec([]) } };
+  const good = { version: nar.NARRATIVE_VERSION, sections: { tenantCredit: sec(["Privately held; founded 1998; no bankruptcies found in PACER (accessed 2026-11-03)."]), locationHighlights: sec(["1.1 miles to SH-249 <exit> & ramp."]), zoning: sec(["City has no zoning; deed restrictions govern."]), tenant: sec(["Example Tenant makes widgets."]), market: sec([]) } };
   assert(nar.parseNarrative(JSON.stringify(good)), "valid narrative parses");
+  { const v1 = structuredClone(good); v1.version = "ic-narrative-v1"; delete v1.sections.tenantCredit;
+    assert.equal(JSON.stringify(nar.parseNarrative(JSON.stringify(v1))?.sections.tenantCredit), JSON.stringify({ bullets: [], sources: [], unverified: [] }), "older runs without the credit section still render"); }
+  { const v2missing = structuredClone(good); delete v2missing.sections.tenantCredit; assert.equal(nar.parseNarrative(JSON.stringify(v2missing)), null, "current runs must include credit"); }
   assert.equal(nar.parseNarrative(JSON.stringify({ ...good, version: "x" })), null);
   const unsourced = structuredClone(good); unsourced.sections.tenant.sources = [];
   assert.equal(nar.parseNarrative(JSON.stringify(unsourced)), null, "a bullet without a source is rejected");

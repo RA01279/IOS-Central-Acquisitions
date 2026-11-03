@@ -11,7 +11,8 @@ function load(path, mocks = {}) {
 const catalog = load('lib/agents/catalog.ts', { './memo': load('lib/agents/memo.ts'), './ic-narrative': load('lib/agents/ic-narrative.ts'), './sourcing': load('lib/agents/sourcing.ts'), './deal-import': load('lib/agents/deal-import.ts'), './comp-import': load('lib/agents/comp-import.ts'), './portfolio-import': load('lib/agents/portfolio-import.ts'), './market-report': load('lib/agents/market-report.ts'), './market-narrative': load('lib/agents/market-narrative.ts') });
 assert.equal(catalog.AGENTS.length, 13); // 8 listed + 5 hidden (deal, comp, portfolio import; market report, narrative)
 assert.match(catalog.buildPrompt('off-market-sourcing', [], '{}', '2026-10-02'), /sourcing-v1/);
-assert.match(catalog.buildPrompt('ic-narrative', [], '', '2026-10-01'), /ic-narrative-v1/);
+assert.match(catalog.buildPrompt('ic-narrative', [], '', '2026-10-01'), /ic-narrative-v2/);
+assert.match(catalog.buildPrompt('ic-narrative', [], '', '2026-10-01'), /tenantCredit/);
 assert.equal(catalog.isAgentId('__proto__'), false);
 assert.equal(catalog.isAgentId('comp-analyst'), true);
 assert.match(catalog.buildPrompt('underwriting-review', [], 'source', '2026-09-29'), /not performed/);

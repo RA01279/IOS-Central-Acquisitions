@@ -23,7 +23,7 @@ export function referenceNarrative(zip: PizZip, name: string): Narrative {
   const paragraphs = [...(zip.file("ppt/slides/slide2.xml")?.asText() ?? "").matchAll(/<a:p>[\s\S]*?<\/a:p>/g)]
     .map(m => [...m[0].matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g)].map(t => decode(t[1])).join("").trim());
   const labels: Record<string, NarrativeKey | null> = { "Location Highlights": "locationHighlights", "Zoning": "zoning", "Business Plan": null, "Underwriting Assumptions": null, "Site Overview": null };
-  const sections = Object.fromEntries(["locationHighlights", "zoning", "tenant", "market"].map(k => [k, { bullets: [] as string[], sources: [`Analyst source deck: ${name}; retained source text, not newly researched.`], unverified: [] as string[] }])) as Narrative["sections"];
+  const sections = Object.fromEntries(["locationHighlights", "zoning", "tenant", "tenantCredit", "market"].map(k => [k, { bullets: [] as string[], sources: [`Analyst source deck: ${name}; retained source text, not newly researched.`], unverified: [] as string[] }])) as Narrative["sections"];
   let key: NarrativeKey | null = null;
   for (const paragraph of paragraphs) {
     if (paragraph in labels) { key = labels[paragraph]; continue; }
