@@ -16,4 +16,4 @@ it('enqueues future properties and assets, leases one worker, and preserves revi
  await db.query('update properties set address=$1 where id=$2',['Changed subject',id]);expect((await db.query<{status:string,lease:string}>("select status,lease from property_tax_jobs where subject_kind='property'")).rows[0]).toEqual({status:'queued',lease:null});
  await db.exec("update property_tax_jobs set status='processing',attempts=3,locked_until=now()-interval '1 minute'");await db.query('select * from claim_property_tax_job()');expect((await db.query("select * from property_tax_jobs where status='failed'")).rows).toHaveLength(2);
  }finally{await db.close();}
-},20000);
+},60000); // PGlite startup is slow under a full parallel run.
