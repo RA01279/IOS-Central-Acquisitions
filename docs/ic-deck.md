@@ -20,6 +20,16 @@ On a deal page, **IC Deck — Executive Summary** builds the 23-slide executive 
 
 Values are found by row label, not cell address, so they survive inserted rows. Nothing is recalculated except labelled display arithmetic (PSF, coverage).
 
+## Automatic drafts
+
+Every UW upload builds the deck from the saved workbook and files it in the deal's Documents (`… - Exec Summary v{N} (auto draft).pptx`). If the uploader's Hopper helper is running, IC research is queued too; when it finishes, the deck is rebuilt as `(auto draft, researched)`. The helper copies each new deck to `F:\Investments\Acquisitions\Live\IOS\<ST>\<ST> (<City>) <Address>\01. Exec Sum\` (`--exec-summary-root` to change, `--no-exec-summaries` to turn off), matched by street address and never overwriting. Code: `lib/ic-deck/auto.ts`, `app/api/exec-summaries/outbox`, `scripts/outlook-helper/exec-summaries.mjs`.
+
+## Computed site exhibits
+
+- **Slide 5 parcel outline:** the parcel under the pin plus touching parcels with the same owner of record (TxGIO in Texas; county layers in Georgia). Acreage is the assessor's recorded legal area, compared with the underwritten acreage; a difference over 5% is shown in orange.
+- **Slide 4 highway access:** nearest numbered highway from Census TIGERweb, with Google Routes (no traffic) drive distance and time to the closest point of the highway and to that highway's nearest on-ramp (H and R on the map).
+- **Slide 7 tenant credit:** the research agent's `tenantCredit` section — public information only, sourced, never a credit conclusion.
+
 ## Model checks
 
 The UW template carries hidden sheets and blocks from earlier deals, and Excel data tables that only refresh on a full recalc. The builder reports these instead of copying them:
