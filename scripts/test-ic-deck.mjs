@@ -102,7 +102,7 @@ assert.equal(model.validateModelSummary(JSON.parse(JSON.stringify(m))).version, 
 assert.throws(() => model.validateModelSummary({ ...m, version: "x" }), /unknown version/);
 assert.throws(() => model.validateModelSummary({ ...m, warnings: ["x".repeat(700)] }), /text too long/);
 assert.throws(() => model.validateModelSummary({ ...m, cashFlow: null }), /missing cashFlow/);
-assert.throws(() => modelSubject.bindModelSubject(m, "999 Other Deal"), /model identifies/);
+{ const other = modelSubject.bindModelSubject(m, "999 Other Deal"); assert.equal(other.property.address, "999 Other Deal"); assert(other.warnings.some(w => /stale template data/.test(w)), "mismatch is a warning, not a block"); }
 const typo = modelSubject.bindModelSubject({ ...m, source: { ...m.source, fileName: "100 Example Yard Rd.xlsx" }, property: { ...m.property, address: "101 Example Yard Rd" } }, "100 Example Yard Rd");
 assert.equal(typo.property.address, "100 Example Yard Rd");
 assert(typo.warnings.some(w => w.includes("101 Example Yard Rd")), "same-file address typo is disclosed");
