@@ -11,6 +11,7 @@ import { DEFAULT_CATEGORIES, normalizeName, rejectReason } from "./yard-users";
 import { likelyOwnerUser, type Parcel } from "./parcels";
 import { discoverYardUsers, type DiscoveryOptions } from "./discovery";
 import { addressKey, parcelKey, addressConflict } from "./identity";
+import type { UsableAcres } from "./usable-summary";
 
 export interface Operator { placeId: string; name: string; category: string; sourcePlaceIds?: string[]; profileIds?: string[]; categories?: string[]; phone?: string | null; website?: string | null; googleUrl?: string | null }
 export interface Known { kind: "deal" | "asset" | "comp"; id: string; label: string; href: string; distanceMi: number; stage?: string; match?: "same_property" | "nearby"; relation?: "active-deal" | "archived-deal" | "owned-asset" | "asset" | "comp"; evidence?: "parcel" | "address" | "distance" }
@@ -29,6 +30,8 @@ export interface Site {
   /** Owner of record looks like one of the operators: a sale-leaseback lead. */
   ownerUser: boolean;
   nearby?: Known[];
+  /** Net usable acres measured from the parcel outline; null when not measured. */
+  usable?: UsableAcres | null;
   identityStatus?: "parcel-matched" | "address-conflict" | "unverified";
 }
 export interface KnownPoint { kind: Known["kind"]; id: string; label: string; href: string; lat: number; lng: number; address?: string; stage?: string; status?: string; parcel?: Parcel | null }

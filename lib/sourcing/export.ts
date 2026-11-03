@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import type { Site } from "./sweep";
 import type { SourcedSite } from "../agents/sourcing";
 import type { ExportAssignment } from "./export-assignment";
+import { usableSummary } from "./usable-summary";
 
 /** Use the completed search geography, not the current search form controls. */
 export function sourcingExportFilename(searchLabel: string, assignment?: ExportAssignment) {
@@ -33,6 +34,7 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
     ["brokerEmail", "Assigned Broker Email", 35], ["brokerPhone", "Assigned Broker Phone", 24],
     ["usableAcres", "Verified Usable Yard Acres", 22], ["footprint", "Building Footprint SF", 22],
     ["identity", "Property Identity Review", 45], ["related", "Related Hopper Records", 60],
+    ["netUsable", "Net Usable Acres (measured)", 20], ["coverage", "Building Coverage % (measured)", 20], ["usableBreakdown", "Net Usable Breakdown", 60],
   ] as const;
   sheet.columns = columns.map(([key, , width]) => ({ key, width }));
   sheet.mergeCells("A1:F1");
@@ -74,6 +76,8 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
       assignedBroker: assignment?.brokerName, assignedFirm: assignment?.firmName,
       brokerEmail: assignment?.brokerEmail, brokerPhone: assignment?.brokerPhone,
       usableAcres: r?.usableAcres, footprint: r?.buildingFootprintSf,
+      netUsable: site.usable?.netAcres, coverage: site.usable?.coveragePct,
+      usableBreakdown: site.usable ? `${usableSummary(site.usable)}. Measured from the parcel outline: building footprints (USA Structures), FEMA 100-yr floodplain, NWI wetlands. ${site.usable.notChecked.join(", ")} not checked.` : site.parcel ? "Not measured" : undefined,
       identity: site.identityStatus ?? "unverified", related: [site.known, ...(site.nearby ?? [])].filter(Boolean).map(k => `${k!.label}: ${k!.match ?? "unverified match"}`).join("\n"),
     });
     row.height = 62;

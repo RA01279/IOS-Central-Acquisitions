@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
     runId: body.runId, ref: body.ref, operators,
     owner, ownerMailingAddress: sourced.ownerMailingAddress ?? parcel?.mailingAddress ?? null, ownerType: sourced.ownerType,
     appraisalRoll: parcel ? { owner: parcel.owner, mailingAddress: parcel.mailingAddress, situsAddress: parcel.situsAddress, acres: parcel.acres, yearBuilt: parcel.yearBuilt, marketValue: parcel.marketValue, propId: parcel.propId, county: parcel.county, taxYear: parcel.taxYear, source: parcel.source } : null,
+    usableAcres: site.usable ?? null,
     parcelId: sourced.parcelId, county: sourced.county, zoning: sourced.zoning, outdoorStorage: sourced.outdoorStorage,
     ownedSince: sourced.ownedSince, yearBuilt: sourced.yearBuilt, signals: sourced.signals, fit: sourced.fit, fitReason: sourced.fitReason,
     outreachDraft: sourced.outreach, sources: sourced.sources, unverified: sourced.unverified,

@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       parsed.sites = parsed.sites.map(s => {
         const original = reviewed.sites.find(x => x.ref === s.ref)!;
         const checked = original.parcel?.ownerClass === "public" ? { ...s, ownerType: "public" as const } : s;
-        return { ...checked, ...assessSourcingFit(checked, reviewed.buyBox) };
+        return { ...checked, ...assessSourcingFit(checked, reviewed.buyBox, original.usable) };
       });
       r.report = JSON.stringify(parsed);
     }

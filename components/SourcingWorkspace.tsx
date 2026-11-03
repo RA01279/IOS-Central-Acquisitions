@@ -16,6 +16,20 @@ import SourcingExportAssignment from "./SourcingExportAssignment";
 import { assignmentFor, type ExportAssignee } from "@/lib/sourcing/export-assignment";
 import { blocksSourcing } from "@/lib/sourcing/identity";
 import { reviewedSites, validBuyBox } from "@/lib/sourcing/snapshot";
+import { usableSummary, type UsableAcres } from "@/lib/sourcing/usable-summary";
+
+/** Net usable acres for a sweep row, with what was taken off underneath. */
+function UsableCell({ u, hasParcel, strong }: { u?: UsableAcres | null; hasParcel: boolean; strong: boolean }) {
+  if (!u) return <span className="hint">{hasParcel ? "Not measured" : "—"}</span>;
+  const off = [u.buildingsAcres && `bldgs −${u.buildingsAcres}`, u.floodAcres && `flood −${u.floodAcres}`, u.wetlandsAcres && `wetland −${u.wetlandsAcres}`].filter(Boolean).join(" · ");
+  return (
+    <span title={`${usableSummary(u)}. ${u.notChecked.join(", ")} not checked.`}>
+      <span style={{ fontWeight: strong ? 600 : 400 }}>{u.failed.length ? "≤" : ""}{u.netAcres}</span>
+      <br /><span className="hint">{off || "no deductions"} · {u.coveragePct}% cov</span>
+      {u.failed.length > 0 && <><br /><span className="hint">{u.failed.join(", ")} not read</span></>}
+    </span>
+  );
+}
 
 type Sweep = { sweepId?: string; market?: string; createdAt?: string; coverage?: { requests: number; budget: number; partial: boolean; budgetExhausted: boolean; deadlineReached: boolean }; center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string; criteriaKey?: string; profileIds?: string[]; searches?: { profileId: string; profile: string; keyword: string; failed: boolean; returned: number; limited: boolean; pages?: number; cells?: number }[]; contacts?: { requested: number; failed: number } };
 type Saved = { market: string; buyBox: BuyBox; sites: Site[]; searchLabel?: string };
@@ -243,10 +257,12 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
     } finally { setExporting(false); }
   }
 
-  const inBox = (s: Site) => s.parcel?.acres != null && s.parcel.acres >= buyBox.minAcres && s.parcel.acres <= buyBox.maxAcres;
+  // Measured net usable acres where the parcel outline was measured, else gross parcel acres.
+  const sizeOf = (s: Site) => s.usable?.netAcres ?? s.parcel?.acres ?? null;
+  const inBox = (s: Site) => { const a = sizeOf(s); return a != null && a >= buyBox.minAcres && a <= buyBox.maxAcres && (s.usable == null || s.usable.coveragePct <= buyBox.maxCoveragePct); };
   const visible = useMemo(() => {
-    const list = (sweep?.sites ?? []).filter((s) => (showKnown || !blocksSourcing(s)) && (!hidePublic || s.parcel?.ownerClass !== "public") && (!inBoxOnly || s.parcel?.acres == null || inBox(s)));
-    const rank = (s: Site) => (s.identityStatus === "address-conflict" ? -5 : s.parcel ? 3 : 0) + (inBox(s) ? 2 : s.parcel?.acres != null && s.parcel.acres < buyBox.minAcres ? -4 : 0) + (s.ownerUser ? .5 : 0);
+    const list = (sweep?.sites ?? []).filter((s) => (showKnown || !blocksSourcing(s)) && (!hidePublic || s.parcel?.ownerClass !== "public") && (!inBoxOnly || sizeOf(s) == null || inBox(s)));
+    const rank = (s: Site) => (s.identityStatus === "address-conflict" ? -5 : s.parcel ? 3 : 0) + (inBox(s) ? 2 : (sizeOf(s) ?? Infinity) < buyBox.minAcres ? -4 : 0) + (s.ownerUser ? .5 : 0);
     return ownerUsersFirst ? [...list].sort((a, b) => rank(b) - rank(a) || a.distanceMi - b.distanceMi) : list;
   }, [sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, buyBox]);
   const publicCount = (sweep?.sites ?? []).filter((s) => s.parcel?.ownerClass === "public").length;
@@ -348,7 +364,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
             <>
               <p style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                 <label><input type="checkbox" checked={hidePublic} onChange={(e) => setHidePublic(e.target.checked)} /> Hide publicly owned</label>
-                <label><input type="checkbox" checked={inBoxOnly} onChange={(e) => setInBoxOnly(e.target.checked)} /> Filter gross parcel size ({buyBox.minAcres}–{buyBox.maxAcres} acres; unknowns retained)</label>
+                <label><input type="checkbox" checked={inBoxOnly} onChange={(e) => setInBoxOnly(e.target.checked)} /> Filter to buy box ({buyBox.minAcres}–{buyBox.maxAcres} net usable acres, ≤{buyBox.maxCoveragePct}% coverage; gross acres where not measured; unknowns retained)</label>
                 <label><input type="checkbox" checked={ownerUsersFirst} onChange={(e) => setOwnerUsersFirst(e.target.checked)} /> Prioritize documented parcel and size signals</label>
               </p>
               <p style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -357,7 +373,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
-                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th></tr></thead>
+                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th></tr></thead>
                   <tbody>
                     {visible.map((s) => (
                       <tr key={s.ref} data-site-ref={s.ref}>
@@ -365,7 +381,8 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                         <td>{s.ref}</td>
                         <td>{s.operators.map((o) => <div key={o.placeId} data-place-id={o.placeId} data-profile-ids={o.profileIds?.join(",")}><strong>{o.name}</strong><br /><span className="hint">Matched profiles: {(o.categories ?? [o.category]).join(", ")}</span><br />{o.phone && <>Business phone: {o.phone}<br /></>}{o.website && <><a href={o.website} target="_blank" rel="noopener noreferrer">Business website</a>{" · "}</>}<a href={o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`} target="_blank" rel="noopener noreferrer">Google business source</a></div>)}<span className="hint">Business contacts are not verified owner contacts.</span></td>
                         <td>{s.parcel?.owner ?? "Owner unverified"}{s.ownerUser && <span className="hint"> · possible owner-user (name similarity only)</span>}{s.parcel && s.parcel.ownerClass !== "private" && <span className="hint"> · {s.parcel.ownerClass}</span>}</td>
-                        <td style={{ fontWeight: inBox(s) ? 600 : 400, color: s.parcel?.acres != null && !inBox(s) ? "#8a8f98" : undefined }}>{s.parcel?.acres ?? "—"}</td>
+                        <td>{s.parcel?.acres ?? "—"}</td>
+                        <td style={{ color: sizeOf(s) != null && !inBox(s) ? "#8a8f98" : undefined }}><UsableCell u={s.usable} hasParcel={!!s.parcel} strong={inBox(s)} /></td>
                         <td>{s.parcel?.yearBuilt ?? "—"}</td>
                         <td>{s.address}{s.identityStatus === "address-conflict" && <p className="hint" role="status">Listing / parcel address conflict: {s.parcel?.situsAddress}. Review location.</p>}{!s.parcel && <p className="hint">Parcel not returned; ownership and area remain unverified.</p>}</td>
                         <td>{s.distanceMi.toFixed(1)} mi</td>
@@ -396,8 +413,8 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                       <tr><th scope="row">Owner of record</th><td>{s.owner ?? site?.parcel?.owner ?? "Not found"}{s.ownerType !== "unknown" ? ` (${s.ownerType})` : ""}{(s.ownerMailingAddress ?? site?.parcel?.mailingAddress) ? ` · mail: ${s.ownerMailingAddress ?? site?.parcel?.mailingAddress}` : ""}{!s.owner && site?.parcel?.owner ? " (appraisal roll)" : ""}</td></tr>
                       <tr><th scope="row">Parcel</th><td>{[s.parcelId && `ID ${s.parcelId}`, s.county && `${s.county} County`, s.ownedSince && `owned since ${s.ownedSince}`].filter(Boolean).join(" · ") || "—"}</td></tr>
                       <tr><th scope="row">Site</th><td>{[(s.acres ?? site?.parcel?.acres) != null && `${s.acres ?? site?.parcel?.acres} AC`, s.buildingSf != null && `${Math.round(s.buildingSf).toLocaleString("en-US")} SF bldg`, s.yearBuilt && `built ${s.yearBuilt}`].filter(Boolean).join(" · ") || "—"}</td></tr>
-                      <tr><th scope="row">Usable yard</th><td>{s.usableAcres == null ? "Unverified; gross parcel acres are not usable yard acres" : `${s.usableAcres} acres`}</td></tr>
-                      <tr><th scope="row">Building footprint</th><td>{s.buildingFootprintSf == null ? "Unverified" : `${s.buildingFootprintSf.toLocaleString()} SF`}</td></tr>
+                      <tr><th scope="row">Usable yard</th><td>{site?.usable ? <>{usableSummary(site.usable)} acres, measured from the parcel outline. <span className="hint">{site.usable.notChecked.join(", ")} not checked.</span>{s.usableAcres != null && <span className="hint"> Researched: {s.usableAcres} acres.</span>}</> : s.usableAcres == null ? "Unverified; gross parcel acres are not usable yard acres" : `${s.usableAcres} acres`}</td></tr>
+                      <tr><th scope="row">Building footprint</th><td>{site?.usable ? `${site.usable.buildingFootprintSf.toLocaleString("en-US")} SF measured across ${site.usable.buildingCount} building${site.usable.buildingCount === 1 ? "" : "s"} (${site.usable.coveragePct}% coverage)` : s.buildingFootprintSf == null ? "Unverified" : `${s.buildingFootprintSf.toLocaleString()} SF`}</td></tr>
                       <tr><th scope="row">Zoning</th><td>{s.zoning ?? "—"} · outdoor storage {s.outdoorStorage}</td></tr>
                     </tbody></table>
                     {s.signals.length > 0 && <><strong>Off-market signals</strong><ul>{s.signals.map((x) => <li key={x}>{x}</li>)}</ul></>}

@@ -29,6 +29,8 @@ export interface Parcel {
   source: string;
   taxYear: number | null;
   ownerClass: "public" | "institutional" | "private" | "unknown";
+  /** Parcel outline as Esri rings in WGS84, used to measure usable acres. Not persisted in sweep snapshots. */
+  outline?: number[][][] | null;
 }
 
 const clean = (v: unknown) => {
@@ -127,12 +129,13 @@ async function lookupCountyParcel(src: CountySource, lat: number, lng: number, f
   const url = new URL(`${src.layer}/query`);
   url.search = new URLSearchParams({
     geometry: `${lng},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects",
-    outFields: "*", returnGeometry: "false", f: "json",
+    outFields: "*", returnGeometry: "true", outSR: "4326", geometryPrecision: "7", f: "json",
   }).toString();
   try {
     const r = await fetcher(url, { signal: AbortSignal.timeout(8000) } as RequestInit);
     if (!r.ok) return null;
-    const a = (await r.json())?.features?.[0]?.attributes;
+    const feature = (await r.json())?.features?.[0];
+    const a = feature?.attributes;
     if (!a) return null;
     const owner = clean(a[src.owner]);
     const rawAcres = src.acres ? num(a[src.acres]) : src.areaSqft && num(a[src.areaSqft]) ? Math.round((num(a[src.areaSqft])! / 43560) * 100) / 100 : null;
@@ -151,6 +154,7 @@ async function lookupCountyParcel(src: CountySource, lat: number, lng: number, f
       source: src.name,
       taxYear: src.year ? num(a[src.year]) : null,
       ownerClass: classifyOwner(owner),
+      outline: feature.geometry?.rings ?? null,
     };
   } catch {
     return null;
@@ -177,12 +181,13 @@ async function lookupTexasParcel(lat: number, lng: number, fetcher: typeof fetch
   const url = new URL(`${LAYER}/identify`);
   url.search = new URLSearchParams({
     geometry: `${lng},${lat}`, geometryType: "esriGeometryPoint", sr: "4326", layers: "all:0", tolerance: "0",
-    mapExtent: [lng - d, lat - d, lng + d, lat + d].join(","), imageDisplay: "400,400,96", returnGeometry: "false", f: "json",
+    mapExtent: [lng - d, lat - d, lng + d, lat + d].join(","), imageDisplay: "400,400,96", returnGeometry: "true", f: "json",
   }).toString();
   try {
     const r = await fetcher(url, { signal: AbortSignal.timeout(8000) } as RequestInit);
     if (!r.ok) return null;
-    const a = (await r.json())?.results?.[0]?.attributes;
+    const result = (await r.json())?.results?.[0];
+    const a = result?.attributes;
     if (!a) return null;
     const mercatorSqm = num(a["st_area(shape)"]);
     const owner = clean(a.OWNER_NAME);
@@ -200,6 +205,8 @@ async function lookupTexasParcel(lat: number, lng: number, fetcher: typeof fetch
       source: clean(a.SOURCE) ? `${PARCEL_SOURCE}: ${clean(a.SOURCE)}` : PARCEL_SOURCE,
       taxYear: num(a.TAX_YEAR),
       ownerClass: classifyOwner(owner),
+      // sr=4326 returns the outline in WGS84 as well.
+      outline: result.geometry?.rings ?? null,
     };
   } catch {
     return null;
