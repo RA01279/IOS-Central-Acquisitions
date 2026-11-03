@@ -17,7 +17,7 @@ function load(path, deps = {}) {
   if (cache.has(path)) return cache.get(path);
   const module = { exports: {} };
   const source = ts.transpileModule(readFileSync(new URL("../" + path.split("?")[0], import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(source, { exports: module.exports, module, require: (n) => deps[n] ?? (n.startsWith("./") ? load("lib/ic-deck/" + n.slice(2) + ".ts", deps) : require(n)), Buffer, process, console, URL });
+  vm.runInNewContext(source, { exports: module.exports, module, require: (n) => deps[n] ?? (n === "@/lib/ic-deck/build" ? load("lib/ic-deck/build.ts?" + path, deps) : n.startsWith("./") ? load("lib/ic-deck/" + n.slice(2) + ".ts", deps) : require(n)), Buffer, process, console, URL });
   cache.set(path, module.exports);
   return module.exports;
 }
