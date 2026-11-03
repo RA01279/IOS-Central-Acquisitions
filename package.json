@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "deploy:prod": "node scripts/deploy-production.mjs",
     "test": "node scripts/run-tests.mjs && vitest run",
     "outlook:helper": "node scripts/outlook-helper/run.mjs"
   },

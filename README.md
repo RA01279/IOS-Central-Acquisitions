@@ -56,7 +56,7 @@ creates them, and the decision is reversible.
 
 ## Architecture at a glance
 
-- **Next.js 14 (App Router)**, deployed to Vercel from this repo.
+- **Next.js 15 (App Router)**, deployed to Vercel from this repo.
 - **Postgres via Supabase** -- see `supabase/migrations/`. If sharing a project
   with RIDGE Intel, run these against that same Supabase project; RIDGE Intel
   owns analysis/underwriting fields on shared tables, this app owns
@@ -73,8 +73,12 @@ creates them, and the decision is reversible.
   All date bucketing is America/Chicago, not UTC.
 - **`lib/digest.ts`** is the single source of the morning brief; the cron route
   and the RSS feed are both just senders.
-- **No CI pipeline.** Vercel deploys on push regardless; run `npm run build`
-  locally before pushing if you want a sanity check.
+- **CI** (`.github/workflows/ci.yml`) typechecks and runs `npm test` on every push.
+- **Deploying Central production:** only from `main`, only with
+  `npm run deploy:prod`. It refuses unless the checkout is on `main`, clean,
+  identical to `origin/main` and green in CI. Never run `vercel deploy --prod`
+  from a feature branch or another worktree: production has lost work that way.
+  Finished work goes into `main` first (merge, push, wait for CI), then deploy.
 
 ## Setup
 
