@@ -78,15 +78,18 @@ export function authoritativeReturns(deal: any) {
 
 /** A resolved template discrepancy can travel only with the same recorded source. */
 export function canExportModel(deal:any,incoming:{address:string|null;acres:number|null;buildingSf:number|null},fileName:string,price:number|null,irr:number|null):boolean {
+  // The model's own identity cells are often stale template data, so a
+  // mismatch is a warning on the deck, never a block. Only a model someone
+  // explicitly marked a wrong upload is refused -- and only that same file.
   const selected=latestVersion(deal),review=modelIdentity(deal,selected);
-  if(review.state==="wrong_upload")return false;
-  if(modelIdentity(deal,{returns_summary:{sourceIdentity:incoming}}).authoritative)return true;
-  if(review.state!=="resolved"||!incoming.address||norm(incoming.address)!==norm(review.source.address))return false;
-  for(const key of ["acres","buildingSf"] as const)if(review.source[key]!=null&&Number(review.source[key])!==incoming[key])return false;
+  if(review.state!=="wrong_upload")return true;
   const savedName=selected?.model_detail?.uw?.fileName;
-  if(savedName&&savedName!==fileName)return false;
   const savedPrice=selected?.returns_summary?.purchasePrice,savedIrr=selected?.returns_summary?.irrPct;
-  return savedPrice!=null&&price!=null&&Math.abs(savedPrice-price)<.01&&savedIrr!=null&&irr!=null&&Math.abs(savedIrr-irr)<1e-6;
+  // Allowed only when the incoming workbook is provably a different file.
+  const differentName=!!savedName&&savedName!==fileName;
+  const differentNumbers=savedPrice!=null&&price!=null&&savedIrr!=null&&irr!=null&&(Math.abs(savedPrice-price)>=.01||Math.abs(savedIrr-irr)>=1e-6);
+  void incoming;
+  return differentName||differentNumbers;
 }
 export function incomePosition(deal: any, today=new Date().toISOString().slice(0,10)) {
   const p=Array.isArray(deal.properties)?deal.properties[0]:deal.properties;

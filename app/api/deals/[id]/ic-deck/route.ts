@@ -86,7 +86,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const checked=modelIdentity(deal,{returns_summary:{sourceIdentity:incoming}});
   // A browser-supplied workbook cannot inherit a resolution for another source.
   const incomingPrice=model.capitalization.find(c=>/^price$/i.test(c.label))?.amount??null;
-  if(!canExportModel(deal,incoming,model.source.fileName,incomingPrice,model.returns.levered.irr))return NextResponse.json({error:"Upload and reconcile this workbook's identity before creating an approval deck: "+checked.issues.join("; ")},{status:422});
+  if(!canExportModel(deal,incoming,model.source.fileName,incomingPrice,model.returns.levered.irr))return NextResponse.json({error:"This workbook was marked a wrong upload for this deal. Use the right model, or change that decision under \"Investment evidence and decision\"."},{status:422});
+  if(!checked.authoritative&&checked.issues.length)model.warnings.push("Model's property identity differs from the deal (often stale template data): "+checked.issues.join("; "));
   model.warnings.push(incomePosition(deal).label+". Returns are cached workbook scenario results, not verified current income.");
   const prop: any = Array.isArray(deal.properties) ? deal.properties[0] : deal.properties;
   const located = prop?.latitude != null && prop?.longitude != null && isUsableForDistance(prop.geocode_precision);

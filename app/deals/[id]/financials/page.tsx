@@ -85,7 +85,7 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         {returns && sourceVersion && !identity.authoritative && (
           <p className="warning">
             Check this is the right model for this property: {identity.issues.join(" ")} Accept it, or mark it a wrong
-            upload, under &ldquo;Investment evidence and decision&rdquo; above. IC deck export waits on that.
+            upload, under &ldquo;Investment evidence and decision&rdquo; above. This is often stale template data and does not block anything.
           </p>
         )}
         {!returns ? (

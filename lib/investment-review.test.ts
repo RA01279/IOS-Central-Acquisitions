@@ -25,7 +25,7 @@ describe("source authority and current income",()=>{
   expect(authoritativeReturns(d)?.irrPct).toBe(.07185);
   d.uw_versions[0].returns_summary.purchasePrice=4000000;
   expect(canExportModel(d,{address:"1301-1347 Lathrop",acres:1.92,buildingSf:9460},"original.xlsx",4000000,.07185)).toBe(true);
-  expect(canExportModel(d,{address:"1301-1347 Lathrop",acres:1.92,buildingSf:9460},"original.xlsx",5000000,.07185)).toBe(false);
+  expect(canExportModel(d,{address:"1301-1347 Lathrop",acres:1.92,buildingSf:9460},"original.xlsx",5000000,.07185)).toBe(true);
   d.properties.building_sf=45000;expect(modelIdentity(d).state).toBe("unresolved");
   const n=modelIdentity(d);d.uw_versions[0].returns_summary.identityResolution={...d.uw_versions[0].returns_summary.identityResolution,fingerprint:n.fingerprint,outcome:"wrong_upload"};expect(modelIdentity(d).state).toBe("wrong_upload");expect(authoritativeReturns(d)).toBeNull();
  });
@@ -59,5 +59,15 @@ describe("workbook identity tolerates formatting differences",()=>{
   expect(check({address:"3003 Kilgore Pkwy"},{address:"3003 Killgore Parkway"}).authoritative).toBe(false);
   expect(check({address:"2000 Wilson Rd",city:"Houston"},{address:"2000 Wilson Rd",city:"Humble, TX"}).authoritative).toBe(false);
   expect(check({address:"201 Main St"},{address:"210 Main St"}).authoritative).toBe(false);
+ });
+});
+describe("IC deck export is blocked only by an explicit wrong upload",()=>{
+ const mk=(outcome?:string)=>{const d:any={properties:{address:"298 Reynolds Road",city:"Hiram"},uw_versions:[{id:"v",version_number:1,model_detail:{uw:{fileName:"bad.xlsx"}},returns_summary:{purchasePrice:1e6,irrPct:.2,sourceIdentity:{address:"1301-1347 Lathrop",city:"Houston, TX"}}}]};
+  if(outcome){const c=modelIdentity(d);d.uw_versions[0].returns_summary.identityResolution={fingerprint:c.fingerprint,outcome,actor:"a",at:"2026-11-03",reason:"checked against source"};}return d;};
+ const inc={address:"1301-1347 Lathrop",acres:null,buildingSf:null};
+ it("exports a model with stale template identity",()=>{expect(canExportModel(mk(),inc,"bad.xlsx",1e6,.2)).toBe(true);});
+ it("refuses the same file once marked a wrong upload, allows a different one",()=>{
+  expect(canExportModel(mk("wrong_upload"),inc,"bad.xlsx",1e6,.2)).toBe(false);
+  expect(canExportModel(mk("wrong_upload"),inc,"right.xlsx",1.2e6,.18)).toBe(true);
  });
 });
