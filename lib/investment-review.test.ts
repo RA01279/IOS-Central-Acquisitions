@@ -20,7 +20,7 @@ describe("source authority and current income",()=>{
   expect(modelIdentity(d).authoritative).toBe(false);expect(modelIdentity(d).issues.join(" ")).toMatch(/address is missing/);
  });
  it("distinguishes an unresolved discrepancy from confirmed wrong upload and invalidates stale resolution",()=>{
-  const d:any=deal(),c=modelIdentity(d);expect(c.state).toBe("unresolved");expect(authoritativeReturns(d)).toBeNull();
+  const d:any=deal(),c=modelIdentity(d);expect(c.state).toBe("unresolved");expect(c.authoritative).toBe(false);expect(c.usable).toBe(true);expect(authoritativeReturns(d)?.irrPct).toBe(.07185);
   d.uw_versions[0].returns_summary.identityResolution={fingerprint:c.fingerprint,outcome:"accepted",actor:"analyst",at:"2026-10-30",reason:"Template metadata reconciled against original schedules"};
   expect(authoritativeReturns(d)?.irrPct).toBe(.07185);
   d.uw_versions[0].returns_summary.purchasePrice=4000000;
@@ -44,5 +44,20 @@ describe("source authority and current income",()=>{
   const w=new ExcelJS.Workbook(),s=w.addWorksheet("Summary Table"),p=w.addWorksheet("Pro Forma"),m=w.addWorksheet("Market Leasing Summary");
   p.getCell("F15").value="1301-1347 Lathrop";s.getCell("C8").value="1301-1347 Lathrop";s.getCell("C9").value="Houston";s.getCell("C10").value=1.92;s.getCell("C12").value=9460;s.getCell("G18").value=16;m.getCell("D17").value="$/SF/Year";
   const r=await parseReturnsSummary(Buffer.from(await w.xlsx.writeBuffer()),"3000 Amwiler Rd");expect(r.marketRentPsfMo).toBeCloseTo(16/12);expect(r.warnings.join(" ")).toMatch(/discrepancy/);const d:any=deal();d.uw_versions[0].returns_summary=r;expect(modelIdentity(d).authoritative).toBe(false);
+ });
+});
+describe("workbook identity tolerates formatting differences",()=>{
+ const check=(dealP:any,src:any)=>modelIdentity({properties:dealP,uw_versions:[{id:"v",version_number:1,returns_summary:{irrPct:.2,sourceIdentity:src}}]});
+ it("ignores a trailing state on the city and street suffix spelling",()=>{
+  expect(check({address:"12047 Proctor St",city:"Houston"},{address:"12047 Proctor St",city:"Houston, TX "}).authoritative).toBe(true);
+  expect(check({address:"411 W Fork Drive",city:"Arlington"},{address:"411 W Fork Dr",city:"Arlington, TX"}).authoritative).toBe(true);
+  expect(check({address:"21431 Hufsmith Kohrville Rd.",city:"Tomball"},{address:"21431 Hufsmith-Kohrville"}).authoritative).toBe(true);
+  expect(check({address:"100 North Main Street"},{address:"100 N Main St"}).authoritative).toBe(true);
+ });
+ it("still flags a different street, house number or city",()=>{
+  expect(check({address:"298 Reynolds Road",city:"Hiram"},{address:"1301-1347 Lathrop",city:"Houston, TX"}).authoritative).toBe(false);
+  expect(check({address:"3003 Kilgore Pkwy"},{address:"3003 Killgore Parkway"}).authoritative).toBe(false);
+  expect(check({address:"2000 Wilson Rd",city:"Houston"},{address:"2000 Wilson Rd",city:"Humble, TX"}).authoritative).toBe(false);
+  expect(check({address:"201 Main St"},{address:"210 Main St"}).authoritative).toBe(false);
  });
 });

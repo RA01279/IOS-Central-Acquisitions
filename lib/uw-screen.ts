@@ -49,7 +49,7 @@ export function dealFacts(deal: any, today: string): DealFacts {
 export function latestModel(deal: any): ScreenModel | null {
   const versions = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
   const latest = latestVersion(deal);
-  if (!modelIdentity(deal,latest).authoritative) return null;
+  if (!modelIdentity(deal,latest).usable) return null;
   const snap = latest?.model_detail?.uw;
   return snap && Array.isArray(snap.rentRoll) ? { versionId: latest.id, versionNumber: latest.version_number, snapshot: snap as UwModelSnapshot } : null;
 }
@@ -73,7 +73,7 @@ export async function screenFor(deal: any, today = new Date().toISOString().slic
   return {
     facts,
     model,
-    modelPending: !model && (deal.uw_versions ?? []).length > 0 && modelIdentity(deal).authoritative,
+    modelPending: !model && (deal.uw_versions ?? []).length > 0 && modelIdentity(deal).usable,
     comps,
     build: incomeAwareBuild(deal, buildDealInputs(facts, model?.snapshot ?? null, comps)),
     evidenceRows,
@@ -87,7 +87,8 @@ export function incomeAwareBuild(deal: any, build: DealUwBuild): DealUwBuild {
     build.warnings.push(position.label+". Modeled rent is a proposed screening case; confirm commencement and carrying expenses. Status alone does not invent a delay.");
   }
   const identity=modelIdentity(deal);
-  if (!identity.authoritative && identity.state!=="missing") build.warnings.push("Workbook excluded pending source identity review: "+identity.issues.join("; "));
+  if (identity.state==="wrong_upload") build.warnings.push("Workbook excluded: marked as a wrong upload for this property");
+  else if (!identity.authoritative && identity.state!=="missing") build.warnings.push("Workbook identity not confirmed for this property: "+identity.issues.join("; "));
   return build;
 }
 

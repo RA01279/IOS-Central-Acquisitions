@@ -23,20 +23,37 @@ export function latestVersion(deal: any): any | null {
   return [...(deal.uw_versions ?? [])].sort((a: any,b: any)=>b.version_number-a.version_number)[0] ?? null;
 }
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+// Street addresses are compared word by word with USPS suffix and directional
+// abbreviations folded together, so "411 W Fork Drive" matches "411 W Fork Dr"
+// and a model that omits the trailing suffix ("Hufsmith-Kohrville" vs
+// "Hufsmith Kohrville Rd.") still matches. House number and street name must agree.
+const STREET_WORDS: Record<string, string> = {
+  street:"st",avenue:"ave",av:"ave",road:"rd",drive:"dr",boulevard:"blvd",parkway:"pkwy",pky:"pkwy",highway:"hwy",freeway:"fwy",
+  lane:"ln",court:"ct",circle:"cir",place:"pl",terrace:"ter",trail:"trl",way:"way",expressway:"expy",square:"sq",loop:"loop",
+  north:"n",south:"s",east:"e",west:"w",northeast:"ne",northwest:"nw",southeast:"se",southwest:"sw",
+};
+const SUFFIXES = new Set(["st","ave","rd","dr","blvd","pkwy","hwy","fwy","ln","ct","cir","pl","ter","trl","way","expy","sq","loop"]);
+function addressKey(s: unknown): string {
+  const words = String(s ?? "").toLowerCase().replace(/[.,#]/g, " ").replace(/-/g, " ").split(/\s+/).filter(Boolean).map(w => STREET_WORDS[w] ?? w);
+  while (words.length > 2 && SUFFIXES.has(words[words.length-1])) words.pop();
+  return words.join("");
+}
+// A model's city cell often carries the state ("Houston, TX "); the deal's does not.
+const cityKey = (s: unknown) => norm(String(s ?? "").replace(/,\s*[A-Za-z]{2}\s*(\d{5}(-\d{4})?)?\s*$/, ""));
 export function modelIdentity(deal: any, version = latestVersion(deal)) {
   const p = Array.isArray(deal.properties) ? deal.properties[0] : deal.properties;
   const summary = version?.returns_summary;
   const source = summary?.sourceIdentity ?? { address: summary?.sourceProperty ?? version?.model_detail?.sourceProperty };
   const issues: string[] = [];
-  if (!version) return { state: "missing", issues: ["No workbook version"], authoritative: false, source };
+  if (!version) return { state: "missing", issues: ["No workbook version"], authoritative: false, usable: false, source };
   if (!p?.address) issues.push("Deal property address is missing; workbook identity cannot be verified");
   if (!source.address) issues.push("Internal workbook property identity has not been verified");
-  else if (p?.address && norm(source.address) !== norm(p.address)) issues.push(`Workbook identifies ${source.address}; deal identifies ${p.address}. This is a discrepancy, not a confirmed wrong upload.`);
+  else if (p?.address && addressKey(source.address) !== addressKey(p.address)) issues.push(`Workbook identifies ${source.address}; deal identifies ${p.address}. This is a discrepancy, not a confirmed wrong upload.`);
   for (const [key, expected] of [["buildingSf", Number(p?.building_sf)], ["acres", Number(p?.lot_sf)/43560]] as const) {
     const actual = Number(source[key]);
     if (actual > 0 && expected > 0 && Math.abs(actual/expected-1) > .1) issues.push(`Workbook ${key}: ${actual}; deal: ${expected}`);
   }
-  if (source.city && p?.city && norm(source.city)!==norm(p.city)) issues.push(`Workbook city ${source.city}; deal city ${p.city}`);
+  if (source.city && p?.city && cityKey(source.city)!==cityKey(p.city)) issues.push(`Workbook city ${source.city}; deal city ${p.city}`);
   const resolution = summary?.identityResolution;
   // Resolution is tied to the reviewed subject and exact source facts. Edits invalidate it.
   const fingerprint = JSON.stringify({ address:p?.address,city:p?.city,buildingSf:p?.building_sf,lotSf:p?.lot_sf,source });
@@ -46,11 +63,14 @@ export function modelIdentity(deal: any, version = latestVersion(deal)) {
   // silently rehabilitate a source already confirmed to be the wrong upload.
   const rejected = recorded && resolution.outcome==="wrong_upload";
   if (rejected) issues.push("This file was explicitly confirmed as a wrong upload; a new recorded resolution is required before reuse");
-  return { state: rejected ? "wrong_upload" : resolved ? "resolved" : issues.length ? "unresolved" : "matched", issues, source, fingerprint, resolution: resolved || rejected ? resolution : null, authoritative: !rejected && (resolved || issues.length===0) };
+  return { state: rejected ? "wrong_upload" : resolved ? "resolved" : issues.length ? "unresolved" : "matched", issues, source, fingerprint, resolution: resolved || rejected ? resolution : null, authoritative: !rejected && (resolved || issues.length===0),
+    // Usable: shown in Hopper (with the issues as a warning) unless someone has
+    // explicitly marked it a wrong upload. Exports still require authoritative.
+    usable: !rejected };
 }
 export function authoritativeReturns(deal: any) {
   const v=latestVersion(deal);
-  if(!modelIdentity(deal,v).authoritative)return null;
+  if(!modelIdentity(deal,v).usable)return null;
   const r=v?.returns_summary??null;
   if(r?.marketRentPsfMo!=null&&!r.marketRentSourceBasis)return {...r,marketRentPsfMo:null,warnings:[...(r.warnings??[]),"Historical market-rent units unverified; reconcile the original basis before using this rate"]};
   return r;

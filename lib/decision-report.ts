@@ -12,7 +12,8 @@ export function decisionReport(deal:any) {
  const screenCurrent=!!screen&&screen.uw_version_id===v?.id;
  const messages=identity.resolution?[`Identity resolution (${identity.state}) by ${identity.resolution.actor}: ${identity.resolution.reason}`]:[...identity.issues];
  if(v?.returns_summary?.marketRentPsfMo!=null&&!v.returns_summary.marketRentSourceBasis)messages.push("Historical market rent units unverified; rate withheld pending original-source reconciliation");
- if(!identity.authoritative&&v)messages.push("Workbook returns withheld pending source resolution");
+ if(identity.state==="wrong_upload")messages.push("Workbook returns withheld: marked as a wrong upload");
+ else if(!identity.authoritative&&v)messages.push("Workbook identity not confirmed; returns shown as uploaded");
  if(!income.current)messages.push(income.label);
  if(screen&&!screenCurrent)messages.push("Saved screening run is based on another or unlinked workbook version; comparison is historical");
  if(screen&&comps&&screen.created_at<comps.created_at)messages.push("Saved screen predates the reviewed comp selection; rerun before relying on comp-driven inputs");

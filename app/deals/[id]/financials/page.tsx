@@ -41,7 +41,8 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
   const rentFlag = site.flags.find((f) => f.key === "rent");
   const versionsDesc = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
   const sourceVersion=selectedVersion(deal);
-  const latestVersion = modelIdentity(deal,sourceVersion).authoritative ? sourceVersion : null;
+  const identity = modelIdentity(deal,sourceVersion);
+  const latestVersion = identity.usable ? sourceVersion : null;
   const sourceWarnings=workbookWarnings(returns?.warnings??sourceVersion?.returns_summary?.warnings);
   const dealExitCap = deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null;
   const reviewed=compReview(deal,evidence.comps,subjectOf(deal));
@@ -81,8 +82,21 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
 
       <section className="panel">
         <h2>Returns summary</h2>
+        {returns && sourceVersion && !identity.authoritative && (
+          <p className="warning">
+            Check this is the right model for this property: {identity.issues.join(" ")} Accept it, or mark it a wrong
+            upload, under &ldquo;Investment evidence and decision&rdquo; above. IC deck export waits on that.
+          </p>
+        )}
         {!returns ? (
-          <p className="muted">No underwriting uploaded yet.</p>
+          sourceVersion ? (
+            <p className="warning">
+              v{sourceVersion.version_number} was marked a wrong upload for this property, so its returns are not shown.
+              Upload the right model, or change the decision under &ldquo;Investment evidence and decision&rdquo; above.
+            </p>
+          ) : (
+            <p className="muted">No underwriting uploaded yet.</p>
+          )
         ) : (
           <div className="metrics-grid">
             <Metric label="Purchase price" value={fmtUsd(returns.purchasePrice)} />
