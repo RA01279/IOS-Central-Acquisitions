@@ -2,7 +2,7 @@ import {decisionReport} from "@/lib/decision-report";
 const usd=(v:number|null)=>v==null?"Unknown":`$${v.toLocaleString()}`;
 export default function DecisionContext({deal}:{deal:any}) {
  const d=decisionReport(deal);
- return <section className="panel"><h2>Decision and source reconciliation</h2>
+ return <details className="panel fin-collapse"><summary><h2>Decision and source reconciliation</h2><span className="fin-collapse-meta">{d.status??"Decision status unknown"} · Owner: {d.owner??"Unassigned"}</span></summary>
  <p><a href={`/deals/${deal.id}/diligence`}>Open original documents and workbook attachments</a></p>
  <p>{d.status??"Decision status unknown"} · Owner: {d.owner??"Unassigned"} · Vehicle / partner: {d.vehicle??"Unknown"}</p>
  <p>Pursuit rationale: {d.rationale??"Unknown"}</p>
@@ -12,5 +12,5 @@ export default function DecisionContext({deal}:{deal:any}) {
  <p>{d.bridge}</p><p>{d.assumptions}</p><p>Comp review: {d.compReview}</p><p>Downside drivers: {d.downside??"Not recorded"}</p>
  <p className="warning">{d.conflicts||"No detected conflicts; this is not investment approval."}</p>
  <p>Requested action: {d.nextAction??"Unknown"} · Follow-up: {d.followUpOn??"Unassigned"} · Offer deadline: {d.deadline??"Unknown"} · {d.deadlineSource??"Deadline source unknown"}</p>
- </section>;
+ </details>;
 }

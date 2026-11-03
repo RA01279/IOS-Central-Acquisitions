@@ -1,6 +1,11 @@
-// Financials tab: price, basis, yield and returns as KPI cards first, then the
-// working panels -- offers, LOI, in-place rent, the underwriting model and its
-// versions, MLA, and the comps that justify the assumptions.
+// Financials tab: price, basis, yield and returns as KPI cards first, then
+// groups read top to bottom --
+//   Negotiation: offers and the LOI;
+//   Underwriting model: the uploaded model, its versions and sensitivities;
+//   Market assumptions: the deal's own inputs (in-place rent, exit cap), what
+//   the reviewed comps support, the comps themselves, and the MLA they feed;
+//   Decision and evidence: the investment-review and reconciliation forms,
+//   collapsed, at the bottom.
 
 import { getDealContacts } from "@/lib/crm";
 import { dealKpis, getDeal, getEvidence, getSiteView, latestReturns, subjectOf } from "@/lib/deal-workspace";
@@ -12,7 +17,8 @@ import ExcelUploadForm from "@/components/ExcelUploadForm";
 import MlaProvideForm from "@/components/MlaProvideForm";
 import DealCompsPanel from "@/components/DealCompsPanel";
 import InPlaceRentForm from "@/components/InPlaceRentForm";
-import { KpiCard } from "@/components/ui";
+import ExitCapForm from "@/components/ExitCapForm";
+import { Badge, KpiCard, type BadgeTone } from "@/components/ui";
 import CompUnderwritingPanel from "@/components/CompUnderwritingPanel";
 import SensitivityPanel from "@/components/SensitivityPanel";
 import type { CompRecord } from "@/lib/comps/match";
@@ -25,90 +31,115 @@ import { workbookWarnings } from "@/lib/workbook-messages";
 
 export const metadata = { title: "Financials" };
 
+const TZ = "America/Chicago";
+
 function fmtUsd(v: number | null | undefined) {
-  return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
+  return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString("en-US")}`;
 }
 function fmtX(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `${v.toFixed(2)}x`;
 }
+// Rendered on the server (UTC on Vercel), so pin the zone the team works in
+// rather than showing a time five or six hours off.
+function fmtStamp(iso: string) {
+  return new Date(iso).toLocaleString("en-US", { timeZone: TZ, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function who(email: string | null | undefined) {
+  return email ? email.split("@")[0] : "—";
+}
+// MLA percentages arrive both ways: 0.7 and 70, 0.0775 and 7.75.
+function asPct(v: unknown, digits = 1) {
+  if (v == null || v === "") return "—";
+  const n = Number(v);
+  return `${(n <= 1 ? n * 100 : n).toFixed(digits).replace(/\.0+$/, "")}%`;
+}
+
+const MLA_TONES: Record<string, BadgeTone> = { requested: "warning", provided: "success", assumed: "neutral" };
+const MLA_LABELS: Record<string, string> = { requested: "Requested", provided: "Provided", assumed: "Assumed" };
+const MLA_FIELDS = ["market_base_rent", "term_years", "term_months", "renewal_probability", "months_vacant", "free_rent_months", "ti_new", "ti_renew", "lc_new_pct", "lc_renew_pct", "recovery_type"];
 
 export default async function FinancialsPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const [deal, site, evidence, dealContacts] = await Promise.all([getDeal(id), getSiteView(id), getEvidence(), getDealContacts(id)]);
   const k = dealKpis(deal, site.snapshot);
   const returns = latestReturns(deal);
+  const ios = deal.asset_class !== "industrial";
   const basisFlag = site.flags.find((f) => f.key === "basis");
   const rentFlag = site.flags.find((f) => f.key === "rent");
   const versionsDesc = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
-  const sourceVersion=selectedVersion(deal);
-  const identity = modelIdentity(deal,sourceVersion);
-  const latestVersion = identity.usable ? sourceVersion : null;
-  const sourceWarnings=workbookWarnings(returns?.warnings??sourceVersion?.returns_summary?.warnings);
+  // The selected workbook, and the same version unless someone has marked it a
+  // wrong upload -- returns and the model's own tables come from the latter. An
+  // unconfirmed identity (often stale template data) is a warning, not a block.
+  const sourceVersion = selectedVersion(deal);
+  const identity = sourceVersion ? modelIdentity(deal, sourceVersion) : null;
+  const latestVersion = identity?.usable ? sourceVersion : null;
+  const sourceWarnings = workbookWarnings(returns?.warnings ?? sourceVersion?.returns_summary?.warnings);
   const dealExitCap = deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null;
-  const reviewed=compReview(deal,evidence.comps,subjectOf(deal));
+  const reviewed = compReview(deal, evidence.comps, subjectOf(deal));
   const uw = compUnderwriting(reviewed.comps as UwComp[], reviewed.subject, { exitCap: dealExitCap ?? returns?.exitCapPct ?? null });
+  // Latest MLA reply that actually carries numbers (a status flip can leave an empty row).
+  const mla: any = [...(deal.mla_data ?? [])]
+    .filter((m: any) => MLA_FIELDS.some((f) => m[f] != null && m[f] !== ""))
+    .sort((a: any, b: any) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))[0];
+  // The basis flag note leads with the basis itself, which the card already shows.
+  const basisSub = basisFlag?.note?.replace(/^.*?\svs\s/, "vs ");
 
   return (
-    <div className="ws-body">
+    <div className="ws-body fin">
       <div className="kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
         <KpiCard label="Price" value={k.priceLabel} sub={k.priceBasis} />
-        <KpiCard label="Basis" value={k.basisLabel} unit={k.basis != null ? k.basisUnit : undefined} sub={basisFlag?.note} subTone={basisFlag?.state} />
+        <KpiCard label="Basis" value={k.basisLabel} unit={k.basis != null ? k.basisUnit : undefined} sub={basisSub} subTone={basisFlag?.state} title={basisFlag?.note} />
         <KpiCard label="Workbook Yr-1 yield" value={k.yieldLabel} sub={incomePosition(deal).current ? "In-place status; workbook assumptions" : "Modeled income; current in-place yield unverified"} />
         <KpiCard label="Stabilized RoC" value={fmtPct(returns?.stabilizedReturnOnCostPct)} />
         <KpiCard label="IRR" value={fmtPct(returns?.irrPct)} sub={returns?.holdPeriodYears ? `${returns.holdPeriodYears}-yr hold` : undefined} />
         <KpiCard label="Equity multiple" value={k.emLabel} />
       </div>
 
-      <InvestmentReview key={deal.investment_review?.updatedAt??"initial"} deal={deal}/>
-      <DecisionContext deal={deal}/>
+      <h2 className="fin-group">Negotiation</h2>
       <OffersPanel dealId={deal.id} offers={deal.offers ?? []} lotSf={deal.properties?.lot_sf ?? null} />
-
       {["uw", "offered", "moving_to_psa", "due_diligence"].includes(deal.stage) && (
         <LoiPanel dealId={deal.id} defaults={loiDefaults(deal, dealContacts as any[])} />
       )}
 
+      <h2 className="fin-group">Underwriting model</h2>
       <section className="panel">
-        <h2>In-place rent</h2>
-        <p className="hint">
-          Drives the Rent Upside flag: {rentFlag?.note ?? "not assessed yet"}.
-        </p>
-        <InPlaceRentForm
-          dealId={deal.id}
-          rent={deal.in_place_rent ?? null}
-          basis={deal.in_place_rent_basis ?? null}
-          ios={deal.asset_class !== "industrial"}
-        />
-      </section>
-
-      <section className="panel">
-        <h2>Returns summary</h2>
-        {returns && sourceVersion && !identity.authoritative && (
+        <div className="fin-head">
+          <h2>Model</h2>
+          {sourceVersion && (
+            <>
+              {!latestVersion ? <Badge tone="danger">Marked wrong upload</Badge> : !identity?.authoritative && <Badge tone="warning">Identity unconfirmed</Badge>}
+              <span className="fin-head-meta">
+                v{sourceVersion.version_number} · {who(sourceVersion.created_by)} · {fmtStamp(sourceVersion.created_at)}
+              </span>
+            </>
+          )}
+        </div>
+        {returns && identity && !identity.authoritative && (
           <p className="warning">
-            Check this is the right model for this property: {identity.issues.join(" ")} Accept it, or mark it a wrong
-            upload, under &ldquo;Investment evidence and decision&rdquo; above. This is often stale template data and does not block anything.
+            Check this is the right model for this property: {identity.issues.join(" ")} Accept it, or mark it a wrong upload, under{" "}
+            <a href="#investment-review">Investment evidence and decision</a> at the bottom of this tab. This is often stale template data and does not block anything.
           </p>
         )}
-        {!returns ? (
-          sourceVersion ? (
-            <p className="warning">
-              v{sourceVersion.version_number} was marked a wrong upload for this property, so its returns are not shown.
-              Upload the right model, or change the decision under &ldquo;Investment evidence and decision&rdquo; above.
-            </p>
-          ) : (
-            <p className="muted">No underwriting uploaded yet.</p>
-          )
-        ) : (
-          <div className="metrics-grid">
-            <Metric label="Purchase price" value={fmtUsd(returns.purchasePrice)} />
-            <Metric label="All-in cost" value={fmtUsd(returns.allInCost)} />
-            <Metric label="Going-in yield" value={fmtPct(returns.goingInYieldPct)} />
-            <Metric label="Stabilized return on cost" value={fmtPct(returns.stabilizedReturnOnCostPct)} />
-            <Metric label="Exit cap" value={fmtPct(returns.exitCapPct)} />
-            <Metric label="Hold period" value={`${returns.holdPeriodYears ?? "—"} yrs`} />
-            <Metric label="IRR" value={fmtPct(returns.irrPct)} />
-            <Metric label="Equity multiple" value={fmtX(returns.equityMultiple)} />
-            <Metric label="Stabilized cash-on-cash" value={fmtPct(returns.stabilizedCashOnCashPct)} />
+        {returns ? (
+          // IRR, multiple and return on cost are already in the cards above.
+          <div className="fin-stats">
+            <Stat label="Purchase price" value={fmtUsd(returns.purchasePrice)} />
+            <Stat label="All-in cost" value={fmtUsd(returns.allInCost)} />
+            <Stat label="Going-in yield" value={fmtPct(returns.goingInYieldPct)} />
+            <Stat label="Exit cap" value={fmtPct(returns.exitCapPct)} />
+            <Stat label="Hold" value={returns.holdPeriodYears != null ? `${returns.holdPeriodYears} yrs` : "—"} />
+            <Stat label="Stab. cash-on-cash" value={fmtPct(returns.stabilizedCashOnCashPct)} />
           </div>
+        ) : sourceVersion ? (
+          // An upload exists but was marked a wrong upload. Never read as "nothing uploaded".
+          <div className="warning">
+            <p style={{ margin: 0 }}>
+              <strong>v{sourceVersion.version_number} was marked a wrong upload for this property, so its returns are not shown.</strong>{" "}
+              Upload the right model, or change the decision under <a href="#investment-review">Investment evidence and decision</a> at the bottom of this tab.
+            </p>
+          </div>
+        ) : (
+          <p className="muted">No underwriting uploaded yet. Upload the model workbook to fill in returns and sensitivities.</p>
         )}
         {sourceWarnings.length > 0 && (
           <div className="warning">
@@ -120,27 +151,53 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
             </ul>
           </div>
         )}
-        <ExcelUploadForm dealId={deal.id} />
-        <p className="hint">Uploaded returns are the workbook's saved calculation results. Hopper does not recalculate Excel formulas. Confirm the source property, assumptions and calculation date before relying on them.</p>
-        {latestVersion?.model_detail?.warnings?.length > 0 && <div className="warning"><p>Source workbook discrepancies:</p><ul>{latestVersion.model_detail.warnings.map((w:string,i:number)=><li key={i}>{w}</li>)}</ul></div>}
+        {latestVersion?.model_detail?.warnings?.length > 0 && (
+          <div className="warning">
+            <p>Source workbook discrepancies:</p>
+            <ul>{latestVersion.model_detail.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}</ul>
+          </div>
+        )}
+        <ExcelUploadForm dealId={deal.id} hasModel={!!sourceVersion} />
+        <p className="hint fin-note">
+          Uploaded returns are the workbook&apos;s saved calculation results. Hopper does not recalculate Excel formulas. Confirm the source
+          property, assumptions and calculation date before relying on them.
+        </p>
+        {versionsDesc.length > 0 && (
+          <details className="fin-details">
+            <summary>Version history ({versionsDesc.length})</summary>
+            <div className="table-scroll">
+              <table className="summary-table fin-table">
+                <thead>
+                  <tr><th>Version</th><th>Price</th><th>IRR</th><th>Multiple</th><th>Exit cap</th><th className="fin-text">Uploaded by</th><th className="fin-text">When</th></tr>
+                </thead>
+                <tbody>
+                  {versionsDesc.map((v: any) => (
+                    <tr key={v.id}>
+                      <td>
+                        v{v.version_number}
+                        {v.id === sourceVersion?.id && <span className="fin-tag">{latestVersion ? "current" : "in review"}</span>}
+                      </td>
+                      <td>{fmtUsd(v.returns_summary?.purchasePrice)}</td>
+                      <td>{fmtPct(v.returns_summary?.irrPct)}</td>
+                      <td>{fmtX(v.returns_summary?.equityMultiple)}</td>
+                      <td>{fmtPct(v.returns_summary?.exitCapPct)}</td>
+                      <td className="fin-text">{who(v.created_by)}</td>
+                      <td className="fin-text">{fmtStamp(v.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
       </section>
-
-      <p className="hint">{reviewed.label}. Building-rent recommendations require direct building quotes; acreage conversions are diagnostic equivalents only.</p>
-      <CompUnderwritingPanel
-        uw={uw}
-        ios={deal.asset_class !== "industrial"}
-        modelHoldYears={returns?.holdPeriodYears ?? null}
-        dealId={deal.id}
-        exitCap={deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null}
-        modelExitCap={returns?.exitCapPct ?? null}
-      />
 
       <SensitivityPanel
         model={latestVersion?.model_detail ?? null}
         basePrice={returns?.purchasePrice ?? null}
         modelExitCap={latestVersion?.model_detail?.exitCap ?? returns?.exitCapPct ?? null}
         uw={uw}
-        ios={deal.asset_class !== "industrial"}
+        ios={ios}
         exitCap={dealExitCap ?? returns?.exitCapPct ?? null}
         holdYears={returns?.holdPeriodYears ?? null}
         cost={returns?.allInCost ?? returns?.purchasePrice ?? k.price ?? null}
@@ -148,37 +205,26 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         baseMultiple={returns?.equityMultiple ?? null}
       />
 
+      <h2 className="fin-group">Market assumptions</h2>
       <section className="panel">
-        <h2>Version history</h2>
-        {versionsDesc.length === 0 ? (
-          <p className="muted">No versions yet.</p>
-        ) : (
-          <ul className="version-list">
-            {versionsDesc.map((v: any) => (
-              <li key={v.id}>
-                <strong>v{v.version_number}</strong> — IRR {fmtPct(v.returns_summary?.irrPct)}, {fmtX(v.returns_summary?.equityMultiple)}
-                <span className="muted">
-                  {" "}
-                  · {v.created_by} · {new Date(v.created_at).toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <h2>Deal inputs</h2>
+        <div className="fin-inputs">
+          <div>
+            <InPlaceRentForm dealId={deal.id} rent={deal.in_place_rent ?? null} basis={deal.in_place_rent_basis ?? null} ios={ios} />
+            <p className="hint fin-note">Drives the Rent Upside flag: {rentFlag?.note ?? "not assessed yet"}.</p>
+          </div>
+          <div>
+            <ExitCapForm dealId={deal.id} exitCap={dealExitCap} modelExitCap={returns?.exitCapPct ?? null} />
+          </div>
+        </div>
       </section>
 
-      <section className="panel">
-        <h2>MLA</h2>
-        <p className="muted">Status: {deal.mla_status}</p>
-        {deal.mla_status === "requested" && <MlaProvideForm dealId={deal.id} />}
-        {deal.mla_data?.length > 0 && (
-          <div className="metrics-grid">
-            {deal.mla_data.map((m: any) => (
-              <Metric key={m.id} label="Market base rent" value={String(m.market_base_rent ?? m.asking_rent ?? "—")} />
-            ))}
-          </div>
-        )}
-      </section>
+      <CompUnderwritingPanel
+        uw={uw}
+        ios={ios}
+        modelHoldYears={returns?.holdPeriodYears ?? null}
+        evidenceNote={`${reviewed.label}. Building-rent recommendations require direct building quotes; acreage conversions are diagnostic equivalents only.`}
+      />
 
       {/* Market evidence the MLA assumptions are meant to follow from. */}
       <DealCompsPanel
@@ -187,11 +233,53 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         subject={subjectOf(deal)}
         subjectAddress={deal.properties?.address ?? "This deal"}
       />
+
+      <section className="panel">
+        <div className="fin-head">
+          <h2>MLA</h2>
+          <Badge tone={MLA_TONES[deal.mla_status] ?? "neutral"}>{MLA_LABELS[deal.mla_status] ?? deal.mla_status ?? "—"}</Badge>
+          {mla?.provided_by && <span className="fin-head-meta">{who(mla.provided_by)} · {fmtStamp(mla.provided_at ?? mla.created_at)}</span>}
+        </div>
+        {mla && (
+          <div className="fin-stats">
+            <Stat
+              label="Market base rent"
+              value={mla.market_base_rent == null ? "—" : Number(mla.market_base_rent) >= 100 ? fmtUsd(Number(mla.market_base_rent)) : `$${Number(mla.market_base_rent).toFixed(2)}/SF/mo`}
+            />
+            <Stat
+              label="Term"
+              value={
+                mla.term_months >= 12
+                  ? `${mla.term_months} mo`
+                  : mla.term_years != null || mla.term_months != null
+                    ? `${mla.term_years ?? 0} yrs${mla.term_months ? ` ${mla.term_months} mo` : ""}`
+                    : "—"
+              }
+            />
+            <Stat label="Renewal probability" value={asPct(mla.renewal_probability, 0)} />
+            <Stat label="Months vacant" value={mla.months_vacant != null ? `${mla.months_vacant} mo` : "—"} />
+            <Stat label="Free rent" value={mla.free_rent_months != null ? `${mla.free_rent_months} mo` : "—"} />
+            <Stat label="TI new / renew" value={`${fmtUsd(mla.ti_new)} / ${fmtUsd(mla.ti_renew)}`} />
+            <Stat label="LC new / renew" value={`${asPct(mla.lc_new_pct, 2)} / ${asPct(mla.lc_renew_pct, 2)}`} />
+            <Stat label="Recovery" value={mla.recovery_type ?? "—"} />
+          </div>
+        )}
+        {deal.mla_status === "requested" ? (
+          <MlaProvideForm dealId={deal.id} />
+        ) : !mla ? (
+          <p className="muted">{deal.mla_status === "assumed" ? "No MLA requested; the model's own assumptions stand." : "No MLA figures on file."}</p>
+        ) : null}
+      </section>
+
+      {/* Long review forms, collapsed and last: opened when reconciling a source, not on every visit. */}
+      <h2 className="fin-group">Decision and evidence</h2>
+      <InvestmentReview key={deal.investment_review?.updatedAt ?? "initial"} deal={deal} />
+      <DecisionContext deal={deal} />
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <span className="label">{label}</span>

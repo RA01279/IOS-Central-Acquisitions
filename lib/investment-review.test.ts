@@ -59,6 +59,11 @@ describe("workbook identity tolerates formatting differences",()=>{
   expect(check({address:"3003 Kilgore Pkwy"},{address:"3003 Killgore Parkway"}).authoritative).toBe(false);
   expect(check({address:"2000 Wilson Rd",city:"Houston"},{address:"2000 Wilson Rd",city:"Humble, TX"}).authoritative).toBe(false);
   expect(check({address:"201 Main St"},{address:"210 Main St"}).authoritative).toBe(false);
+  expect(check({address:"201 Main St"},{address:"201 Main Ave"}).authoritative).toBe(false);
+  expect(check({address:"411 W Fork Dr"},{address:"411 W Fork Ct"}).authoritative).toBe(false);
+ });
+ it("Tanner Rd: a trailing state on the workbook city no longer withholds returns",()=>{
+  expect(check({address:"10526 Tanner Rd",city:"Houston"},{address:"10526 Tanner Rd",city:"Houston, TX "}).authoritative).toBe(true);
  });
 });
 describe("IC deck export is blocked only by an explicit wrong upload",()=>{

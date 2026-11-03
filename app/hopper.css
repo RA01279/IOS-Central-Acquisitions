@@ -1981,3 +1981,327 @@ main.bleed {
   opacity: 0.55;
   cursor: default;
 }
+
+/* ---------- Deal Financials tab ---------- */
+
+/* Group label above a run of panels: Negotiation / Underwriting model / Market assumptions. */
+.fin .fin-group {
+  font: 600 11px/1 var(--font-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--n600);
+  margin: 12px 0 -4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fin .fin-group::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--n200);
+}
+.fin .panel {
+  margin-bottom: 0;
+}
+.fin .panel > h2,
+.fin .fin-head h2 {
+  margin: 0 0 14px;
+}
+/* Panel header with a title, an optional status and a right-hand action. */
+.fin .fin-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.fin .fin-head h2 {
+  margin: 0;
+}
+.fin .fin-head-meta {
+  font-size: 12px;
+  color: var(--n500);
+}
+.fin .fin-head-action {
+  margin-left: auto;
+}
+.fin h3.fin-sub {
+  font: 600 14px/1.2 var(--font-body);
+  color: var(--navy);
+  margin: 20px 0 8px;
+}
+.fin .fin-lede {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.fin .fin-note {
+  margin: 8px 0 0;
+}
+
+/* Label-over-value strip. Body font with tabular figures rather than mono, so
+   text values ("Not stated", "NNN") sit with the numbers. */
+.fin .fin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 14px 20px;
+  margin: 4px 0 14px;
+}
+.fin .fin-stats-tight {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--n100);
+}
+.fin .fin-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.fin .fin-stats .label {
+  font: 600 10px/1.2 var(--font-body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--n500);
+}
+.fin .fin-stats .value {
+  font: 600 16px/1.25 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--navy);
+}
+.fin .fin-stats .sub {
+  font-size: 12px;
+  color: var(--n500);
+}
+.fin .fin-stats .fin-sub-num {
+  font-weight: 400;
+}
+
+/* Tables: one line per figure, header text muted, a smaller second line for
+   ranges and gaps instead of wrapping. */
+.fin .fin-table th,
+.fin .fin-table td {
+  white-space: nowrap;
+  vertical-align: top;
+  padding: 8px 12px;
+}
+.fin .fin-table thead th {
+  vertical-align: bottom;
+}
+.fin .fin-table td.fin-text,
+.fin .fin-table th.fin-text {
+  text-align: left;
+}
+.fin .fin-table .fin-basis {
+  white-space: normal;
+  text-align: left;
+  font-size: 12px;
+  color: var(--n500);
+  min-width: 280px;
+  line-height: 1.4;
+}
+.fin .fin-sub-num {
+  display: block;
+  font-size: 12px;
+  color: var(--n500);
+  margin-top: 2px;
+}
+.fin .fin-pos {
+  color: var(--strong);
+}
+.fin .fin-neg {
+  color: var(--weak);
+}
+.fin .fin-table th.fin-colgroup {
+  text-align: center;
+  border-bottom: 1px solid var(--n200);
+  color: var(--n600);
+}
+.fin .fin-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--blue-50);
+  color: var(--brand);
+  font: 600 10px/1.5 var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.fin .fin-base-row td {
+  background: var(--blue-50);
+  font-weight: 600;
+}
+
+/* Offers: actions sit right; a notes / response row tucks under its offer. */
+.fin .fin-offers td.fin-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.fin .fin-offers td.fin-actions .link-caps {
+  margin-right: 6px;
+}
+.fin .fin-offers tr.fin-has-sub td {
+  border-bottom: none;
+}
+.fin .fin-offers tr.fin-subrow td {
+  text-align: left;
+  white-space: normal;
+  padding-top: 0;
+  font-size: 13px;
+}
+.fin .fin-inline-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+  padding: 12px;
+  background: var(--canvas);
+  border: 1px solid var(--n200);
+  border-radius: 6px;
+}
+.fin .fin-inline-form label {
+  margin: 0;
+  font-size: 12px;
+}
+.fin .fin-inline-form input:not([type="date"]) {
+  width: 140px;
+}
+
+/* Sensitivity grids: the two model tables side by side when there's room. */
+.fin .fin-grid-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  gap: 8px 24px;
+}
+.fin .fin-grid-title {
+  font: 600 13px/1.2 var(--font-body);
+  color: var(--navy);
+  margin: 6px 0 6px;
+}
+.fin .fin-grid-title-gap {
+  margin-top: 22px;
+}
+.fin .fin-grid th,
+.fin .fin-grid td {
+  padding: 6px 8px;
+}
+.fin .fin-grid .fin-hl {
+  background: var(--blue-50);
+  color: var(--brand);
+}
+.fin .fin-grid .fin-hl-soft {
+  background: #f4f8fc;
+}
+.fin .fin-grid .fin-base {
+  background: var(--blue-50);
+  font-weight: 700;
+  color: var(--navy);
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+/* Model upload and history. */
+.fin .excel-upload-form {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--n100);
+}
+.fin .excel-upload-form input[type="file"] {
+  font-size: 13px;
+  max-width: 320px;
+}
+.fin .excel-upload-form .error,
+.fin .excel-upload-form .warning {
+  flex-basis: 100%;
+}
+.fin .fin-details {
+  margin-top: 14px;
+}
+.fin .fin-details > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  padding: 4px 0;
+  list-style-position: inside;
+}
+.fin .fin-details[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* Deal inputs: in-place rent and exit cap, side by side. */
+.fin .fin-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px 32px;
+}
+
+/* MLA entry: three across. */
+.fin .fin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+@media (max-width: 820px) {
+  .fin .fin-grid-pair {
+    grid-template-columns: 1fr;
+  }
+  .fin .fin-inputs {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  /* The comp evidence low / mid / high tiles stack rather than push the page sideways. */
+  .fin .stat-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+.fin .fin-success {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--strong);
+}
+
+/* Collapsible panel (investment review, reconciliation): title and a one-line status when closed. */
+.fin details.fin-collapse > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  cursor: pointer;
+  list-style: none;
+}
+.fin details.fin-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+.fin details.fin-collapse > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--n500);
+  border-bottom: 2px solid var(--n500);
+  transform: rotate(-45deg);
+  margin-right: 2px;
+  align-self: center;
+  transition: transform 0.15s;
+}
+.fin details.fin-collapse[open] > summary::before {
+  transform: rotate(45deg);
+}
+.fin details.fin-collapse > summary h2 {
+  margin: 0;
+}
+.fin .fin-collapse-meta {
+  font-size: 12px;
+  color: var(--n500);
+}
+.fin details.fin-collapse[open] > summary {
+  margin-bottom: 14px;
+}

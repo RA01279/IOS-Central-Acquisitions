@@ -56,8 +56,8 @@ export default function MlaProvideForm({ dealId }: { dealId: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="mla-form">
-      <p className="hint">Market lead replied — enter the assumptions below.</p>
-      <div className="grid-2">
+      <p className="hint">When the market lead replies, key their assumptions in here. Leave anything they didn&apos;t give blank.</p>
+      <div className="fin-form-grid">
         <label>
           Market base rent ($/SF/mo)
           <input name="marketBaseRent" type="number" step="0.01" />
@@ -75,7 +75,7 @@ export default function MlaProvideForm({ dealId }: { dealId: string }) {
           <input name="termMonths" type="number" />
         </label>
         <label>
-          Renewal probability (0–1)
+          Renewal probability (0–1, e.g. 0.7)
           <input name="renewalProbability" type="number" step="0.01" min="0" max="1" />
         </label>
         <label>
@@ -96,17 +96,17 @@ export default function MlaProvideForm({ dealId }: { dealId: string }) {
         </label>
         <label>
           LC — new (%)
-          <input name="lcNewPct" type="number" step="0.001" />
+          <input name="lcNewPct" type="number" step="any" placeholder="e.g. 6" />
         </label>
         <label>
           LC — renew (%)
-          <input name="lcRenewPct" type="number" step="0.001" />
+          <input name="lcRenewPct" type="number" step="any" placeholder="e.g. 3" />
         </label>
       </div>
 
       {error && <p className="error">{error}</p>}
 
-      <button type="submit" disabled={submitting}>
+      <button type="submit" disabled={submitting} style={{ marginTop: 4 }}>
         {submitting ? "Saving…" : "Save MLA"}
       </button>
     </form>

@@ -6,9 +6,10 @@
 // Replaces the tracker's Last Offer Date / Last Offer Price / Times Offered
 // columns with the full history.
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OFFER_STATUSES, OFFER_STATUS_LABELS, bidAskGap } from "@/lib/offer-status";
+import { Badge, type BadgeTone } from "@/components/ui";
 
 type Offer = {
   id: string;
@@ -16,15 +17,38 @@ type Offer = {
   price: number | null;
   notes: string | null;
   created_by: string;
+  created_at?: string | null;
   status?: string | null;
   counter_price?: number | null;
   responded_on?: string | null;
 };
 
-const STATUS_TONE: Record<string, string> = { accepted: "#1E7A46", countered: "#B26A00", rejected: "#B3261E", withdrawn: "#6B7280", expired: "#6B7280", sent: "#2E6DA4" };
+const STATUS_TONE: Record<string, BadgeTone> = {
+  sent: "brand",
+  countered: "warning",
+  accepted: "success",
+  rejected: "danger",
+  withdrawn: "neutral",
+  expired: "neutral",
+};
 
-function fmtUsd(v: number | null) {
-  return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
+function fmtUsd(v: number | null | undefined) {
+  return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString("en-US")}`;
+}
+/** "Aug 25, 2026" from YYYY-MM-DD, without timezone drift. */
+function fmtDate(d: string | null | undefined) {
+  if (!d) return "—";
+  const [y, m, day] = d.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+/** Today in the browser's zone -- toISOString() is UTC and reads as tomorrow every evening. */
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function gapLabel(price: number | null, counter: number | null | undefined) {
+  const g = bidAskGap(price, counter);
+  return g ? `${g.dollars >= 0 ? "+" : "−"}${fmtUsd(Math.abs(g.dollars))} (${g.pct >= 0 ? "+" : "−"}${Math.abs(g.pct * 100).toFixed(1)}%)` : null;
 }
 
 export default function OffersPanel({
@@ -42,7 +66,10 @@ export default function OffersPanel({
   const [error, setError] = useState<string | null>(null);
   const [responding, setResponding] = useState<string | null>(null);
 
-  const sorted = [...offers].sort((a, b) => (b.offered_at ?? "").localeCompare(a.offered_at ?? ""));
+  // Newest first; two offers on one day fall back to when they were logged.
+  const sorted = [...offers].sort(
+    (a, b) => (b.offered_at ?? "").localeCompare(a.offered_at ?? "") || (b.created_at ?? "").localeCompare(a.created_at ?? "")
+  );
 
   function landPsf(price: number | null) {
     if (!price || !lotSf) return null;
@@ -100,125 +127,182 @@ export default function OffersPanel({
     }
   }
 
-  // Where the negotiation stands: rounds, and the gap on the latest counter.
-  const latestCounter = sorted.find((o) => o.counter_price);
-  const gap = latestCounter ? bidAskGap(latestCounter.price, latestCounter.counter_price) : null;
-
-  async function handleRemove(offerId: string) {
+  async function handleRemove(o: Offer) {
+    if (!window.confirm(`Remove the ${fmtUsd(o.price)} offer from ${fmtDate(o.offered_at)}? This can't be undone.`)) return;
     setBusy(true);
+    setError(null);
     try {
       const res = await fetch(`/api/deals/${dealId}/offers`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offerId }),
+        body: JSON.stringify({ offerId: o.id }),
       });
-      if (res.ok) router.refresh();
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't remove the offer");
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setBusy(false);
     }
   }
 
+  // Where the negotiation stands: rounds, and the gap on the latest counter.
+  const latestCounter = sorted.find((o) => o.counter_price);
+  const gap = latestCounter ? bidAskGap(latestCounter.price, latestCounter.counter_price) : null;
+  const latest = sorted[0];
+
   return (
     <section className="panel">
-      <h2>
-        Offers
-        {sorted.length > 0 && <span className="count" style={{ marginLeft: 8 }}>{sorted.length}</span>}
-      </h2>
+      <div className="fin-head">
+        <h2>
+          Offers
+          {sorted.length > 0 && <span className="count" style={{ marginLeft: 8 }}>{sorted.length}</span>}
+        </h2>
+        {!adding && (
+          <button type="button" className="fin-head-action" onClick={() => setAdding(true)}>
+            + Log offer
+          </button>
+        )}
+      </div>
 
-      {sorted.length > 0 && (
-        <p className="hint" style={{ marginTop: 0 }}>
-          {sorted.length} round{sorted.length === 1 ? "" : "s"} · latest {OFFER_STATUS_LABELS[sorted[0].status ?? "sent"]?.toLowerCase()}
-          {gap && latestCounter
-            ? ` · seller at ${fmtUsd(latestCounter.counter_price ?? null)} vs our ${fmtUsd(latestCounter.price)}: ${fmtUsd(gap.dollars)} apart (${(gap.pct * 100).toFixed(1)}%)`
-            : ""}
-        </p>
+      {latest && (
+        <div className="fin-stats fin-stats-tight">
+          <Stat label="Latest offer" value={fmtUsd(latest.price)} sub={fmtDate(latest.offered_at)} />
+          <Stat label="Status" value={OFFER_STATUS_LABELS[latest.status ?? "sent"] ?? "Sent"} />
+          {latestCounter && <Stat label="Seller at" value={fmtUsd(latestCounter.counter_price)} />}
+          {gap && <Stat label="Gap" value={fmtUsd(gap.dollars)} sub={`${(gap.pct * 100).toFixed(1)}% over our offer`} />}
+        </div>
       )}
+
       {sorted.length === 0 ? (
-        <p className="muted">No offers yet. Logging one moves the deal to Offered.</p>
+        !adding && <p className="muted">No offers yet. Logging one moves the deal to Offered.</p>
       ) : (
-        <ul className="doc-list">
-          {sorted.map((o, i) => {
-            const psf = landPsf(o.price);
-            return (
-              <li key={o.id}>
-                <strong>{fmtUsd(o.price)}</strong>
-                {psf !== null && <span className="muted"> · ${psf.toFixed(2)}/SF land</span>}
-                {o.offered_at && <span className="muted"> · {o.offered_at}</span>}
-                <span className="muted"> · {o.created_by}</span>
-                {i === 0 && <span className="doc-type" style={{ marginLeft: 6 }}>LATEST</span>}
-                <span className="doc-type" style={{ marginLeft: 6, color: STATUS_TONE[o.status ?? "sent"] }}>
-                  {(OFFER_STATUS_LABELS[o.status ?? "sent"] ?? o.status ?? "Sent").toUpperCase()}
-                </span>
-                {o.counter_price ? (
-                  <span className="muted">
-                    {" "}· counter {fmtUsd(o.counter_price)}
-                    {(() => { const g = bidAskGap(o.price, o.counter_price); return g ? ` (+${(g.pct * 100).toFixed(1)}%)` : ""; })()}
-                  </span>
-                ) : null}
-                {o.responded_on && <span className="muted"> · answered {o.responded_on}</span>}
-                {o.notes && <div className="muted">{o.notes}</div>}
-                {responding === o.id ? (
-                  <form onSubmit={(e) => handleRespond(e, o.id)} className="stage-actions" style={{ margin: "6px 0 0" }}>
-                    <select name="status" defaultValue={o.status ?? "sent"} aria-label="Seller response">
-                      {OFFER_STATUSES.map((st) => <option key={st} value={st}>{OFFER_STATUS_LABELS[st]}</option>)}
-                    </select>
-                    <input name="counterPrice" placeholder="Counter, e.g. 4.6M" defaultValue={o.counter_price ? String(Math.round(o.counter_price)) : ""} style={{ width: 140 }} />
-                    <input name="respondedOn" type="date" defaultValue={o.responded_on ?? new Date().toISOString().slice(0, 10)} />
-                    <button type="submit" disabled={busy}>Save</button>
-                    <button type="button" className="secondary" onClick={() => setResponding(null)}>Cancel</button>
-                  </form>
-                ) : (
-                  <button type="button" className="link-caps" style={{ marginLeft: 8 }} onClick={() => setResponding(o.id)} disabled={busy}>
-                    Seller response
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="link-remove"
-                  onClick={() => handleRemove(o.id)}
-                  disabled={busy}
-                  title="Remove offer"
-                >
-                  ×
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="table-scroll">
+          <table className="summary-table fin-table fin-offers">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Offer</th>
+                {lotSf ? <th>$/SF land</th> : null}
+                <th className="fin-text">Status</th>
+                <th>Counter</th>
+                <th>Responded</th>
+                <th className="fin-text">By</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((o) => {
+                const psf = landPsf(o.price);
+                const st = o.status ?? "sent";
+                const g = o.counter_price ? gapLabel(o.price, o.counter_price) : null;
+                return (
+                  <Fragment key={o.id}>
+                    <tr className={o.notes || responding === o.id ? "fin-has-sub" : undefined}>
+                      <td className="fin-text">{fmtDate(o.offered_at)}</td>
+                      <td><strong>{fmtUsd(o.price)}</strong></td>
+                      {lotSf ? <td>{psf !== null ? `$${psf.toFixed(2)}` : "—"}</td> : null}
+                      <td className="fin-text">
+                        <Badge tone={STATUS_TONE[st] ?? "neutral"}>{OFFER_STATUS_LABELS[st] ?? st}</Badge>
+                      </td>
+                      <td>
+                        {o.counter_price ? (
+                          <>
+                            {fmtUsd(o.counter_price)}
+                            {g && <span className="fin-sub-num">{g}</span>}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>{o.responded_on ? fmtDate(o.responded_on) : "—"}</td>
+                      <td className="fin-text muted">{o.created_by?.split("@")[0]}</td>
+                      <td className="fin-actions">
+                        {responding !== o.id && (
+                          <button type="button" className="link-caps" onClick={() => setResponding(o.id)} disabled={busy}>
+                            Seller response
+                          </button>
+                        )}
+                        <button type="button" className="link-remove" onClick={() => handleRemove(o)} disabled={busy} title="Remove offer" aria-label="Remove offer">
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                    {(o.notes || responding === o.id) && (
+                      <tr className="fin-subrow">
+                        <td colSpan={lotSf ? 8 : 7}>
+                          {o.notes && <div className="muted">{o.notes}</div>}
+                          {responding === o.id && (
+                            <form onSubmit={(e) => handleRespond(e, o.id)} className="fin-inline-form">
+                              <label>
+                                Seller response
+                                <select name="status" defaultValue={st === "sent" ? "countered" : st}>
+                                  {OFFER_STATUSES.map((s) => <option key={s} value={s}>{OFFER_STATUS_LABELS[s]}</option>)}
+                                </select>
+                              </label>
+                              <label>
+                                Counter
+                                <input name="counterPrice" placeholder="e.g. 4.6M" defaultValue={o.counter_price ? String(Math.round(o.counter_price)) : ""} autoFocus />
+                              </label>
+                              <label>
+                                Answered on
+                                <input name="respondedOn" type="date" defaultValue={o.responded_on ?? today()} />
+                              </label>
+                              <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+                              <button type="button" className="secondary" onClick={() => setResponding(null)}>Cancel</button>
+                            </form>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {!adding && error && <p className="error">{error}</p>}
-      {!adding ? (
-        <div className="stage-actions" style={{ marginTop: 12, marginBottom: 0 }}>
-          <button onClick={() => setAdding(true)}>+ Log offer</button>
-        </div>
-      ) : (
+      {adding && (
         <form onSubmit={handleAdd} className="inline-add-form">
           <div className="grid-2">
             <label>
-              Offer price ($)
-              <input name="price" type="number" step="1000" required autoFocus />
+              Offer price
+              {/* Text, not number: the API reads "4.75M" and "4,750,000" alike,
+                  and a number input with a step rejected odd-thousand prices. */}
+              <input name="price" inputMode="decimal" placeholder="e.g. 4.75M" required autoFocus />
             </label>
             <label>
               Offer date
-              <input name="offeredAt" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+              <input name="offeredAt" type="date" defaultValue={today()} />
             </label>
           </div>
           <label>
             Notes
-            <input name="notes" placeholder="e.g. countered at $4.6M, seller wants 30-day close" />
+            <input name="notes" placeholder="e.g. seller wants a 30-day close" />
           </label>
           {error && <p className="error">{error}</p>}
           <div className="stage-actions" style={{ marginBottom: 0 }}>
             <button type="submit" disabled={busy}>
               {busy ? "Logging…" : "Log offer"}
             </button>
-            <button type="button" className="secondary" onClick={() => setAdding(false)}>
+            <button type="button" className="secondary" onClick={() => { setAdding(false); setError(null); }}>
               Cancel
             </button>
           </div>
         </form>
       )}
     </section>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <span className="value">{value}</span>
+      {sub && <span className="sub">{sub}</span>}
+    </div>
   );
 }

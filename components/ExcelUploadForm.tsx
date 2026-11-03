@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { workbookWarnings } from "@/lib/workbook-messages";
 
-export default function ExcelUploadForm({ dealId }: { dealId: string }) {
+export default function ExcelUploadForm({ dealId, hasModel = false }: { dealId: string; hasModel?: boolean }) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -82,11 +82,11 @@ export default function ExcelUploadForm({ dealId }: { dealId: string }) {
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
       <button type="submit" disabled={!file || status !== null}>
-        {status ?? "Upload underwriting"}
+        {status ?? (hasModel ? "Upload new version" : "Upload underwriting")}
       </button>
 
       {error && <p className="error">{error}</p>}
-      {success && <p role="status">{success}</p>}
+      {success && <p role="status" className="fin-success">{success}</p>}
       {warnings.length > 0 && (
         <div className="warning">
           <p>Workbook issues to review:</p>

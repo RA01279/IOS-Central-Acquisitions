@@ -8,7 +8,8 @@ export default function InvestmentReview({deal}:{deal:any}) {
   const [deadlineDraft,setDeadlineDraft]=useState<any>(null);
   const v=latestVersion(deal), identity=modelIdentity(deal), income=incomePosition(deal),r=deal.investment_review??{};
   async function send(body:any){setBusy(true);setError("");try{const response=await fetch(`/api/deals/${deal.id}/investment-review`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,expectedReviewAt:r.updatedAt??null,expectedResolutionAt:v?.returns_summary?.identityResolution?.at??null})});const result=await response.json();if(!response.ok)throw new Error(result.error);router.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  return <section className="panel"><h2>Investment evidence and decision</h2>
+  // Collapsed by default: the full form is long and only needed when reviewing the source.
+  return <details id="investment-review" className="panel fin-collapse"><summary><h2>Investment evidence and decision</h2><span className="fin-collapse-meta">Identity: {identity.state} · {income.label}</span></summary>
     <p>{income.label}. Income source: {income.source??"Unknown"}; effective: {income.effectiveDate??"Unknown"}.</p>
     <p>Reported source: {v?`workbook v${v.version_number} · ${v.created_at} · cached workbook returns · ${r.selectedModelId?"explicitly selected":"latest automatically; not approved"}`:"No workbook"}. Identity: {identity.state}.</p>
     {!!identity.issues.length&&<ul className="warning">{identity.issues.map(x=><li key={x}>{x}</li>)}</ul>}
@@ -24,5 +25,5 @@ export default function InvestmentReview({deal}:{deal:any}) {
       <label>Explicit call for offers date<input name="callForOffersOn" type="date" defaultValue={deadlineDraft?.callForOffersOn??deal.call_for_offers_on??""}/></label>
       <button disabled={busy}>Save evidence and decision</button>
     </form>{error&&<p role="alert" className="error">{error}</p>}
-  </section>;
+  </details>;
 }

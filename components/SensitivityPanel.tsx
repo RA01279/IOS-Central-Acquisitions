@@ -16,23 +16,33 @@ const pct = (v: number, d = 2) => `${(v * 100).toFixed(d)}%`;
 
 function ModelGrid({ grid, basePrice, baseCap }: { grid: Grid; basePrice: number | null; baseCap: number | null }) {
   const baseCol = baseCap == null ? -1 : grid.cols.findIndex((c) => Math.abs(c - baseCap) < 1e-6);
-  const baseRow = basePrice == null ? -1 : grid.rows.findIndex((r) => Math.abs(r.key - basePrice) < 1);
+  const exactRow = basePrice == null ? -1 : grid.rows.findIndex((r) => Math.abs(r.key - basePrice) < 1);
+  // A price between two rows (4.75M on a 4.60 / 4.80 grid) still deserves a
+  // marker: the nearest row, labelled as approximate.
+  const nearRow =
+    exactRow >= 0 || basePrice == null || !grid.rows.length
+      ? -1
+      : grid.rows.reduce((best, r, i) => (Math.abs(r.key - basePrice) < Math.abs(grid.rows[best].key - basePrice) ? i : best), 0);
+  const baseRow = exactRow >= 0 ? exactRow : nearRow;
   return (
-    <div style={{ overflowX: "auto" }}>
-      <p className="label" style={{ margin: "8px 0 4px" }}>{grid.title}</p>
-      <table className="summary-table">
+    <div className="table-scroll">
+      <p className="fin-grid-title">{grid.title}</p>
+      <table className="summary-table fin-table fin-grid">
         <thead>
           <tr>
-            <th>{grid.rowLabel} \ {grid.colLabel}</th>
-            {grid.cols.map((c, i) => <th key={i} style={i === baseCol ? { background: "var(--accent-soft, #E8F0FA)" } : undefined}>{pct(c)}</th>)}
+            <th title={`${grid.rowLabel} by ${grid.colLabel}`}>Price \ cap</th>
+            {grid.cols.map((c, i) => <th key={i} className={i === baseCol ? "fin-hl" : undefined}>{pct(c)}</th>)}
           </tr>
         </thead>
         <tbody>
           {grid.rows.map((r, ri) => (
             <tr key={ri}>
-              <th scope="row" style={ri === baseRow ? { background: "var(--accent-soft, #E8F0FA)" } : undefined}>{usdM(r.key)}</th>
+              <th scope="row" className={ri === baseRow ? "fin-hl" : undefined}>
+                {usdM(r.key)}
+                {ri === nearRow && basePrice != null && <span className="fin-sub-num" title="The purchase price sits between rows; this is the nearest">≈ {usdM(basePrice)} base</span>}
+              </th>
               {r.cells.map((cell, ci) => (
-                <td key={ci} style={ri === baseRow && ci === baseCol ? { fontWeight: 700, outline: "2px solid #0E5AA7" } : ri === baseRow || ci === baseCol ? { background: "var(--accent-soft, #F3F7FC)" } : undefined}>
+                <td key={ci} className={ri === baseRow && ci === baseCol ? "fin-base" : ri === baseRow || ci === baseCol ? "fin-hl-soft" : undefined}>
                   {cell}
                 </td>
               ))}
@@ -103,7 +113,7 @@ export default function SensitivityPanel({
     <section className="panel">
       <h2>Sensitivities</h2>
       {(baseIrr != null || baseMultiple != null) && (
-        <p style={{ marginTop: 0 }}>
+        <p className="fin-lede">
           Model base case: <strong>{baseIrr != null ? pct(baseIrr, 1) : "—"} IRR / {baseMultiple != null ? `${baseMultiple.toFixed(2)}x` : "—"}</strong>
           {basePrice != null ? ` at ${usdM(basePrice)}` : ""}{modelExitCap != null ? `, ${pct(modelExitCap)} exit cap` : ""}
         </p>
@@ -122,41 +132,49 @@ export default function SensitivityPanel({
               </p>
             </div>
           )}
-          {grids.filter(covers).map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+          <div className="fin-grid-pair">
+            {grids.filter(covers).map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+          </div>
           {stale.length > 0 && (
-            <details>
-              <summary className="hint">Show the out-of-range table{stale.length > 1 ? "s" : ""} anyway</summary>
-              {stale.map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+            <details className="fin-details">
+              <summary>Show the out-of-range table{stale.length > 1 ? "s" : ""} anyway</summary>
+              <div className="fin-grid-pair">
+                {stale.map((g, i) => <ModelGrid key={i} grid={g} basePrice={basePrice} baseCap={modelExitCap} />)}
+              </div>
             </details>
           )}
           <p className="hint">From the latest model upload, exactly as the workbook last calculated them. The base case (price and exit cap) is outlined.</p>
-          {model?.warnings?.length && stale.length < grids.length ? <div className="warning"><ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div> : null}
+          {/* The model's discrepancy list (including mismatched data tables) is
+              shown once, in the Model panel above. */}
+          {(model?.warnings?.length ?? 0) > 0 && stale.length < grids.length ? (
+            <p className="hint">See &ldquo;Source workbook discrepancies&rdquo; in the Model panel before relying on these tables.</p>
+          ) : null}
         </>
       ) : (
         <p className="hint">No model sensitivity tables yet. They appear here after the next model upload (standard acquisition model).</p>
       )}
 
-      <p className="label" style={{ margin: "16px 0 4px" }}>Comp screen: exit value by market rent × exit cap</p>
+      <p className="fin-grid-title fin-grid-title-gap">Comp screen: exit value by market rent × exit cap</p>
       {rows.length ? (
-        <div style={{ overflowX: "auto" }}>
-          <table className="summary-table">
+        <div className="table-scroll">
+          <table className="summary-table fin-table fin-grid">
             <thead>
               <tr>
-                <th>Rent today ({ios ? "per year, at comp $/AC/mo" : "per year, at comp $/SF"})</th>
-                {caps.map((c) => <th key={c} style={Math.abs(c - centre) < 1e-6 ? { background: "var(--accent-soft, #E8F0FA)" } : undefined}>{pct(c)}</th>)}
+                <th>Market rent today{ios ? " (comp $/AC/mo, annualized)" : " (comp $/SF, annual)"}</th>
+                {caps.map((c) => <th key={c} className={Math.abs(c - centre) < 1e-6 ? "fin-hl" : undefined}>{pct(c)}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.label}>
-                  <th scope="row">{r.label} · {usdM(r.rent)}</th>
+                  <th scope="row">{r.label}<span className="fin-sub-num">{usdM(r.rent)}/yr</span></th>
                   {caps.map((c) => {
                     const v = value(r.rent!, c);
                     const vs = cost ? v / cost - 1 : null;
                     return (
-                      <td key={c} style={r.label === "Comp mid" && Math.abs(c - centre) < 1e-6 ? { fontWeight: 700, outline: "2px solid #0E5AA7" } : undefined}>
+                      <td key={c} className={r.label === "Comp mid" && Math.abs(c - centre) < 1e-6 ? "fin-base" : Math.abs(c - centre) < 1e-6 ? "fin-hl-soft" : undefined}>
                         {usdM(v)}
-                        {vs != null && <span className={vs < 0 ? "overdue" : "muted"}> {vs >= 0 ? "+" : ""}{(vs * 100).toFixed(0)}%</span>}
+                        {vs != null && <span className={`fin-sub-num ${vs < 0 ? "fin-neg" : "fin-pos"}`}>{vs >= 0 ? "+" : "−"}{Math.abs(vs * 100).toFixed(0)}% vs cost</span>}
                       </td>
                     );
                   })}
@@ -166,7 +184,7 @@ export default function SensitivityPanel({
           </table>
           <p className="hint">
             Rent grown {pct(uw.lease.escalation, 1)}/yr for {hold} years{holdYears ? " (model hold)" : " (4 years; no model hold)"}, divided by the exit cap,
-            less {Math.round(SALE_COST_PCT * 100)}% selling costs. Centred on {exitCap ? "the deal's exit cap" : "6.50% (set an exit cap above)"}.
+            less {Math.round(SALE_COST_PCT * 100)}% selling costs. Centred on {exitCap ? "the deal's exit cap" : "6.50% (set an exit cap under Deal inputs)"}.
             {cost ? " The % is against the all-in cost." : ""} Rent-only comparison: no vacancy, owner expenses, concessions, capital costs or debt payoff are deducted. This is not verified NOI, equity proceeds or an investment return.
           </p>
         </div>
