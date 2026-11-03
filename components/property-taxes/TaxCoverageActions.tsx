@@ -1,0 +1,3 @@
+'use client';
+import {useState} from 'react';
+export default function TaxCoverageActions({kind,id}:{kind:string;id:string}){const [busy,setBusy]=useState(false),[message,setMessage]=useState('');return <><button type="button" disabled={busy} onClick={async()=>{setBusy(true);try{const r=await fetch('/api/property-taxes/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,id})});const b=await r.json();if(!r.ok)throw Error(b.error);setMessage('Queued; retained evidence and corrections will be preserved.');}catch(e){setMessage(e instanceof Error?e.message:'Queue unavailable.');}finally{setBusy(false);}}}>Queue source research</button>{message&&<p role="status">{message}</p>}</>;}

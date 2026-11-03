@@ -1,0 +1,43 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import { CAPEX_FIELDS, capexFields, capexSchedule, handoffFilename, LEASE_FIELDS, MARKET, missingInputs, OVERVIEW, validateHandoff, type Field, type Handoff, type Values } from '@/lib/uw-handoff';
+import './handoff.css';
+
+function Fields({fields,values,onChange,prefix}:{fields:Field[];values:Values;onChange:(key:string,value:string)=>void;prefix:string}){
+  return <div className="handoff-grid">{fields.map(f=><label key={f.key} className={f.type==='textarea' ? 'handoff-wide' : ''} htmlFor={`${prefix}-${f.key}`}><span>{f.label}</span>{f.options ? <select id={`${prefix}-${f.key}`} value={values[f.key]??''} onChange={e=>onChange(f.key,e.target.value)}><option value="">Not provided</option>{f.options.map(o=><option key={o}>{o}</option>)}</select> : f.type==='textarea' ? <textarea id={`${prefix}-${f.key}`} rows={3} value={values[f.key]??''} onChange={e=>onChange(f.key,e.target.value)} maxLength={6000}/> : <input id={`${prefix}-${f.key}`} type={f.type??'text'} min={f.type==='number' ? 0 : undefined} step={f.type==='number' ? 'any' : undefined} value={values[f.key]??''} onChange={e=>onChange(f.key,e.target.value)} placeholder={f.type==='date' ? undefined : 'Not provided'} maxLength={6000}/ >}{f.hint ? <small>{f.hint}</small> : null}</label>)}</div>;
+}
+export default function HandoffEditor({id,dealId,initial,revision,savedAt}:{id:string;dealId:string|null;initial:Handoff;revision:number;savedAt:string|null}){
+  const [h,setH]=useState(initial),[rev,setRev]=useState(revision),[at,setAt]=useState(savedAt),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[pdfUrl,setPdfUrl]=useState('');
+  const frame=useRef<HTMLIFrameElement>(null);
+  useEffect(()=>()=>{if(pdfUrl)URL.revokeObjectURL(pdfUrl);},[pdfUrl]);
+  useEffect(()=>{if(!dirty)return;const fn=(e:BeforeUnloadEvent)=>{e.preventDefault();};window.addEventListener('beforeunload',fn);return()=>window.removeEventListener('beforeunload',fn);},[dirty]);
+  function change(next:Handoff){setH(next);setDirty(true);setMessage('');setPdfUrl('');}
+  function group(group:'overview'|'market'|'newLease'|'renewal',key:string,value:string){change({...h,[group]:{...h[group],[key]:value}});}
+  async function save():Promise<number|false>{
+    const invalid=validateHandoff(h);if(invalid){setMessage(invalid);return false;}
+    setBusy(true);setMessage('');
+    try{const res=await fetch('/api/uw-handoffs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,dealId,expected:rev,payload:h})});const data=await res.json();if(!res.ok)throw Error(data.error||'Could not save.');setRev(data.saved.revision);setAt(data.saved.updated_at);setDirty(false);setMessage('Saved.');window.history.replaceState(null,'',`/uw-handoffs/${id}`);return data.saved.revision;}
+    catch(e){setMessage(e instanceof Error ? e.message : 'Could not save. Your edits are still shown.');return false;}
+    finally{setBusy(false);}
+  }
+  async function generate(){
+    const savedRevision=(dirty || !rev) ? await save() : rev;if(savedRevision===false)return;
+    setBusy(true);setMessage('Generating PDF...');
+    try{const res=await fetch(`/api/uw-handoffs/${id}/export?revision=${savedRevision}`,{cache:'no-store'});if(!res.ok){const body=await res.json();throw Error(body.error||'Could not generate PDF.');}
+      const blob=await res.blob();const url=URL.createObjectURL(blob);setPdfUrl(url);const link=document.createElement('a');link.href=url;link.download=handoffFilename(h.overview.property);link.click();setMessage('PDF downloaded. Ready to attach to your email.');
+    }catch(e){setMessage(e instanceof Error?e.message:'Could not generate PDF.');}finally{setBusy(false);}
+  }
+  const missing=missingInputs(h);
+  return <div className="handoff"><a href="/uw-handoffs" className="link-caps">All UW Handoffs</a><div className="page-header"><div><span className="overline">ANALYST INSTRUCTIONS</span><h1>{rev ? 'Edit UW Handoff' : 'Create UW Handoff'}</h1><p className="muted">Your saved values tell the analyst what to model. All dollar amounts are USD.</p>{dealId ? <a href={`/deals/${dealId}`}>Open linked deal</a> : <span className="hint">Standalone handoff</span>}</div></div>
+    <div className="handoff-toolbar"><div><strong>{dirty ? 'Unsaved changes' : rev ? 'Saved' : 'New handoff'}</strong><span className="hint">{at ? ` · ${new Date(at).toLocaleString()} · Revision ${rev}` : ''}</span></div><div className="handoff-actions"><button type="button" onClick={()=>void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button><button type="button" className="secondary" onClick={()=>void generate()} disabled={busy}>Generate handoff</button></div></div>
+    <p className="hint">Leave unknown inputs blank. Enter 0 only when confirmed. You can save an incomplete handoff; missing values remain visible in the output.</p><p role="status" aria-live="polite">{message}</p>
+    <fieldset disabled={busy} className="handoff-fields"><section className="panel"><span className="overline">01 / DEAL</span><h2>Deal Overview</h2><Fields fields={OVERVIEW} values={h.overview} onChange={(k,v)=>group('overview',k,v)} prefix="deal"/>
+      <div className="handoff-subhead"><h3>Capex Projects</h3><span className="hint">Separate from TI, LC and operating expenses.</span></div>
+      <label className="handoff-plan">Capital plan<select aria-label="Capital plan" value={h.capexPlan} onChange={e=>{const plan=e.target.value;if(h.capex.length && plan!=='Projects'){setMessage('Remove the project rows before changing to no capex or an unspecified plan.');return;}change({...h,capexPlan:plan});}}><option value="">Not provided</option><option value="None">Confirmed: no capex planned ($0)</option><option value="Projects">Capex projects below</option></select></label>
+      {h.capex.map((c,i)=><article className="handoff-project" key={i}><div className="handoff-subhead"><h4>Project {i+1}</h4><button type="button" className="secondary" onClick={()=>change({...h,capex:h.capex.filter((_,j)=>j!==i)})}>Remove project {i+1}</button></div><Fields fields={capexFields(c)} values={c} prefix={`capex-${i}`} onChange={(key,value)=>change({...h,capex:h.capex.map((p,j)=>j===i ? {...p,[key]:value} : p)})}/><p className="hint">{capexSchedule(c)}</p>{['Before leasing','Before occupancy'].includes(c.dependency) ? <p className="hint"><strong>Leasing dependency:</strong> coordinate completion with downtime; count that delay once.</p> : null}</article>)}
+      <button type="button" className="secondary" onClick={()=>change({...h,capexPlan:'Projects',capex:[...h.capex,Object.fromEntries(CAPEX_FIELDS.map(f=>[f.key,'']))]})}>Add capex project</button><p className="hint">For month-based schedules, choose any day in the month. Spread spending uses equal monthly installments, including the start and end months. Count each cost and downtime period once.</p>
+    </section><section className="panel"><span className="overline">02 / LEASING</span><h2>Market Leasing Assumptions</h2><Fields fields={MARKET} values={h.market} onChange={(k,v)=>group('market',k,v)} prefix="market"/><p className="hint">Market growth changes future market rent. Contractual escalations change rent within a lease. Enter each separately.</p><div className="handoff-leases"><div><h3>New Lease</h3><Fields fields={LEASE_FIELDS} values={h.newLease} onChange={(k,v)=>group('newLease',k,v)} prefix="new"/></div><div><h3>Renewal</h3><Fields fields={LEASE_FIELDS} values={h.renewal} onChange={(k,v)=>group('renewal',k,v)} prefix="renewal"/></div></div><label className="handoff-notes">Notes (optional)<textarea rows={3} value={h.notes} onChange={e=>change({...h,notes:e.target.value})} maxLength={12000} placeholder="Exceptions, rent differences between new and renewal leases, or other modeling instructions"/></label></section></fieldset>
+    <details className="panel"><summary>{missing.length ? `${missing.length} missing inputs` : 'All inputs provided'}</summary><p className="hint">Missing inputs are listed as Not provided in the PDF’s Open Inputs section.</p><ul>{missing.map(x=><li key={x}>{x}</li>)}</ul></details>
+    {pdfUrl ? <section className="panel" id="handoff-output"><div className="handoff-subhead"><h2>Shareable Handoff</h2><a href={pdfUrl} download={handoffFilename(h.overview.property)}>Download PDF</a></div><p className="hint">Attach this PDF to your email. The recipient can read it without a Hopper login. Open inputs remain explicit in the document.</p><iframe ref={frame} title="Shareable underwriting handoff PDF" src={pdfUrl} className="handoff-preview"/></section> : null}
+  </div>;
+}

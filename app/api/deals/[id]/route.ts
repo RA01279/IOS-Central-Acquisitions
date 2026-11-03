@@ -239,6 +239,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   // are written, so the dates card and the rent form can save independently.
   if (body.action === "update_milestones") {
     const map: Record<string, string> = {
+      callForOffersOn: "call_for_offers_on",
       icOn: "ic_on",
       loiResponseDueOn: "loi_response_due_on",
       phase1OrderedOn: "phase1_ordered_on",

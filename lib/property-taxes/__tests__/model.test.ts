@@ -1,7 +1,7 @@
 import { describe,it,expect } from "vitest";
 import { annualTotal,effectiveFact,includedParcels,makeScenario,matchParcel,mergeResearch,parcelKey,projectRow,projectScenario,rateFraction,toTaxSchedule } from "../model";
 import { validateTaxState } from "../store";
-import { projectionRow,taxFixture,parcel,source } from "./fixtures";
+import { projectionRow,taxFixture,parcel,source,reviewFixture } from "./fixtures";
 describe("property tax identity and historical evidence",()=>{
   it("matches street abbreviations without treating a pin as acquisition boundary proof",()=>{
     expect(matchParcel({address:"100 N. Main Rd."},parcel,true)).toMatchObject({ambiguous:false});
@@ -11,8 +11,11 @@ describe("property tax identity and historical evidence",()=>{
   });
   it("sums only complete reviewed years across multiple parcels and leaves unknown years missing",()=>{
     const s=taxFixture();s.parcels.push({...parcel,key:"second",accountId:"2",assessmentGroup:"lot-2"});
-    expect(annualTotal(s,2026,"levied")).toMatchObject({total:null,knownSubtotal:2000,missing:["2"]});
+    s.scopeReview!.parcelKeys.push('second');
+    reviewFixture(s);expect(annualTotal(s,2026,"levied")).toMatchObject({total:null,knownSubtotal:2000,missing:["2"]});
     s.records.push({parcelKey:"second",year:2026,facts:{levied:{value:500,sourceId:source.id,stage:"issued",reviewed:true}},jurisdictions:[]});
+    s.records[1].billEvidence={...s.records[0].billEvidence!,collectorAccount:'2'};
+    reviewFixture(s,1);
     expect(annualTotal(s,2026,"levied").total).toBe(2500);
     expect(annualTotal(s,2025,"levied").total).toBeNull();
     expect(annualTotal(s,2026,"paid").total).toBeNull();

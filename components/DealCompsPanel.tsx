@@ -11,6 +11,7 @@
 // did, not a server-side summary you'd have to trust.
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import MapView, { type MapPoint } from "./MapView";
 import { rateSummary } from "@/lib/comps/rates";
@@ -19,6 +20,7 @@ import { marketView } from "@/lib/comps/market";
 import {
   COMP_POLICY,
   DEFAULT_WEIGHTS,
+  directBuildingRent,
   formatUnit,
   scoreComps,
   suggestRange,
@@ -46,6 +48,7 @@ export default function DealCompsPanel({
   subject: Subject;
   subjectAddress: string;
 }) {
+  const router=useRouter();
   const [compType, setCompType] = useState<CompType>("lease");
   const [basis, setBasis] = useState<ValueBasis>("building");
   // Opens on the same rules as the rent and basis flags and the IC deck
@@ -87,6 +90,7 @@ export default function DealCompsPanel({
   }, [comps, snapshotComps, snapshotSubject, compType, subject, analysisDate]);
 
   const eligible = scored.filter((s) => !s.excluded);
+  const buildingConversion=compType==="lease"&&basis==="building"&&scored.some(s=>s.inRange&&!directBuildingRent(s.comp));
   const rows = showAll ? scored : scored.slice(0, Math.max(12, eligible.length));
 
   const color = compType === "sale" ? SALE_COLOR : LEASE_COLOR;
@@ -144,6 +148,7 @@ export default function DealCompsPanel({
   return (
     <section className="panel">
       <SavedAnalysis dealId={dealId} kind="comps"
+        onSaved={()=>router.refresh()}
         payload={{compType,basis,radiusMiles,maxAgeMonths,excluded:[...excluded],allowOtherClasses,analysisDate,comps:snapshotComps??comps,subject:snapshotSubject??subject}}
         onRestore={saved=>{
           if(!["lease","sale"].includes(saved.compType)||!["land","building"].includes(saved.basis)||!Array.isArray(saved.comps)) return;
@@ -152,7 +157,7 @@ export default function DealCompsPanel({
           setSnapshotComps(saved.comps);setSnapshotSubject(saved.subject??null);setAnalysisDate(saved.analysisDate);
         }} />
       {snapshotComps && <p className="hint">Using saved comp evidence and property assumptions. <button type="button" className="secondary" onClick={()=>{setSnapshotComps(null);setSnapshotSubject(null);setAnalysisDate(new Date().toISOString());}}>Use latest comps</button></p>}
-      <p className="hint">Save the reviewed version to retain selections and source values. Enter the supported rent explicitly in MLA or underwriting; this review does not apply assumptions automatically.</p>
+      <p className="hint">Unsaved selections below are draft diagnostics. Save the reviewed version to update dependent guidance and reports. Frozen reviews retain exclusions and source values; enter any supported rent explicitly in MLA or underwriting. Whole-site rent divided by building SF is an equivalent, not a direct building-rent quote.</p>
       <label><input type="checkbox" checked={allowOtherClasses} onChange={e=>setAllowOtherClasses(e.target.checked)}/> Include unclassified or other-class comps in my analysis</label>
       {!allowOtherClasses && <p className="hint">Only comps with a matching asset class contribute to the range. Unclassified comps remain listed for review.</p>}
       {allowOtherClasses && <p className="warning">Class matching is overridden. Review each comp before relying on the suggested range.</p>}
@@ -248,9 +253,9 @@ export default function DealCompsPanel({
             {formatUnit(range.mid, compType, basis)}
           </span>
           <span className="stat-label">
-            Weighted mid · {range.count} comp{range.count === 1 ? "" : "s"}
+            {buildingConversion?"Diagnostic whole-site equivalent":"Weighted mid"} · {range.count} comp{range.count === 1 ? "" : "s"}
           </span>
-          {compType === "lease" && basis === "building" && range.mid !== null && (
+          {compType === "lease" && basis === "building" && !buildingConversion && range.count>=COMP_POLICY.minComps && range.mid !== null && (
             <span className="stat-delta">
               MLA market base rent: {range.mid.toFixed(2)} $/SF/mo
             </span>
@@ -272,7 +277,8 @@ export default function DealCompsPanel({
         </div>
       )}
 
-      {compType === "lease" && basis === "building" && range.mid !== null && (
+      {buildingConversion&&<p className="warning">Building-rent recommendation withheld. Review the original acreage quotes on their land basis; this conversion cannot establish a direct building MLA rent.</p>}
+      {compType === "lease" && basis === "building" && !buildingConversion && range.count>=COMP_POLICY.minComps && range.mid !== null && (
         <p className="hint">
           Enter <strong>{range.mid.toFixed(2)}</strong> as the market base rent in the MLA below if
           you agree with it — it isn&apos;t written for you, since an assumption should be a

@@ -57,7 +57,7 @@ export const FLAG_KEYS = ["demand", "zoning", "access", "site", "basis", "rent"]
 export type FlagKey = (typeof FLAG_KEYS)[number];
 
 export const FLAG_META: Record<FlagKey, { label: string; short: string }> = {
-  demand: { label: "Demand", short: "DEM" },
+  demand: { label: "Leasing evidence", short: "LEASE" },
   zoning: { label: "Zoning", short: "ZON" },
   access: { label: "Truck Access", short: "ACC" },
   site: { label: "Site & Flood", short: "SITE" },

@@ -57,3 +57,9 @@ export function findSubmarket(key: string): { market: Market; submarket: Submark
 
 export interface BuyBox { minAcres: number; maxAcres: number; maxCoveragePct: number }
 export const DEFAULT_BUY_BOX: BuyBox = { minAcres: 1.5, maxAcres: 10, maxCoveragePct: 35 };
+
+/** Resolve completed search geography, rather than a stale market form control. */
+export function marketAt(lat: number, lng: number): string {
+  const nearest = MARKETS.flatMap(m => m.submarkets.map(s => ({ market: m.label, distance: Math.hypot((s.lat - lat) * 69, (s.lng - lng) * 69 * Math.cos(lat * Math.PI / 180)) }))).sort((a, b) => a.distance - b.distance)[0];
+  return nearest && nearest.distance < 75 ? nearest.market : "";
+}

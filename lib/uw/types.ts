@@ -126,6 +126,8 @@ export interface UwInputs {
   MgmtPct: number;
   ReservePerAcre: number;
   OtherOpex: number;
+  /** Explicit whole-property full recovery from this month; absent = owner carries expenses. */
+  ExpenseRecoveryStartMonth?: number;
   ExpGrowth: number;
 
   LevOn: 0 | 1;

@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { composeDigest } from "@/lib/digest";
 import { bearerMatches } from "@/lib/sync-export";
+import { ctToday } from "@/lib/summary";
+import { composeOfferReminder } from "@/lib/offer-deadlines";
+import { fetchAll } from "@/lib/fetch-all";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +31,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { subject, html } = await composeDigest();
-  const today = new Date().toISOString().slice(0, 10);
+  const reminderMode = req.nextUrl.searchParams.get("mode") === "offer-reminders";
+  const today = ctToday();
+  const content = reminderMode
+    ? composeOfferReminder(await fetchAll((from, to) => supabase.from("deals")
+        .select("id, stage, call_for_offers_on, assigned_analyst, properties(address), tasks(title, due_date, status)")
+        .eq("deal_type", "acquisition")
+        .not("stage", "in", "(closed,archived)").order("id").range(from, to)) as any[], today)
+    : await composeDigest();
   const pubDate = new Date().toUTCString();
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -37,21 +46,23 @@ export async function GET(req: NextRequest) {
   <channel>
     <title>Central Acquisitions morning brief</title>
     <link>https://ios-central-acquisitions.vercel.app/</link>
-    <description>DD expirations, closings, overdue follow-ups, targets due, and stale deals</description>
+    <description>Call-for-offers dates, DD expirations, closings, and follow-ups</description>
+    ${content ? `
     <item>
-      <title>${subject.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</title>
+      <title>${content.subject.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</title>
       <link>https://ios-central-acquisitions.vercel.app/</link>
       <!-- guid prefix is historical: changing it would make every past item
            look new to the Power Automate flow and re-send the backlog. -->
-      <guid isPermaLink="false">hopper-digest-${today}</guid>
+      <guid isPermaLink="false">hopper-${reminderMode ? "offer-reminders" : "digest"}-${today}</guid>
       <pubDate>${pubDate}</pubDate>
-      <description>${cdata(html)}</description>
+      <description>${cdata(content.html)}</description>
     </item>
+    ` : ""}
   </channel>
 </rss>`;
 
   return new NextResponse(xml, {
     status: 200,
-    headers: { "Content-Type": "application/rss+xml; charset=utf-8" },
+    headers: { "Content-Type": "application/rss+xml; charset=utf-8", "Cache-Control": "private, no-store" },
   });
 }

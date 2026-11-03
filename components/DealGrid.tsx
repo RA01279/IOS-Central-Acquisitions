@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import type { DealCardData } from "@/lib/deal-view";
 import { Badge, FlagStrip, ScoreTile, STAGE_TONES } from "./ui";
+import CallForOffersDate from "./CallForOffersDate";
 
 const KEY = "hopper.compare.v1";
 const MAX = 4;
@@ -75,6 +76,9 @@ export default function DealGrid({ cards }: { cards: DealCardData[] }) {
                 </div>
               </a>
               <FlagStrip flags={d.flags} />
+              {d.callForOffersOn && <a href={`/deals/${d.id}`} style={{ padding: "8px 14px", textDecoration: "none" }}>
+                <CallForOffersDate date={d.callForOffersOn} />
+              </a>}
               <div className="dcard-foot">
                 <Badge tone={STAGE_TONES[d.stage] ?? "neutral"}>{d.stageLabel}</Badge>
                 <span className={d.days >= 14 && d.stage !== "closed" ? "age old" : "age"}>

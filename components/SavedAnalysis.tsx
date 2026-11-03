@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Explicit immutable saves; a stale tab cannot overwrite a teammate's review. */
-export default function SavedAnalysis({dealId,kind,payload,onRestore,canSave=true}:{dealId:string;kind:"comps"|"demand";payload:unknown;onRestore:(payload:any)=>void;canSave?:boolean}) {
+export default function SavedAnalysis({dealId,kind,payload,onRestore,canSave=true,onSaved}:{dealId:string;kind:"comps"|"demand";payload:unknown;onRestore:(payload:any, saved?:any)=>void;canSave?:boolean;onSaved?:(saved:any,payload:unknown)=>void}) {
   const restore=useRef(onRestore); restore.current=onRestore;
   const [version,setVersion]=useState(0),[ready,setReady]=useState(false),[busy,setBusy]=useState(false);
   const [message,setMessage]=useState("Loading saved review…"),[error,setError]=useState("");
@@ -13,7 +13,7 @@ export default function SavedAnalysis({dealId,kind,payload,onRestore,canSave=tru
       const body=await response.json(); if(!response.ok) throw new Error(body.error);
       if(!active) return;
       if(body.saved) {
-        restore.current(body.saved.payload); setVersion(body.saved.version);
+        restore.current(body.saved.payload, body.saved); setVersion(body.saved.version);
         setSavedText(JSON.stringify(body.saved.payload));
         setMessage(`Loaded review v${body.saved.version} · ${body.saved.created_by}`);
       } else setMessage("No saved review yet");
@@ -27,6 +27,7 @@ export default function SavedAnalysis({dealId,kind,payload,onRestore,canSave=tru
     try {
       const response=await fetch(`/api/deals/${dealId}/analysis`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,expected:version,payload})});
       const body=await response.json(); if(!response.ok) throw new Error(body.error);
+      onSaved?.(body.saved, JSON.parse(captured));
       setVersion(body.saved.version);setSavedText(captured);setMessage(`Saved review v${body.saved.version} · ${body.saved.created_by}`);
     } catch(e){setError((e as Error).message);} finally {setBusy(false);}
   }

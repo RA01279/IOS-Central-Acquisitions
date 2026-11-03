@@ -12,7 +12,7 @@
 
 import { color, signal, type SignalState } from "../hopper-tokens";
 import type { CategoryRow, DemandHit, Flag } from "../site-score";
-import { loadPptxScript } from "./iosDemandMap";
+import { loadPptxScript, computePixelPositions, halfExtentMiles, ringMiles, DEFAULT_CATEGORIES, type DemandMapResponse } from "./iosDemandMap";
 
 export interface SlideKpi {
   label: string;
@@ -28,6 +28,7 @@ export interface SlidePin {
 }
 
 export interface SummarySlideModel {
+  mapReviewVersion?: number;
   eyebrow: string;
   title: string;
   kpis: SlideKpi[];
@@ -39,7 +40,7 @@ export interface SummarySlideModel {
   pins: SlidePin[];
   rings: Array<{ miles: number; r: number; on: boolean }>;
   /** Esri export URLs covering exactly the 300x220 map; null without a pin. */
-  mapImages: { imagery: string; roads: string } | null;
+  mapImages: { imagery: string; roads: string; x?: number; width?: number } | null;
   footerLeft: string;
   footerRight: string;
   fileName: string;
@@ -94,6 +95,17 @@ export function slideMap(center: { lat: number; lng: number } | null, tenants: D
   return { rings, pins };
 }
 
+/** Reuse the selected IC map bitmap and exact projection, without a second search or basemap. */
+export function summaryReviewedMap(data: DemandMapResponse | null) {
+  if (!data) return { pins: [] as SlidePin[], rings: [] as SummarySlideModel["rings"], mapImages: null };
+  const projected = computePixelPositions(data), extent = halfExtentMiles(data);
+  const left = (MAP_W - MAP_H) / 2;
+  return {
+    pins: projected.tenants.map(t => ({ x: left + t.px.x / projected.size * MAP_H, y: t.px.y / projected.size * MAP_H, inside: true, color: DEFAULT_CATEGORIES.find(c => c.label === t.category)?.color ?? "9AA8B5" })),
+    rings: ringMiles(data.radiusMiles, extent).map(miles => ({ miles, r: miles / extent * MAP_H / 2, on: miles === data.radiusMiles })),
+    mapImages: { imagery: data.imageBase64, roads: "", x: left, width: MAP_H },
+  };
+}
 // ---- pptx --------------------------------------------------------------------
 
 const IN = (px: number) => px / 90;
@@ -179,9 +191,9 @@ export async function toPptx(m: SummarySlideModel) {
   rect(mx, my, MAP_W, MAP_H, "E6ECF1", undefined, 3);
   // Embedded, not linked, so the deck opens offline and never changes later.
   if (m.mapImages) {
-    const [imagery, roads] = await Promise.all([dataUrl(m.mapImages.imagery), dataUrl(m.mapImages.roads)]);
+    const [imagery, roads] = await Promise.all([m.mapImages.imagery.startsWith("data:") ? m.mapImages.imagery : dataUrl(m.mapImages.imagery), m.mapImages.roads ? dataUrl(m.mapImages.roads) : null]);
     for (const data of [imagery, roads]) {
-      if (data) s.addImage({ data, x: IN(mx), y: IN(my), w: IN(MAP_W), h: IN(MAP_H) });
+      if (data) s.addImage({ data, x: IN(mx + (m.mapImages.x ?? 0)), y: IN(my), w: IN(m.mapImages.width ?? MAP_W), h: IN(MAP_H) });
     }
   }
   for (const r of m.rings) {
@@ -214,7 +226,7 @@ export async function toPptx(m: SummarySlideModel) {
   });
 
   // Demand bars
-  text(`TENANT DEMAND · ${m.radius} MI`, mx, my + MAP_H + 12, MAP_W, 10, { fontSize: 7, bold: true, color: color.navy, charSpacing: 1.5 });
+  text(`SELECTED BUSINESSES · ${m.radius} MI`, mx, my + MAP_H + 12, MAP_W, 10, { fontSize: 7, bold: true, color: color.navy, charSpacing: 1.5 });
   m.demandRows.slice(0, 7).forEach((r, i) => {
     const y = my + MAP_H + 30 + i * 13;
     const on = m.activeCats.includes(r.key);
@@ -226,7 +238,7 @@ export async function toPptx(m: SummarySlideModel) {
 
   // Footer
   s.addShape("line", { x: 0, y: IN(480), w: 10, h: 0, line: { color: color.border, width: 0.75 } });
-  text(m.footerLeft, 28, 488, 500, 10, { fontSize: 6.5, color: color.textMuted });
+  text(m.footerLeft + ` · Exported ${new Date().toISOString().slice(0,10)}`, 28, 488, 500, 10, { fontSize: 6.5, color: color.textMuted });
   text(m.footerRight, 430, 488, 442, 10, { fontSize: 6.5, color: color.textMuted, align: "right", mono: true });
 
   await pres.writeFile({ fileName: m.fileName });

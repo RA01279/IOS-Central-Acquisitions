@@ -97,6 +97,12 @@ export async function GET(req: NextRequest) {
   ]);
   up.addRows(r.upcoming);
 
+  const decisions=wb.addWorksheet("Investment decisions");
+  const keys=r.decisions[0]?Object.keys(r.decisions[0]):["address","rationale","nextAction"];
+  header(decisions,keys.map(key=>({header:key==="currentBaseRent"?"Current annual base rent ($/year)":key.replace(/([A-Z])/g," $1").replace(/^./,s=>s.toUpperCase()),key,width:30,money:["askingPrice","modelPrice","latestBid","currentBaseRent"].includes(key)})));
+  for(const key of ["modelIrr","screeningIrr"])if(keys.includes(key))decisions.getColumn(key).numFmt="0.00%";
+  decisions.addRows(r.decisions.map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[k,v==null?"Unknown":v]))));
+  decisions.eachRow(row=>{row.alignment={vertical:"top",wrapText:true};});
   const buf = Buffer.from(await wb.xlsx.writeBuffer());
   return new NextResponse(buf as any, {
     headers: {

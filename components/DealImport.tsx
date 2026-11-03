@@ -296,6 +296,9 @@ export function ImportReview({ draft, source, file }: { draft: Draft; source: st
     marketingStatus: "Source",
     sellerBroker: "Sales broker",
     currentOwner: "Current owner",
+    callForOffersOn: "Offer deadline",
+    deadlineSourceDate: "Deadline source date",
+    deadlineSourceQuote: "Deadline source quote",
   };
   const found = Object.entries(draft.fields).filter(([, v]) => v != null);
   const missing = Object.entries(draft.fields).filter(([, v]) => v == null).map(([k]) => LABELS[k]);

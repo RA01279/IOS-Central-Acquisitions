@@ -44,6 +44,7 @@ const req = (origin = 'https://hopper.test', token = '') => ({ headers: { get: n
  const route = load('app/api/agents/route.ts', {
   '@/lib/agents/server': { userContext: async () => ({db,email:owner}),json,reap:async()=>{} },
   '@/lib/agents/catalog':catalog, '@/lib/agents/context': { loadEvidence:async()=>[] }, '@/lib/agents/sourcing': load('lib/agents/sourcing.ts'),
+  '@/lib/sourcing/snapshot': load('lib/sourcing/snapshot.ts', { './identity': load('lib/sourcing/identity.ts') }),
  });
  const missing = await route.GET({nextUrl:new URL('https://hopper.test/api/agents?id=00000000-0000-4000-8000-000000000001')});
  assert.equal(missing.status,404);

@@ -45,8 +45,8 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears, dealId,
         </tbody>
       </table>
       <div className="metrics-grid">
-        <Metric label="Whole site, per-acre rate" value={lease.monthlyByAcre ? `${range(lease.monthlyByAcre, usd)}/mo` : "Lot size missing"} />
-        <Metric label="Whole building, per-SF rate" value={lease.annualBySf ? `${range(lease.annualBySf, usd)}/yr` : "Building SF missing"} />
+        <Metric label="Whole site, per-acre rate" value={lease.monthlyByAcre ? `${range(lease.monthlyByAcre, usd)}/mo` : "Insufficient rent or site area evidence"} />
+        <Metric label="Whole building, per-SF rate" value={lease.annualBySf ? `${range(lease.annualBySf, usd)}/yr` : "Insufficient direct building-rent or area evidence"} />
         <Metric label="Lease term" value={lease.termMonths === null ? "Not stated" : `${Math.round(lease.termMonths)} mo (${lease.termCount} comps)`} />
         <Metric label="Escalation" value={`${(lease.escalation * 100).toFixed(2)}%/yr ${lease.escalationCount ? `(${lease.escalationCount} comps)` : "(LOI default; no comps state one)"}`} />
         <Metric label="Free rent" value={lease.freeRentMonths === null ? "Not stated" : `${lease.freeRentMonths.toFixed(1)} mo (${lease.freeCount} comps)`} />
@@ -72,9 +72,9 @@ export default function CompUnderwritingPanel({ uw, ios, modelHoldYears, dealId,
             <tr key={e.months} style={modelHold === e.months ? { fontWeight: 600 } : undefined}>
               <td>{e.months} mo{modelHold === e.months ? " (model's hold)" : ""}</td>
               <td>{range(e.perAcre, usd)}</td>
-              <td>{e.byAcre ? range(e.byAcre, usd) : "Lot size missing"}</td>
+              <td>{e.byAcre ? range(e.byAcre, usd) : "Insufficient sale or lot-area evidence"}</td>
               <td>{range(e.perSf, usd2)}</td>
-              <td>{e.bySf ? range(e.bySf, usd) : "Building SF missing"}</td>
+              <td>{e.bySf ? range(e.bySf, usd) : "Insufficient sale or building-area evidence"}</td>
               <td>{e.byIncome ? range(e.byIncome, usd) : sale.exitCap === null ? "Set an exit cap" : "No market rent"}</td>
             </tr>
           ))}

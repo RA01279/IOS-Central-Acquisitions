@@ -6,6 +6,8 @@ import { loadTaxWorkspace, saveTaxWorkspace, TaxError } from "@/lib/property-tax
 import { mergeResearch } from "@/lib/property-taxes/model";
 import { researchTaxes } from "@/lib/property-taxes/research";
 import {importGwinnettHistory} from '@/lib/property-taxes/gwinnett-history-import';
+import {importAssistedBills} from '@/lib/property-taxes/assisted';
+import {validTaxEvidencePath} from '@/lib/property-taxes/evidence-path';
 import {emptyTaxState} from '@/lib/property-taxes/types';
 import {createHash} from 'node:crypto';
 export const dynamic="force-dynamic";
@@ -14,10 +16,12 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail=(e:unknown)=>NextResponse.json({error:e instanceof TaxError ? e.message : "Property tax request failed. Retry; saved research and overrides are preserved."},{status:e instanceof TaxError?e.status:500});
 async function context(req:NextRequest,id:string,mutation=false) {
   const user=await getCurrentUser(req); if(!user) throw new TaxError("Not authenticated",401);
-  if(!UUID.test(id)) throw new TaxError("Invalid deal",400);
+  const assetId=id.startsWith('asset:')?id.slice(6):null;
+  if(!UUID.test(assetId??id)) throw new TaxError("Invalid property",400);
   if(mutation && req.headers.get("origin")!==req.nextUrl.origin) throw new TaxError("Origin does not match",403);
   const db=getServiceClient();
-  const {data:deal,error}=await db.from("deals").select("id,asset_class,properties(*)").eq("id",id).maybeSingle();
+  const lookup=assetId?await db.from('assets').select('*').eq('id',assetId).maybeSingle():await db.from("deals").select("id,asset_class,properties(*)").eq("id",id).maybeSingle();
+  const {error}=lookup,deal=assetId&&lookup.data?{id,asset_class:lookup.data.asset_class,properties:lookup.data}:lookup.data;
   if(error) throw new TaxError("Could not load deal",500); if(!deal) throw new TaxError("Deal not found",404);
   return {db,deal,user};
 }
@@ -28,17 +32,19 @@ export async function GET(req:NextRequest,props:{params:Promise<{id:string}>}) {
     const sourceId=req.nextUrl.searchParams.get("source");
     if(sourceId) {
       const source=workspace.state.sources.find((s:any)=>s.id===sourceId);
-      if(!source?.storagePath?.startsWith(`deals/${id}/property-taxes/`)) throw new TaxError("Bill not found",404);
+      if(!validTaxEvidencePath(id,source?.storagePath)) throw new TaxError("Bill not found",404);
       const {data,error}=await db.storage.from("documents").createSignedUrl(source.storagePath,300);
       if(error || !data) throw new TaxError("Bill unavailable",404);
       return NextResponse.redirect(data.signedUrl);
     }
-    const {data:history,error}=await db.from("deal_property_tax_history").select("id,revision,action,actor,created_at").eq("deal_id",id).order("revision",{ascending:false}).limit(100);
+    const historyResult=id.startsWith('asset:')?await db.from('property_tax_subject_history').select('id,revision,created_at').eq('subject_kind','asset').eq('subject_id',id.slice(6)).order('revision',{ascending:false}).limit(100):await db.from("deal_property_tax_history").select("id,revision,action,actor,created_at").eq("deal_id",id).order("revision",{ascending:false}).limit(100);
+    const error=historyResult.error,history=id.startsWith('asset:')?historyResult.data?.map((h:any)=>({...h,action:'saved asset workspace',actor:'Hopper tax workflow'})):historyResult.data;
     if(error) throw new TaxError("Could not load tax history",500);
     const revision=req.nextUrl.searchParams.get("revision");
     if(revision) {
       if(!/^\d+$/.test(revision)) throw new TaxError("Invalid revision");
-      const {data,error}=await db.from("deal_property_tax_history").select("snapshot,revision,created_at,actor").eq("deal_id",id).eq("revision",Number(revision)).maybeSingle();
+      const result=id.startsWith('asset:')?await db.from('property_tax_subject_history').select('state,revision,created_at').eq('subject_kind','asset').eq('subject_id',id.slice(6)).eq('revision',Number(revision)).maybeSingle():await db.from("deal_property_tax_history").select("snapshot,revision,created_at,actor").eq("deal_id",id).eq("revision",Number(revision)).maybeSingle();
+      const {data,error}=result;
       if(error || !data) throw new TaxError("Revision unavailable",404);
       return NextResponse.json(data,{headers:{"Cache-Control":"no-store"}});
     }
@@ -61,7 +67,7 @@ export async function POST(req:NextRequest,props:{params:Promise<{id:string}>}) 
       const {error}=await db.storage.from("documents").upload(path,bytes,{contentType:{pdf:"application/pdf",png:"image/png",jpg:"image/jpeg"}[ext],upsert:false});
       if(error) throw new TaxError("Could not store bill",500);
       const state=structuredClone(current.state);
-      state.sources.push({id:crypto.randomUUID(),label:file.name.slice(0,150),url:"",retrievedAt:new Date().toISOString(),taxYear:null,kind:"upload",evidence:"User-supplied bill. Figures require manual transcription and review; no OCR values inferred.",storagePath:path});
+      state.sources.push({id:crypto.randomUUID(),label:file.name.slice(0,150),url:"",retrievedAt:new Date().toISOString(),taxYear:null,kind:"upload",evidence:JSON.stringify({method:'Assisted original attachment; figures require transcription and review',filename:file.name.slice(0,150),sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length}),storagePath:path});
       const saved=await saveTaxWorkspace(db,id,revision,state,user.email,"upload");
       revalidatePath(`/deals/${id}/property-taxes`);
       return NextResponse.json(saved);
@@ -72,9 +78,17 @@ export async function POST(req:NextRequest,props:{params:Promise<{id:string}>}) 
     if(!body || typeof body!=="object" || Array.isArray(body)) throw new TaxError("Expected an action object");
     if(body.action==="save") {
       // Uploaded files may only reference this deal's tax directory.
-      for(const s of body.state?.sources??[]) if(s.storagePath && !s.storagePath.startsWith(`deals/${id}/property-taxes/`)) throw new TaxError("Bill belongs to another workspace",403);
+      for(const s of body.state?.sources??[]) if(s.storagePath && !validTaxEvidencePath(id,s.storagePath)) throw new TaxError("Bill belongs to another workspace",403);
       const saved=await saveTaxWorkspace(db,id,body.revision,body.state,user.email);
       revalidatePath(`/deals/${id}/property-taxes`); return NextResponse.json(saved);
+    }
+    if(body.action==='import-assisted'){
+      const current=await loadTaxWorkspace(db,id);if(body.revision!==current.revision)throw new TaxError('Workspace changed. Reload before importing.',409);
+      const parcel=current.state.parcels.find((p:any)=>p.key===body.parcelKey&&p.review!=='excluded');if(!parcel||typeof body.text!=='string')throw new TaxError('Choose an account and retained original records.');
+      let capture;try{capture=importAssistedBills(body.text,parcel,current.state.sources,current.state.records);}catch(e){throw new TaxError(e instanceof Error?e.message:'Invalid assisted manifest.');}
+      const findings=emptyTaxState();findings.sources=capture.sources;findings.records=capture.records;
+      const saved=await saveTaxWorkspace(db,id,current.revision,mergeResearch(current.state,findings),user.email,'review');
+      revalidatePath(`/deals/${id}/property-taxes`);return NextResponse.json(saved);
     }
     if(body.action==='import-history'){
       const current=await loadTaxWorkspace(db,id);
@@ -90,7 +104,8 @@ export async function POST(req:NextRequest,props:{params:Promise<{id:string}>}) 
     if(body.action!=="research") throw new TaxError("Choose save, research or import-history");
     const current=await loadTaxWorkspace(db,id);
     if(body.revision!==current.revision) throw new TaxError("Workspace changed. Reload before researching.",409);
-    const {data:events}=await db.from("deal_events").select("detail,created_at").eq("deal_id",id).eq("event_type","sourcing_research").order("created_at",{ascending:false}).limit(3);
+    const eventsResult=id.startsWith('asset:')?{data:[]}:await db.from("deal_events").select("detail,created_at").eq("deal_id",id).eq("event_type","sourcing_research").order("created_at",{ascending:false}).limit(3);
+    const events=eventsResult.data;
     const p:any=Array.isArray(deal.properties)?deal.properties[0]:deal.properties;
     if(!p?.address) throw new TaxError("Add the subject address first.",422);
     const encoder=new TextEncoder();

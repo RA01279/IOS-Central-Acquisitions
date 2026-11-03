@@ -12,6 +12,7 @@ import type { UwInputs } from "./types";
  * Shown on every run so nobody reads the engine as more than it is.
  */
 export const MODEL_NOTES: readonly string[] = [
+  "Full expense recovery is a whole-property assumption from an explicit month, not tenant-by-tenant reimbursement accounting. Owner carrying costs continue before that month; verify the contract and recovery timing separately from base-rent commencement.",
   "Retained rent after a lease ends continues at the retention % with no downtime, TI or leasing commissions.",
   "Rent growth compounds from Year 1 even for tenants that start later.",
   "Pipeline tenants are excluded in Downside, so the Downside lease-up delay has no effect unless they are included there.",

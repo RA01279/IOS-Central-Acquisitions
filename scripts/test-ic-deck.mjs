@@ -159,6 +159,8 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     "@/lib/supabase": { getServiceClient: () => ({ from: query }) }, "@/lib/deals": { STAGE_LABELS: { offered: "Offered" } }, "@/lib/comps/evidence": evidenceFor(query),
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck,
+    "@/lib/investment-review": load("lib/investment-review.ts"),
+    "@/lib/comps/reviewed-evidence": load("lib/comps/reviewed-evidence.ts"),
     "@/lib/agents/ic-narrative": load("lib/agents/ic-narrative.ts"), "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
   });
   const realFetch = globalThis.fetch;
@@ -224,6 +226,8 @@ console.log("PASS: model extraction by label, model checks (site SF, stale MLA, 
     "next/server": { NextResponse: NR }, "@/lib/auth": { getCurrentUser: async () => who }, "@/lib/supabase": { getServiceClient: () => ({ from: q }) },
     "@/lib/deals": { STAGE_LABELS: {} }, "@/lib/comps/evidence": evidenceFor(q), "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/comps/match": load("lib/comps/match.ts"),
     "@/lib/ic-deck/model": model, "@/lib/ic-deck/deck": deck, "@/lib/agents/ic-narrative": nar, "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i },
+    "@/lib/investment-review": load("lib/investment-review.ts"),
+    "@/lib/comps/reviewed-evidence": load("lib/comps/reviewed-evidence.ts"),
   });
   const rid = "00000000-0000-4000-8000-000000000009", props2 = { params: Promise.resolve({ id: "d1" }) };
   const res = await route2.POST({ json: async () => ({ model: JSON.parse(JSON.stringify(m)), narrativeRunId: rid }) }, props2);

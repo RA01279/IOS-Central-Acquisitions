@@ -2,6 +2,8 @@ import {beforeAll,afterAll,it,expect} from "vitest";
 import {taxTestDb,taxTestClient,taxDealId} from "../../../tests/helpers/tax-test-db";
 import {loadTaxWorkspace,saveTaxWorkspace} from "../store";
 import {taxFixture} from "./fixtures";
+import {reviewFixture} from './fixtures';
+import {annualTotal,mergeResearch} from '../model';
 let pg:Awaited<ReturnType<typeof taxTestDb>>,client:ReturnType<typeof taxTestClient>;
 beforeAll(async()=>{pg=await taxTestDb();client=taxTestClient(pg);});afterAll(async()=>{await pg?.close();});
 it("stores structured findings and append-only snapshots atomically with stale-write protection",async()=>{
@@ -20,3 +22,13 @@ it("denies browser roles access to storage and RPCs and denies audit mutation to
   const result=await pg.query<{allowed:boolean}>("select has_function_privilege('anon','public.save_deal_tax_state(uuid,integer,jsonb,text,text)','execute') or has_table_privilege('authenticated','public.deal_property_taxes','select') or has_table_privilege('service_role','public.deal_property_tax_history','update') as allowed");expect(result.rows[0].allowed).toBe(false);
   const rls=await pg.query<{enabled:boolean}>("select bool_and(relrowsecurity) as enabled from pg_class where relname in ('deal_property_taxes','deal_property_tax_history')");expect(rls.rows[0].enabled).toBe(true);
 });
+it('saves and reloads authority reconciliation, then retains the review while a changed bill reopens it',async()=>{
+ const isolated=await taxTestDb();try{const db=taxTestClient(isolated),state=reviewFixture(taxFixture());
+ await saveTaxWorkspace(db,taxDealId,0,state,'local-test');
+ const loaded=await loadTaxWorkspace(db,taxDealId);expect(annualTotal(loaded.state,2026,'levied').total).toBe(2000);
+ const incoming=taxFixture();incoming.records[0].facts.levied!.value=2100;incoming.records[0].facts.levied!.reviewed=false;
+ const changed=mergeResearch(loaded.state,incoming);await saveTaxWorkspace(db,taxDealId,1,changed,'local-test','research');
+ const refreshed=await loadTaxWorkspace(db,taxDealId);expect(refreshed.state.records[0].obligationReview).toEqual(state.records[0].obligationReview);
+ expect(annualTotal(refreshed.state,2026,'levied').total).toBeNull();
+ }finally{await isolated.close();}
+},60000);

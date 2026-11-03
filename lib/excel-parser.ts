@@ -36,9 +36,11 @@ export interface ReturnsSummary {
     /** Internal workbook identity and the unit evidence behind normalized rent. */
     sourceProperty?: string | null;
     marketRentSourceBasis?: string | null;
+    sourceIdentity?: { address: string | null; city: string | null; acres: number | null; buildingSf: number | null };
+    identityResolution?: { fingerprint: string; outcome: "accepted" | "wrong_upload"; reason: string; actor: string; at: string };
 }
 
-type FieldKey = keyof Omit<ReturnsSummary, "warnings" | "sourceProperty" | "marketRentSourceBasis">;
+type FieldKey = keyof Omit<ReturnsSummary, "warnings" | "sourceProperty" | "marketRentSourceBasis" | "sourceIdentity" | "identityResolution">;
 
 // ---------- shared cell-reading helper ----------
 
@@ -99,7 +101,7 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook):
                   key,
                   readCellValue(sheet.getCell(addr), `${key} (${addr})`, warnings),
                 ])
-        ) as Omit<ReturnsSummary, "warnings">;
+        ) as Pick<ReturnsSummary, FieldKey>;
     // Summary Table G18 is linked to a market rate whose period can be annual,
     // despite the template's fixed "Mo." caption. Read the actual MLA basis.
     const rawBasis = workbook.getWorksheet("Market Leasing Summary")?.getCell("D17").value;
@@ -115,7 +117,8 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook):
     const identity = workbook.getWorksheet("Pro Forma")?.getCell("F15").value;
     const sourceProperty = typeof identity === "string" ? identity.trim() : null;
     warnings.push("Workbook returns are cached source values; Hopper does not recalculate Excel formulas. Verify workbook identity and recalculate/save in Excel before relying on them.");
-    return { ...summary, sourceProperty, marketRentSourceBasis: basis || null, warnings };
+    const text = (addr: string) => { const v:any=sheet.getCell(addr).value; return typeof v==="string"?v:typeof v?.result==="string"?v.result:null; };
+    return { ...summary, sourceProperty, sourceIdentity: { address: text("C8") ?? sourceProperty, city: text("C9"), acres:readCellValue(sheet.getCell("C10"),"Identity acres",warnings), buildingSf:readCellValue(sheet.getCell("C12"),"Identity building SF",warnings) }, marketRentSourceBasis: basis || null, warnings };
 }
 
 // ---------- Industrial template ("_Upload_") ----------
@@ -189,7 +192,7 @@ export async function parseReturnsSummary(buffer: Buffer, expectedProperty?: str
           // problem, not something the upload filename can override.
           const sourceNumber = result.sourceProperty?.match(/^\d+(?:-\d+)?\b/)?.[0];
           const expectedNumber = expectedProperty?.match(/^\d+(?:-\d+)?\b/)?.[0];
-          if (sourceNumber && expectedNumber && sourceNumber !== expectedNumber) throw new Error(`Workbook Pro Forma F15 identifies "${result.sourceProperty}", but this deal is "${expectedProperty}". Resolve the source identity before saving an underwriting version.`);
+          if (sourceNumber && expectedNumber && sourceNumber !== expectedNumber) result.warnings.push(`Detected identity discrepancy: workbook ${result.sourceProperty}; deal ${expectedProperty}. Review before using this source; this does not confirm a wrong upload.`);
           if (!result.sourceProperty) result.warnings.push("No internal workbook property identity was found at Pro Forma F15.");
           return result;
     }

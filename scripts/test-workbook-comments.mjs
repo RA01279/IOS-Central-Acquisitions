@@ -49,7 +49,7 @@ const out = await workbookToDelimitedText(buf, "comps.xlsx");
 assert.equal(out.sheets.length, 1); n++;
 assert.match(out.sheets[0].text, /3412 Kelli Ct/); n++;
 assert.match(out.sheets[0].text, /8500/); n++;
-assert.ok(out.warnings.some((w) => /comments were skipped/.test(w))); n++;
+assert.ok(out.warnings.some((w) => /cell comments could not be read/.test(w))); n++; // Current warning preserves the original-file review requirement.
 
 // A workbook without comments is untouched and reads with no warning.
 const plain = new ExcelJS.Workbook();

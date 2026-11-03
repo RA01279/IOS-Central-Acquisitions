@@ -27,6 +27,8 @@ export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: stri
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loiType, setLoiType] = useState(defaults.loiType || "standard");
+  const [offerChannel, setOfferChannel] = useState(defaults.offerChannel || "broker");
+  const isDirect = offerChannel === "direct";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>(() => portfolio?.selectedIds?.filter((id) => portfolio.assets.some((a) => a.id === id)) ?? portfolio?.assets.map((a) => a.id) ?? []);
@@ -38,7 +40,7 @@ export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: stri
     setBusy(true);
     setError(null);
     const form = new FormData(e.currentTarget);
-    const payload: Record<string, string> = { loiType };
+    const payload: Record<string, string> = { loiType, offerChannel };
     for (const k of FIELDS) {
       if (k === "loiType") continue;
       const v = form.get(k);
@@ -94,6 +96,13 @@ export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: stri
           </fieldset>}
           <div className="grid-2">
             <label>
+              Offer channel
+              <select value={offerChannel} onChange={(e) => setOfferChannel(e.target.value)}>
+                <option value="broker">Through a broker</option>
+                <option value="direct">Direct to owner / unsolicited</option>
+              </select>
+            </label>
+            <label>
               LOI type
               <select value={portfolio ? "standard" : loiType} disabled={!!portfolio} onChange={(e) => setLoiType(e.target.value)}>
                 <option value="standard">Standard purchase</option>
@@ -120,18 +129,18 @@ export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: stri
               </label>
             )}
             <label>
-              Attn (broker contact)
-              <input name="attn" defaultValue={defaults.attn} required />
+              {isDirect ? "Attn (owner contact, optional)" : "Attn (broker contact)"}
+              <input key={offerChannel} name="attn" defaultValue={isDirect ? defaults.ownerAttn : defaults.attn} required={!isDirect} />
             </label>
             {isSlb && (
               <label>
                 Seller / addressee company
-                <input name="sellerName" defaultValue={defaults.sellerName} required />
+                <input name="sellerName" defaultValue={defaults.sellerName} required={!isDirect} />
               </label>
             )}
           </div>
 
-          {isSlb && (
+          {isSlb && !isDirect && (
             <div className="grid-2">
               <label>
                 Broker firm
@@ -198,13 +207,13 @@ export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: stri
                 required
               />
             </label>
-            <label>
+            {!isDirect && <label>
               Commission paid by
               <select name="commissionPayer" defaultValue={defaults.commissionPayer}>
                 <option value="Seller">Seller</option>
                 <option value="Buyer">Buyer</option>
               </select>
-            </label>
+            </label>}
             <label>
               Due diligence period
               <input name="ddDays" defaultValue={defaults.ddDays} placeholder="e.g. Sixty (60)" />
@@ -241,7 +250,9 @@ export default function LoiPanel({ dealId, defaults, portfolio }: { dealId: stri
             </div>
           )}
 
-          {!isSlb && (
+          {isDirect && <p className="hint">No broker details are required. The letter omits the broker and commission paragraph; a blank addressee uses “Property Owner”.</p>}
+          {isSlb && isDirect && <label>Offer expires on<input name="expiryDate" type="date" defaultValue={defaults.expiryDate} /></label>}
+          {!isSlb && !isDirect && (
             <label>
               Broker clause (name of firm)
               <input

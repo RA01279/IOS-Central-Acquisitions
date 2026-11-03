@@ -56,7 +56,7 @@ export async function archiveDeal(dealId: string, input: ArchiveInput, actor: st
 
 export async function restoreDeal(dealId: string, actor: string): Promise<Outcome> {
   const supabase = getServiceClient();
-  const { data: deal, error: readError } = await supabase.from("deals").select("stage, death_stage, death_reason").eq("id", dealId).maybeSingle();
+  const { data: deal, error: readError } = await supabase.from("deals").select("stage, death_stage, death_reason, disposition, follow_up_on, assigned_analyst, investment_review").eq("id", dealId).maybeSingle();
   if (readError) return { ok: false, status: 500, error: readError.message };
   if (!deal) return { ok: false, status: 404, error: "Deal not found" };
   if (deal.stage !== "archived") return { ok: false, status: 409, error: "Only archived deals can be restored" };
@@ -68,7 +68,7 @@ export async function restoreDeal(dealId: string, actor: string): Promise<Outcom
   }
   const { data: moved, error } = await supabase
     .from("deals")
-    .update({ stage: toStage, death_stage: null, death_reason: null })
+    .update({ stage: toStage, death_stage: null, death_reason: null, ...restoredFollowUp(deal,actor) })
     .eq("id", dealId)
     .eq("stage", "archived")
     .select("id");
@@ -76,12 +76,16 @@ export async function restoreDeal(dealId: string, actor: string): Promise<Outcom
   if (!moved?.length) return { ok: false, status: 409, error: "The deal changed. Refresh and try again." };
   // The death fields are cleared on the deal; keep them on the event so the
   // loss history survives the restore.
-  await logDealEvent(dealId, "restored", { to: toStage, died_at: deal.death_stage, reason: deal.death_reason }, actor);
+  await logDealEvent(dealId, "restored", { to: toStage, died_at: deal.death_stage, reason: deal.death_reason, priorDisposition:deal.disposition,priorFollowUpOn:deal.follow_up_on,owner:deal.assigned_analyst??null,nextAction:null,followUpStatus:"Needs new action and review date" }, actor);
   await fireStageChangeWebhook(dealId, { from: "archived", to: toStage, actor, via: "restore" });
   return { ok: true };
 }
 
 /** Why this deal can't be deleted by this person, or null when it can. */
+export function restoredFollowUp(deal:any,actor:string) {
+ return {disposition:null,follow_up_on:null,investment_review:{...deal.investment_review,incomeStatus:deal.investment_review?.incomeStatus??"unknown",decisionStatus:"Reopened — action required",nextAction:null,reopenedFrom:{disposition:deal.disposition??null,followUpOn:deal.follow_up_on??null,reason:deal.death_reason??null,stage:deal.death_stage??null,at:new Date().toISOString(),actor},updatedAt:new Date().toISOString(),updatedBy:actor}};
+}
+
 export function deleteBlocker(deal: { stage: string; portfolio_asset_id?: string | null }, actor: string): string | null {
   // A closed deal (or one tied to an owned asset) is the asset's purchase
   // record; deleting it would leave the asset marked owned with no deal behind

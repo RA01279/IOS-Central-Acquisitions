@@ -16,8 +16,7 @@
 //   rent    in-place rent vs the lease-comp market (or the MLA market rent)
 
 import { getServiceClient } from "./supabase";
-import { searchNearby } from "./demand-search";
-import { DEFAULT_CATEGORIES } from "./sourcing/yard-users";
+import { loadReviewedDemandSnapshot } from "./demand-map-evidence";
 import { haversineMiles } from "./ic-deck/geo";
 import { rateViews } from "./comps/rates";
 import { COMP_POLICY, marketRange, type CompRecord } from "./comps/match";
@@ -25,10 +24,13 @@ import { loadCompEvidence, subjectOf } from "./comps/evidence";
 import { marketFigureFor } from "./comps/market";
 import { dealValue } from "./summary";
 import { fmtMoney } from "./format";
+import { incomePosition } from "./investment-review";
+import { compReview } from "./comps/reviewed-evidence";
+import { directBuildingRent } from "./comps/match";
 import { researchZoning } from "./zoning/research";
 import type { ZoningReport } from "./zoning/types";
 import { scoreState, type FlagKey, type SignalState } from "./hopper-tokens";
-import { demandBreakdown, type DemandSnapshot, type SignalRow } from "./site-score";
+import { type DemandSnapshot, type SignalRow } from "./site-score";
 
 const SQFT_PER_ACRE = 43560;
 const COMP_SOURCE = (type: "sale" | "lease") =>
@@ -64,14 +66,7 @@ export async function loadSignals(dealIds: string[]): Promise<Map<string, Signal
 }
 
 export async function loadDemandSnapshot(dealId: string): Promise<DemandSnapshot | null> {
-  const { data } = await getServiceClient()
-    .from("deal_signals")
-    .select("auto_detail")
-    .eq("deal_id", dealId)
-    .eq("key", "demand")
-    .maybeSingle();
-  const d = data?.auto_detail as DemandSnapshot | undefined;
-  return d && Array.isArray(d.tenants) ? d : null;
+  return loadReviewedDemandSnapshot(dealId);
 }
 
 async function saveAuto(dealId: string, key: FlagKey, a: Auto) {
@@ -131,37 +126,9 @@ async function fetchJson(url: string, init?: RequestInit, timeoutMs = 20000): Pr
 
 // ---- demand -----------------------------------------------------------------
 
-export async function computeDemand(point: { lat: number; lng: number }): Promise<Auto> {
-  const key = process.env.GOOGLE_MAPS_SERVER_KEY;
-  if (!key) return { state: "unknown", note: "Places search not configured", source: "Google Places" };
-  // 20 is one page of Nearby Search -- effectively uncapped, so counts are real.
-  const { tenants } = await searchNearby({
-    ...point,
-    radiusMiles: SNAPSHOT_RADIUS_MI,
-    categories: DEFAULT_CATEGORIES,
-    perCategoryCap: 20,
-    apiKey: key,
-  });
-  const snapshot: DemandSnapshot = {
-    center: point,
-    radiusMiles: SNAPSHOT_RADIUS_MI,
-    fetchedAt: new Date().toISOString(),
-    tenants: tenants.map(({ name, category, lat, lng, placeId, distanceMi }) => ({
-      name,
-      category,
-      lat,
-      lng,
-      placeId,
-      distanceMi: Math.round(distanceMi * 100) / 100,
-    })),
-  };
-  const { total, index } = demandBreakdown(snapshot, 3);
-  return {
-    state: scoreState(index),
-    note: `${total} tenant-demand hits within 3 mi (index ${index})`,
-    source: `Google Places yard-user search, ${SNAPSHOT_RADIUS_MI} mi`,
-    detail: snapshot,
-  };
+/** Retired: nearby businesses are context, not an automatic leasing-demand grade. */
+export async function computeDemand(_point: { lat: number; lng: number }): Promise<Auto> {
+  return { state: "unknown", note: "Use the saved business map for context; verify leasing demand separately", source: "Reviewed business map" };
 }
 
 // ---- zoning -----------------------------------------------------------------
@@ -323,6 +290,8 @@ export async function computeFlood(point: { lat: number; lng: number }, lotSf: n
  */
 function marketFor(deal: any, comps: CompRecord[], type: "sale" | "lease") {
   const ios = deal.asset_class !== "industrial";
+  comps=compReview(deal,comps,subjectOf(deal)).comps;
+  if(type==="lease"&&!ios)comps=comps.filter(directBuildingRent);
   const { range } = marketRange(comps, subjectOf(deal), type, ios ? "land" : "building");
   const perUnit = range.mid === null ? null : ios ? range.mid * SQFT_PER_ACRE : range.mid;
   const label = deal.properties?.market ?? null;
@@ -379,7 +348,7 @@ export function computeRent(deal: any, comps: CompRecord[], mlaMarketRent: numbe
     source = "MLA market base rent";
   }
 
-  const inPlace =
+  const inPlace = !incomePosition(deal).current ? null :
     deal.in_place_rent != null
       ? pick(rateViews({ rent: deal.in_place_rent, rent_basis: deal.in_place_rent_basis, building_sf: p.building_sf, lot_sf: p.lot_sf }))
       : null;
@@ -416,7 +385,7 @@ export async function refreshSignals(
   const supabase = getServiceClient();
   const { data: deal, error } = await supabase
     .from("deals")
-    .select("id, asset_class, closed_price, contract_price, asking_price, in_place_rent, in_place_rent_basis, offers(price, offered_at), mla_data(market_base_rent), properties(address, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status)")
+    .select("id, asset_class, investment_review, deal_analysis_versions(*), closed_price, contract_price, asking_price, in_place_rent, in_place_rent_basis, offers(price, offered_at), mla_data(market_base_rent), properties(address, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status)")
     .eq("id", dealId)
     .single();
   if (error || !deal) throw new Error("Deal not found");
@@ -442,7 +411,7 @@ export async function refreshSignals(
   const comps = await loadCompEvidence();
   const mla = (deal.mla_data as any[] | null)?.find((m) => m.market_base_rent != null)?.market_base_rent ?? null;
 
-  const needDemand = !opts.skipDemand && (opts.demand || !(await loadDemandSnapshot(dealId)));
+  const needDemand = false; // Business searches only run through the reviewed map workflow.
   await Promise.all([
     needDemand ? run("demand", () => computeDemand(point)) : Promise.resolve(),
     run("zoning", () => computeZoning(dealId, p.address ?? "", point, p.geocode_precision ?? "")),

@@ -3,6 +3,7 @@ import {NextRequest} from "next/server";
 import {taxTestDb,taxTestClient,taxDealId} from "../../../tests/helpers/tax-test-db";
 import {taxFixture} from "./fixtures";
 import {readFileSync} from 'node:fs';
+import {billAccountMatches} from '../bill-account';
 const mocks=vi.hoisted(()=>({user:{email:"local-test@example.test"} as {email:string}|null,db:null as any,revalidate:vi.fn(),research:vi.fn()}));
 vi.mock("@/lib/auth",()=>({getCurrentUser:async()=>mocks.user}));
 vi.mock("@/lib/supabase",()=>({getServiceClient:()=>mocks.db}));
@@ -66,6 +67,7 @@ it('retains original county bytes during research and reloads the saved source l
   const report=taxFixture();report.sources[0].id='retained-county-original';report.sources[0].kind='official';
   for(const f of Object.values(report.records[0].facts) as any[])f.sourceId=report.sources[0].id;
   report.parcels[0].sourceIds=[report.sources[0].id];
+  report.scopeReview!.sourceIds=[report.sources[0].id];report.records[0].billEvidence!.sourceId=report.sources[0].id;
   await retain(report.sources[0],bytes,'application/pdf');return report;
  });
  const current=await(await GET(new NextRequest('http://localhost'),props)).json();
@@ -77,4 +79,18 @@ it('retains original county bytes during research and reloads the saved source l
  expect(source.storagePath).toMatch(/retained-county-original-[a-f0-9]{64}\.pdf$/);
  expect(files.get(source.storagePath)).toEqual(bytes);
  const signed=await GET(new NextRequest(`http://localhost?source=${source.id}`),props);expect(signed.status).toBe(307);
+});
+it('saves and reloads an assisted Bexar bill using the printed collector alias and rejects the assessor ID as a collector alias',async()=>{
+ const current=await(await GET(new NextRequest('http://localhost'),props)).json();
+ const state=current.state,p=state.parcels[0];
+ Object.assign(p,{county:'Bexar',state:'TX',accountId:'542790',assessmentGroup:'14101-005-0060',address:'4711 Broom St',review:'pending'});
+ const original=state.sources.find((s:any)=>s.storagePath)!;expect(original).toBeDefined();
+ const save=await POST(request({action:'save',revision:current.revision,state}),props),saved=await save.json();expect(save.status).toBe(200);
+ const manifest=[{year:2026,account:'542790',bills:[{id:'synthetic-bexar-issued',originalSourceId:original.id,url:'https://bexar.acttax.com/act_webdev/bexar/index.jsp',retrievedAt:'2026-10-26T12:00:00Z',collector:'Bexar County',collectorAccount:'14101-005-0060',version:'issued',total:34582.07,authorities:[{name:'Synthetic test combined authority rows',levied:34582.07}]}]}];
+ const body={action:'import-assisted',revision:saved.revision,parcelKey:p.key,text:JSON.stringify(manifest)};
+ expect((await POST(request({...body,text:body.text.replace('14101-005-0060','542790')}),props)).status).toBe(400);
+ const imported=await POST(request(body),props);expect(imported.status).toBe(200);
+ const loaded=await(await GET(new NextRequest('http://localhost'),props)).json(),row=loaded.state.records.find((r:any)=>r.parcelKey===p.key&&r.year===2026);
+ expect(row.billEvidence.collectorAccount).toBe('14101-005-0060');expect(billAccountMatches(p,row)).toBe(true);
+ expect(row.facts.levied.value).toBe(34582.07);expect(row.facts.levied.reviewed).toBe(false);expect(row.billEvidence.obligationStatus).toBe('unverified');
 });

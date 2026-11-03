@@ -82,5 +82,17 @@ const body = { portfolioId: 'portfolio', selectedDealIds: ['a', 'b'], loiType: '
   assert.equal((await post(body)).status, 200);
   assert.equal(offers.length, 2);
   assert(offers.every((o) => o[1].price === null));
+  reset();
+  assert.equal((await post({ ...body, offerChannel: 'direct', attn: '', brokerFirm: 'Stale Brokerage', brokerClauseName: 'Stale Broker' })).status, 200);
+  assert.equal(rendered.attn, 'Property Owner');
+  assert.equal(rendered.broker_clause_name, '');
+  assert.equal(saved.loi_terms.portfolioOfferTerms.offerChannel, 'direct');
+  assert.equal(saved.loi_terms.portfolioOfferTerms.brokerFirm, '');
+  const directXml = '<w:body><w:p><w:r><w:t>{seller_name}</w:t></w:r></w:p><w:p><w:r><w:t>{broker_</w:t></w:r><w:r><w:t>firm}</w:t></w:r></w:p><w:p><w:r><w:t>{broker_address1}</w:t></w:r></w:p><w:p><w:r><w:t>Broker: {broker_clause_name}; {commission_payer} pays commission.</w:t></w:r></w:p><w:p><w:r><w:t>Price: {price}</w:t></w:r></w:p></w:body>';
+  const direct = helperModule.exports.omitBrokerDetails(directXml);
+  assert.doesNotMatch(direct, /broker_|commission_payer|pays commission/);
+  assert.match(direct, /seller_name/);
+  assert.match(direct, /Price: \{price\}/);
+  assert.equal((direct.match(/<w:p>/g) ?? []).length, 2);
   console.log('Portfolio LOI: selection validation, IOS template, total-only pricing, filing, and offer recording passed.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

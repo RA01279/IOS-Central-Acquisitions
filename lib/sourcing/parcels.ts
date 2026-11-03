@@ -28,7 +28,7 @@ export interface Parcel {
   county: string | null;
   source: string;
   taxYear: number | null;
-  ownerClass: "public" | "institutional" | "private";
+  ownerClass: "public" | "institutional" | "private" | "unknown";
 }
 
 const clean = (v: unknown) => {
@@ -44,7 +44,7 @@ const PUBLIC = /\b(ISD|INDEPENDENT SCHOOL|CITY OF|COUNTY OF|COUNTY|STATE OF TEXA
 const INSTITUTIONAL = /\b(PROLOGIS|LINK LOGISTICS|BLACKSTONE|REXFORD|EASTGROUP|STAG|DUKE REALTY|BROOKFIELD|INVESCO|CBRE|NUVEEN|ALTERRA|CATELLUS|ZENITH|CRG|REIT|PROPERTY TRUST|INDUSTRIAL PROPERTIES|PROPERTIES TRUST)\b/i;
 
 export function classifyOwner(owner: string | null): Parcel["ownerClass"] {
-  if (!owner) return "private";
+  if (!owner) return "unknown";
   if (PUBLIC.test(owner)) return "public";
   if (INSTITUTIONAL.test(owner)) return "institutional";
   return "private";
@@ -210,8 +210,9 @@ async function lookupTexasParcel(lat: number, lng: number, fetcher: typeof fetch
 export async function lookupParcels<T extends { lat: number; lng: number }>(items: T[], limit = 8, fetcher: typeof fetch = fetch): Promise<Array<Parcel | null>> {
   const out: Array<Parcel | null> = new Array(items.length).fill(null);
   let next = 0;
+  const deadline = Date.now() + 30000;
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) { const i = next++; out[i] = await lookupParcel(items[i].lat, items[i].lng, fetcher); }
+    while (next < items.length) { const i = next++; if (Date.now() >= deadline) continue; out[i] = await lookupParcel(items[i].lat, items[i].lng, fetcher); }
   }));
   return out;
 }
@@ -219,7 +220,7 @@ export async function lookupParcels<T extends { lat: number; lng: number }>(item
 // Words that say nothing about who someone is.
 const GENERIC = new Set(["llc", "inc", "ltd", "lp", "llp", "co", "corp", "company", "corporation", "the", "and", "of", "group", "holdings", "properties", "property",
   "investments", "partners", "trust", "texas", "tx", "houston", "dallas", "austin", "san", "antonio", "fort", "worth", "services", "service", "supply", "rental",
-  "rentals", "equipment", "trucking", "towing", "construction", "materials", "building", "products", "paving", "fence", "real", "estate", "enterprises", "usa", "america"]);
+  "rentals", "equipment", "trucking", "towing", "construction", "materials", "building", "products", "paving", "fence", "real", "estate", "enterprises", "usa", "america", "georgia", "florida", "alabama", "carolina", "tennessee", "state", "department"]);
 const tokens = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((t) => t.length >= 4 && !GENERIC.has(t));
 
 /**
@@ -229,7 +230,7 @@ const tokens = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split
  * sale-leaseback lead, to be confirmed -- surnames can coincide.
  */
 export function likelyOwnerUser(owner: string | null, operators: string[]): boolean {
-  if (!owner) return false;
+  if (!owner || classifyOwner(owner) === "public") return false;
   const own = new Set(tokens(owner));
   return operators.some((name) => tokens(name).some((t) => own.has(t)));
 }

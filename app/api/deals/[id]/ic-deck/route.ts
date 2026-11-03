@@ -9,13 +9,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { STAGE_LABELS } from "@/lib/deals";
-import { COMP_POLICY, scoreComps, unitValue, isUsableForDistance, haversineMiles } from "@/lib/comps/match";
+import { COMP_POLICY, scoreComps, unitValue, directBuildingRent, isUsableForDistance, haversineMiles } from "@/lib/comps/match";
 import { loadCompEvidence, subjectOf } from "@/lib/comps/evidence";
 import { validateModelSummary } from "@/lib/ic-deck/model";
 import { renderIcDeck, type DeckAsset, type DeckComp } from "@/lib/ic-deck/deck";
 import type { Picture } from "@/lib/ic-deck/pptx-kit";
 import { parseNarrative } from "@/lib/agents/ic-narrative";
 import { UUID } from "@/lib/agents/catalog";
+import { modelIdentity, incomePosition, canExportModel } from "@/lib/investment-review";
+import { compReview } from "@/lib/comps/reviewed-evidence";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -75,11 +77,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   const { data: deal, error } = await db
     .from("deals")
-    .select("id, stage, asset_class, acquisition_type, contract_price, dd_end_on, closing_on, loi_terms, properties(address, city, market, submarket, latitude, longitude, geocode_precision, building_sf, lot_sf), offers(price, offered_at)")
+    .select("id, stage, asset_class, investment_review, deal_analysis_versions(*), uw_versions(*), acquisition_type, contract_price, dd_end_on, closing_on, loi_terms, properties(address, city, market, submarket, latitude, longitude, geocode_precision, building_sf, lot_sf, occupancy_status), offers(price, offered_at)")
     .eq("id", params.id)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  const incoming={address:model.property.address,acres:model.property.acres,buildingSf:model.property.buildingSf};
+  const checked=modelIdentity(deal,{returns_summary:{sourceIdentity:incoming}});
+  // A browser-supplied workbook cannot inherit a resolution for another source.
+  const incomingPrice=model.capitalization.find(c=>/^price$/i.test(c.label))?.amount??null;
+  if(!canExportModel(deal,incoming,model.source.fileName,incomingPrice,model.returns.levered.irr))return NextResponse.json({error:"Upload and reconcile this workbook's identity before creating an approval deck: "+checked.issues.join("; ")},{status:422});
+  model.warnings.push(incomePosition(deal).label+". Returns are cached workbook scenario results, not verified current income.");
   const prop: any = Array.isArray(deal.properties) ? deal.properties[0] : deal.properties;
   const located = prop?.latitude != null && prop?.longitude != null && isUsableForDistance(prop.geocode_precision);
   const lat = located ? Number(prop.latitude) : null, lng = located ? Number(prop.longitude) : null;
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // ---- comps: Hopper's own ranking, same as the deal page's comps panel ----
   let leaseComps: DeckComp[] = [], saleComps: DeckComp[] = [];
   if (lat !== null && lng !== null) {
-    const rows = await loadCompEvidence();
+    const rows = compReview(deal,await loadCompEvidence(),subjectOf(deal)).comps;
     // The workbook's sizes win over the property record, but the subject is
     // otherwise the comps panel's. Coverage is a FRACTION on both sides; the
     // deck once passed a percentage, which zeroed the coverage factor for
@@ -113,7 +121,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           return type === "lease"
             ? { n: i + 1, address: c.address, city: c.city ?? null, date: c.date_commenced ?? null, dateEstimated: !!c.date_estimated, buildingSf: c.building_sf ?? null, acres,
                 quoted: c.rent != null ? `${money(Number(c.rent), Number(c.rent) < 100 ? 2 : 0)} ${RENT_UNITS[c.rent_basis ?? ""] ?? ""}`.trim() : "—",
-                normalized: norm === null ? "—" : money(norm, 2), party: c.tenant_name ?? null, distanceMi: s.distanceMi,
+                normalized: norm === null ? "—" : `${money(norm, 2)}${directBuildingRent(c)?"":" whole-site equiv."}`, party: c.tenant_name ?? null, distanceMi: s.distanceMi,
                 lat: Number(c.latitude), lng: Number(c.longitude) }
             : { n: i + 1, address: c.address, city: c.city ?? null, date: c.closed_on ?? null, buildingSf: c.building_sf ?? null, acres,
                 quoted: c.sale_price != null ? money(Number(c.sale_price)) : "—", normalized: norm === null ? "—" : money(norm, 2),

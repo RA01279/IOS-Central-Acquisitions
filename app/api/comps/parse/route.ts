@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 //   { html?, text?, fileBase64?, fileName?,
 //     city?, market?, submarket?, address?, assumedTermMonths? }
 // html/text come from the clipboard (a paste carries both; HTML is preferred
-// because it has real cell boundaries). fileBase64 is a dropped .xlsx/.csv.
+// because it has real cell boundaries). fileBase64 is a dropped .xlsx/.xls/.csv.
 //
 // address and assumedTermMonths exist for rent rolls. A roll's rows are suites
 // in ONE building, so the address lives in the title block rather than in a
@@ -54,9 +54,9 @@ export async function POST(req: NextRequest) {
     if (body.fileBase64) {
       const buffer = Buffer.from(String(body.fileBase64), "base64");
       const fileName = String(body.fileName ?? "");
-      if (!/\.(xlsx|xlsm|csv)$/i.test(fileName)) {
+      if (!/\.(xlsx|xlsm|xls|csv)$/i.test(fileName)) {
         return NextResponse.json(
-          { error: `Can't read "${fileName}". Drop an .xlsx, .xlsm or .csv, or paste the table instead.` },
+          { error: `Can't read "${fileName}". Drop an .xlsx, .xlsm, .xls or .csv, or paste the table instead.` },
           { status: 400 }
         );
       }
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
             : undefined;
         const parsed = parseCompInput(
           { text: sheet.text },
-          { ...context, defaultCompType: nameHint }
+          { ...context, defaultCompType: nameHint, sourceRows: sheet.sourceRows }
         );
         const asProperties = asPropertyReport(parsed.comps);
         if (asProperties) {

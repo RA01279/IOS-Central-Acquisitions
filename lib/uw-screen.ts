@@ -12,6 +12,9 @@ import { dealValue, VALUE_BASIS_LABELS } from "./summary";
 import { loadUwComps } from "./uw-comps";
 import { buildDealInputs, compContext, type CompContext, type DealFacts, type DealUwBuild } from "./uw/deal-inputs";
 import type { UwModelSnapshot } from "./uw/model-snapshot";
+import { incomePosition, modelIdentity, latestVersion } from "./investment-review";
+import { compReview } from "./comps/reviewed-evidence";
+import { subjectOf } from "./comps/evidence";
 
 const AC = 43560;
 
@@ -36,7 +39,7 @@ export function dealFacts(deal: any, today: string): DealFacts {
     occupancy: p.occupancy_status === "vacant" || p.occupancy_status === "occupied" ? p.occupancy_status : null,
     price,
     priceLabel: value.amount != null ? `Deal ${VALUE_BASIS_LABELS[value.basis]}` : ask ? "Asking price" : "No price",
-    inPlaceRentAnnual: annualInPlaceRent(deal.in_place_rent, deal.in_place_rent_basis, p.lot_sf, p.building_sf),
+    inPlaceRentAnnual: incomePosition(deal).current ? annualInPlaceRent(deal.in_place_rent, deal.in_place_rent_basis, p.lot_sf, p.building_sf) : null,
     exitCap: deal.exit_cap_rate != null && Number(deal.exit_cap_rate) > 0 ? Number(deal.exit_cap_rate) : null,
     today,
   };
@@ -45,7 +48,8 @@ export function dealFacts(deal: any, today: string): DealFacts {
 /** The latest model version whose upload produced a snapshot. */
 export function latestModel(deal: any): ScreenModel | null {
   const versions = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
-  const latest = versions[0];
+  const latest = latestVersion(deal);
+  if (!modelIdentity(deal,latest).authoritative) return null;
   const snap = latest?.model_detail?.uw;
   return snap && Array.isArray(snap.rentRoll) ? { versionId: latest.id, versionNumber: latest.version_number, snapshot: snap as UwModelSnapshot } : null;
 }
@@ -61,16 +65,30 @@ export async function screenFor(deal: any, today = new Date().toISOString().slic
 }> {
   const facts = dealFacts(deal, today);
   const model = latestModel(deal);
-  const evidenceRows = await loadUwComps();
+  const review=compReview(deal,await loadUwComps() as any,subjectOf(deal));
+  const evidenceRows = review.comps as Awaited<ReturnType<typeof loadUwComps>>;
   const comps = compContext(evidenceRows, facts.market, facts.acres, today,36,deal.asset_class ?? null);
+  comps.reviewVersion=review.saved?.version??0;
+  comps.messages.push(review.label);
   return {
     facts,
     model,
-    modelPending: !model && (deal.uw_versions ?? []).length > 0,
+    modelPending: !model && (deal.uw_versions ?? []).length > 0 && modelIdentity(deal).authoritative,
     comps,
-    build: buildDealInputs(facts, model?.snapshot ?? null, comps),
+    build: incomeAwareBuild(deal, buildDealInputs(facts, model?.snapshot ?? null, comps)),
     evidenceRows,
   };
+}
+
+export function incomeAwareBuild(deal: any, build: DealUwBuild): DealUwBuild {
+  const position=incomePosition(deal);
+  if (!position.current) {
+    build.inputs.rentRoll=build.inputs.rentRoll.map(t=>({...t,status:"Pipeline"}));
+    build.warnings.push(position.label+". Modeled rent is a proposed screening case; confirm commencement and carrying expenses. Status alone does not invent a delay.");
+  }
+  const identity=modelIdentity(deal);
+  if (!identity.authoritative && identity.state!=="missing") build.warnings.push("Workbook excluded pending source identity review: "+identity.issues.join("; "));
+  return build;
 }
 
 export interface SavedRunRow {

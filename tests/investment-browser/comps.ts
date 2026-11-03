@@ -1,0 +1,2 @@
+export const subject={lat:32.62,lng:-97.19,lotSf:8.7*43560,buildingSf:16000,coveragePct:16000/(8.7*43560),market:'Fort Worth',submarket:null,assetClass:'ios'};
+export const comps=Array.from({length:5},(_,i)=>({id:'fixture-comp-'+i,status:'confirmed',comp_type:'lease' as const,address:i===4?'Fixture outlier yard':'Fixture yard '+i,asset_class:'ios',market:'Fort Worth',latitude:32.62,longitude:-97.19,geocode_precision:'rooftop',date_commenced:'2026-09-01',lot_sf:16.59*43560,building_sf:7226.6,rent:i===4?5500:650+i*50,rent_basis:'per_acre_monthly',lease_type:'NNN'}));

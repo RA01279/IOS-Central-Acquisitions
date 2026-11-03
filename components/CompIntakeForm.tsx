@@ -21,6 +21,7 @@ import type { CompSourcePart } from "./OutlookCompPicker";
 import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
 import CompDecimalInput from "./CompDecimalInput";
+import CompDateInput from "./CompDateInput";
 import { validCoordinates } from "@/lib/location";
 import { isExplicitCompTable } from "@/lib/comps/parse";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
@@ -52,6 +53,8 @@ interface DraftComp {
   submarket: string | null;
   yearBuilt: number | null;
   buildingSf: number | null;
+  leasedSf?: number | null;
+  projectName?: string | null;
   lotSf: number | null;
   acres: number | null;
   yardAcres?: number | null;
@@ -266,9 +269,9 @@ export default function CompIntakeForm({
   }
 
   async function handleFile(file: File) {
-    if (!/\.(xlsx|xlsm|csv)$/i.test(file.name)) {
+    if (!/\.(xlsx|xlsm|xls|csv)$/i.test(file.name)) {
       setError(
-        `"${file.name}" isn't a spreadsheet. Drop an .xlsx/.csv attachment, or paste the table from the email body instead.`
+        `"${file.name}" isn't a spreadsheet. Drop an .xlsx/.xls/.csv attachment, or paste the table from the email body instead.`
       );
       return;
     }
@@ -322,7 +325,7 @@ export default function CompIntakeForm({
     const text = dt.getData("text/plain");
 
     void (async () => {
-      const spreadsheet = files.find((f) => /\.(xlsx|xlsm|csv)$/i.test(f.name));
+      const spreadsheet = files.find((f) => /\.(xlsx|xlsm|xls|csv)$/i.test(f.name));
       if (spreadsheet) {
         handleFile(spreadsheet);
         return;
@@ -332,7 +335,7 @@ export default function CompIntakeForm({
       for (const entry of virtualEntries) {
         try {
           const file = await entryToFile(entry);
-          if (/\.(xlsx|xlsm|csv)$/i.test(file.name)) {
+          if (/\.(xlsx|xlsm|xls|csv)$/i.test(file.name)) {
             handleFile(file);
             return;
           }
@@ -343,7 +346,7 @@ export default function CompIntakeForm({
             return;
           }
           setError(
-            `"${file.name}" isn't a spreadsheet. Drop an .xlsx, .xlsm or .csv, or paste the table from the email body.`
+            `"${file.name}" isn't a spreadsheet. Drop an .xlsx, .xlsm, .xls or .csv, or paste the table from the email body.`
           );
           return;
         } catch {
@@ -354,7 +357,7 @@ export default function CompIntakeForm({
       // A non-spreadsheet real file (e.g. a dragged PDF).
       if (files.length) {
         setError(
-          `"${files[0].name}" isn't a spreadsheet. Drop an .xlsx, .xlsm or .csv, or paste the table from the email body.`
+          `"${files[0].name}" isn't a spreadsheet. Drop an .xlsx, .xlsm, .xls or .csv, or paste the table from the email body.`
         );
         return;
       }
@@ -654,7 +657,7 @@ export default function CompIntakeForm({
         <input
           ref={fileInput}
           type="file"
-          accept=".xlsx,.xlsm,.csv"
+          accept=".xlsx,.xlsm,.xls,.csv"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -959,6 +962,7 @@ export default function CompIntakeForm({
                         )}
                         {d.yardAcres != null && <div className="muted">Usable yard: {d.yardAcres} acres</div>}
                         {d.notes && <details><summary>Original broker wording</summary><pre style={{whiteSpace: "pre-wrap", maxWidth: 320}}>{d.notes}</pre></details>}
+                        {d.projectName && <label>Building / project identifier<input value={d.projectName} onChange={e => update(i, { projectName: e.target.value })} /></label>}
                       </td>
                       <td>
                         <label>City<input disabled={busy} value={d.city ?? ""} onChange={e => update(i, { city: e.target.value })} /></label>
@@ -979,20 +983,7 @@ export default function CompIntakeForm({
                         <label>Submarket<input value={d.submarket ?? ""} onChange={e => update(i, { submarket: e.target.value })} /></label>
                       </td>
                       <td>
-                        <input
-                          type="date"
-                          value={(d.compType === "sale" ? d.closedOn : d.dateCommenced) ?? ""}
-                          onChange={(e) =>
-                            update(
-                              i,
-                              d.compType === "sale"
-                                ? { closedOn: e.target.value || null }
-                                : // Typing a real date makes it no longer an
-                                  // estimate, so the flag has to clear.
-                                  { dateCommenced: e.target.value || null, dateEstimated: false }
-                            )
-                          }
-                        />
+                        <CompDateInput value={d.compType === "sale" ? d.closedOn : d.dateCommenced} precision={d.datePrecision} onChange={(value, precision) => update(i, { ...(d.compType === "sale" ? { closedOn: value } : { dateCommenced: value, dateEstimated: false }), datePrecision: precision })} />
                         {d.dateEstimated && (
                           <div
                             className="muted"
@@ -1025,6 +1016,7 @@ export default function CompIntakeForm({
                           }
                           style={{ width: 80 }}
                         />
+                        {d.leasedSf != null && <div className="hint">SF Leased: {d.leasedSf.toLocaleString()} (tenancy only)</div>}
                       </td>
                       <td>
                         <input

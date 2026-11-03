@@ -10,7 +10,7 @@ function load(file, deps = {}) {
  { exports, require: name => { if (!(name in deps)) throw Error("Unexpected import " + name); return deps[name]; }, URL, Buffer, Date, console });
  return exports;
 }
-const tables = { outlook_helpers: [], outlook_helper_jobs: [], agent_runs: [], deals: [] };
+const tables = { outlook_helpers: [], outlook_helper_jobs: [], agent_runs: [], deals: [], sourcing_sweeps: [] };
 function builder(table) {
  let filters = [], op = "select", payload, selection = false, max = Infinity;
  const b = {
@@ -50,6 +50,9 @@ const lib=load("lib/agents/server.ts",deps); deps["@/lib/agents/server"]=lib;
 deps["./memo"]=deps["@/lib/agents/memo"]=load("lib/agents/memo.ts",deps);
 deps["./ic-narrative"]=deps["@/lib/agents/ic-narrative"]=load("lib/agents/ic-narrative.ts",deps);
 deps["./sourcing"]=deps["@/lib/agents/sourcing"]=load("lib/agents/sourcing.ts",deps);
+deps["./identity"]=load("lib/sourcing/identity.ts",deps);
+deps["@/lib/sourcing/snapshot"]=load("lib/sourcing/snapshot.ts",deps);
+deps["@/lib/sourcing/fit"]=load("lib/sourcing/fit.ts",deps);
 for (const m of ["deal-import","comp-import","portfolio-import","market-report","market-narrative"]) deps["./"+m]=deps["@/lib/agents/"+m]=load("lib/agents/"+m+".ts",deps);
 deps["@/lib/agents/catalog"]=load("lib/agents/catalog.ts",deps);
 deps["@/lib/agents/context"]={loadEvidence:async()=>[{label:"Synthetic test",data:{address:"123 Example Road"}}]};
@@ -74,6 +77,25 @@ email="owner@example.com";
 const next=await browser.POST(req({agent:"pipeline-follow-up",text:""})); assert.equal(next.status,202);
 tables.agent_runs.find(r=>r.id===next.body.id).created_at=new Date(Date.now()-21*60000).toISOString();
 await lib.reap(db,email); assert.equal(tables.agent_runs.find(r=>r.id===next.body.id).status,"failed");
+// Qualification uses the owner's saved review, never browser-supplied facts.
+const sweepId=crypto.randomUUID();
+const reviewedSite=(ref,ownerClass)=>({ref,lat:29.87,lng:-95.55,address:'100 Reviewed Yard Rd',known:null,parcel:ownerClass?{ownerClass}:null,operators:[],categories:[]});
+tables.sourcing_sweeps.push({id:sweepId,owner_email:email,snapshot:{label:'Reviewed Houston',market:'Houston',sites:[reviewedSite('S1','public'),reviewedSite('S2',null)]}});
+const sourcingRequest={agent:'off-market-sourcing',text:'UNTRUSTED BROWSER LOCATION',sweepId,refs:['S1','S2'],buyBox:{minAcres:2,maxAcres:10,maxCoveragePct:30}};
+assert.equal((await browser.POST(req({...sourcingRequest,refs:['S9']}))).status,400);
+email='other@example.com';assert.equal((await browser.POST(req(sourcingRequest))).status,400);email='owner@example.com';
+const queue=async()=>{const r=await browser.POST(req(sourcingRequest));assert.equal(r.status,202);return (await worker.GET(req(null,{token}))).body.job;};
+let job=await queue();
+assert.ok(job.prompt.includes('100 Reviewed Yard Rd'));assert.ok(!job.prompt.includes('UNTRUSTED BROWSER LOCATION'));
+const site=ref=>({ref,ownerType:'unknown',outdoorStorage:'unverified',fit:'strong',fitReason:'Agent claim',outreach:'',signals:[],sources:[],unverified:[]});
+const complete=async(sites)=>{assert.equal((await worker.POST(req({id:job.id,result:{report:JSON.stringify({version:'sourcing-v1',sites}),model:'test',limitations:[]}},{token}))).status,200);return tables.agent_runs.find(r=>r.id===job.id);};
+assert.equal((await complete([site('S1')])).status,'failed','missing reviewed references fail qualification');
+job=await queue();
+const sourced=await complete([site('S1'),site('S2')]);assert.equal(sourced.status,'completed');
+const checked=JSON.parse(sourced.result.report).sites;
+assert.equal(checked[0].ownerType,'public');assert.equal(checked[0].fit,'poor');
+assert.equal(checked[1].fit,'unknown','an agent cannot claim strong fit without usable area and footprint');
+assert.equal((await browser.GET(req(null,{path:'?id='+job.id}))).body.sources.find(s=>s.label==='Reviewed sourcing sites v2').data.sites.length,2);
 tables.outlook_helpers[0].expires_at=new Date(Date.now()-1000).toISOString();
 assert.equal((await worker.GET(req(null,{token}))).status,401);
 console.log("PASS: enqueue, single claim, duplicate prevention, malformed result rejection, saved report retrieval, owner isolation, timeout and pairing expiry.");

@@ -20,10 +20,12 @@ function load(path, deps = {}) {
   return exports;
 }
 const geo = load("../lib/ic-deck/geo.ts");
-const demand = load("../lib/ic-deck/iosDemandMap.ts", { "./geo": geo });
+const validation = load("../lib/analysis-validation.ts");
+const review = load("../lib/demand-map-review.ts", { "./analysis-validation": validation, "./ic-deck/geo": geo });
+const demand = load("../lib/ic-deck/iosDemandMap.ts", { "./geo": geo, "../demand-map-review": review });
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=";
 await demand.exportToPptx({
-  address: "8615 Golden Spike Lane", center: { lat: 29.9, lng: -95.5 }, radiusMiles: 5, zoom: 12,
+  fetchedAt: "2026-10-06T21:57:35.620Z", address: "8615 Golden Spike Lane", center: { lat: 29.9, lng: -95.5 }, radiusMiles: 5, zoom: 12,
   imageBase64: png, tenants: [{ name: 'A & B "Rentals"', category: demand.DEFAULT_CATEGORIES[0].label,
     lat: 29.91, lng: -95.5, distanceMi: 0.5, placeId: "test", logoBase64: png,
     website: 'https://example.com/?a=1&b=2' }],
@@ -34,4 +36,7 @@ for (const name of Object.keys(zip.files).filter((p) => /\.xml$|\.rels$/.test(p)
   const xml = zip.file(name).asText();
   if (xml.includes("tooltip=")) console.log(name, xml.match(/.{0,50}tooltip=.{0,140}/g));
 }
-console.log("Generated regression PPTX for XML validation.");
+const slideXml=zip.file("ppt/slides/slide1.xml").asText();
+for(const expected of ["DEMAND MAP","Selected business locations only","2026-10-06 21:57:35 UTC","Exported:"]) if(!slideXml.includes(expected)) throw new Error("Missing evidence text: "+expected);
+if(slideXml.includes("potential IOS users")) throw new Error("Overstated demand claim");
+console.log("Generated regression PPTX; source date, export date and limitations verified.");

@@ -12,6 +12,7 @@ import { ASSET_CLASS_LABELS, STAGE_LABELS } from "./deals";
 import { addDays, assetClassOf, ctToday, dealValue } from "./summary";
 import { OFFER_STATUS_LABELS } from "./offer-status";
 import { listTeam, nameOf } from "./team";
+import { decisionReport } from "./decision-report";
 
 const OPEN_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
 const MOVE_EVENTS: Record<string, string> = {
@@ -32,6 +33,7 @@ export type WeeklyReport = {
   weekStart: string;
   horizon: string;
   generatedAt: string;
+  decisions: ReturnType<typeof decisionReport>[];
   snapshot: { assetClass: string; label: string; stages: { stage: string; label: string; count: number; value: number }[]; total: { count: number; value: number } }[];
   closed: { mtd: { count: number; value: number }; ytd: { count: number; value: number } };
   moves: (ReportDealRef & { date: string; what: string; actor: string; detail: string | null })[];
@@ -51,7 +53,7 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
   const [deals, events, offers, milestones, team] = await Promise.all([
     fetchAll((f, t) =>
       db.from("deals")
-        .select("id, stage, asset_class, assigned_analyst, created_at, closed_on, closed_price, contract_price, dd_end_on, closing_on, ic_on, death_reason, properties(address, market), offers(price, offered_at)")
+        .select("*, properties(*), offers(price, offered_at), uw_versions(*), uw_runs(*), deal_analysis_versions(*)")
         .eq("deal_type", "acquisition").order("id").range(f, t)),
     fetchAll((f, t) =>
       db.from("deal_events").select("deal_id, event_type, detail, actor, created_at")
@@ -117,7 +119,7 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
   const upcoming: WeeklyReport["upcoming"] = [];
   for (const d of deals as any[]) {
     if (d.stage === "archived" || d.stage === "closed") continue;
-    for (const [date, what] of [[d.dd_end_on, "DD expires"], [d.closing_on, "Closing"], [d.ic_on, "IC"]] as const) {
+    for (const [date, what] of [[d.dd_end_on, "DD expires"], [d.closing_on, "Closing"], [d.ic_on, "IC"], [d.call_for_offers_on,"Call for offers"], [d.follow_up_on,"Follow-up"]] as const) {
       if (date && date >= today && date <= horizon) upcoming.push({ ...ref(d.id), date, what });
     }
   }
@@ -145,6 +147,7 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
 
   return {
     today,
+    decisions: deals.filter((d:any)=>(OPEN_STAGES as readonly string[]).includes(d.stage)).map(decisionReport),
     weekStart,
     horizon,
     generatedAt: new Date().toISOString(),

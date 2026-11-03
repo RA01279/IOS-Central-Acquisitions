@@ -6,3 +6,14 @@ node_modules
 docs/tax-acceptance-*
 docs/tax-evidence-*
 docs/investment-audit-*
+
+docs/tax-system-*
+supabase/.temp
+
+docs/tax-system-*
+supabase/.temp
+
+.tmp-pptx/
+.scratch/
+
+.tmp-memo/

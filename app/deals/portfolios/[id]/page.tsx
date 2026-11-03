@@ -13,6 +13,7 @@ import { STAGE_LABELS } from "@/lib/deals";
 import { dealRef } from "@/lib/format";
 import { loadCompEvidence, subjectOf } from "@/lib/comps/evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
+import { compReview } from "@/lib/comps/reviewed-evidence";
 import AllocatedPriceInput from "@/components/AllocatedPriceInput";
 import PortfolioActions from "@/components/PortfolioActions";
 import LoiPanel from "@/components/LoiPanel";
@@ -41,7 +42,7 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
   const [{ data: pf, error }, { data: deals, error: dealsError }, comps] = await Promise.all([
     db.from("deal_portfolios").select("*").eq("id", id).maybeSingle(),
     db.from("deals")
-      .select("id, ref, stage, asset_class, loi_terms, asking_price, contract_price, closed_price, properties(address, city, market, submarket, latitude, longitude, lot_sf, building_sf, occupancy_status)")
+      .select("id, ref, stage, asset_class, loi_terms, asking_price, contract_price, closed_price, deal_analysis_versions(*), properties(address, city, market, submarket, latitude, longitude, lot_sf, building_sf, occupancy_status)")
       .eq("deal_portfolio_id", id)
       .order("created_at"),
     loadCompEvidence(),
@@ -56,7 +57,8 @@ export default async function PortfolioPage(props: { params: Promise<{ id: strin
     const acres = num(p.lot_sf) ? num(p.lot_sf)! / AC : null;
     const sf = num(p.building_sf);
     const price = num(d.closed_price) ?? num(d.contract_price) ?? num(d.asking_price);
-    const uw = compUnderwriting(comps as UwComp[], subjectOf(d));
+    const review=compReview(d,comps,subjectOf(d));
+    const uw = compUnderwriting(review.comps as UwComp[], review.subject);
     return { d, p, acres, sf, price, uw, ios: d.asset_class !== "industrial" };
   });
   type Site = (typeof sites)[number];

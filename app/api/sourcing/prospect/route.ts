@@ -15,6 +15,10 @@ import { UUID } from "@/lib/agents/catalog";
 import { parseSourcing } from "@/lib/agents/sourcing";
 import { lookupParcel } from "@/lib/sourcing/parcels";
 import { defaultOwner } from "@/lib/market-owners";
+import { reviewedSites } from "@/lib/sourcing/snapshot";
+import { parcelKey } from "@/lib/sourcing/identity";
+import { haversineMiles } from "@/lib/comps/match";
+import { createHash } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -22,24 +26,34 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const body = await req.json().catch(() => null);
-  const site = body?.site;
-  if (!body || typeof body.runId !== "string" || !UUID.test(body.runId) || typeof body.ref !== "string" || !/^S\d{1,3}$/.test(body.ref)
-      || !site || !validCoordinates({ latitude: site.lat, longitude: site.lng }) || typeof site.address !== "string" || site.address.length > 200) {
+  if (!body || typeof body.runId !== "string" || !UUID.test(body.runId) || typeof body.ref !== "string" || !/^S\d{1,3}$/.test(body.ref)) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
-  const market = typeof body.market === "string" ? body.market.slice(0, 80) : undefined;
 
   const db = getServiceClient();
-  const { data: run, error } = await db.from("agent_runs").select("result")
+  const { data: run, error } = await db.from("agent_runs").select("result,sources")
     .eq("id", body.runId).eq("owner_email", user.email.toLowerCase()).eq("agent", "off-market-sourcing").eq("status", "completed").maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const report = run?.result?.report ? parseSourcing(run.result.report) : null;
+  const reviewed = reviewedSites(run?.sources);
+  if (!reviewed) return NextResponse.json({ error: "Requalify a saved sweep before adding this prospect." }, { status: 409 });
+  const site = reviewed.sites.find(s => s.ref === body.ref);
+  if (!site) return NextResponse.json({ error: "That site was not selected in this review." }, { status: 404 });
+  const market = reviewed.market || undefined;
+  const report = run?.result?.report ? parseSourcing(run.result.report, reviewed.sites.map(s => s.ref), true) : null;
   const sourced = report?.sites.find((s) => s.ref === body.ref);
   if (!sourced) return NextResponse.json({ error: "That site isn't in your sourcing report." }, { status: 404 });
+  const hash = createHash("sha256").update(`sourcing:${reviewed.sweepId}:${site.ref}`).digest("hex");
+  const intakeKey = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  const prior = await db.from("deals").select("id").eq("intake_key", intakeKey).maybeSingle();
+  if (prior.error) return NextResponse.json({ error: "Could not check previous promotion" }, { status: 503 });
+  if (prior.data) return NextResponse.json({ dealId: prior.data.id });
 
   // Owner of record straight from the appraisal roll, looked up here rather
   // than taken from the browser; it fills whatever the agent left empty.
   const parcel = await lookupParcel(Number(site.lat), Number(site.lng));
+  const record = parcelKey(parcel), researched = parcelKey({ county: sourced.county, propId: sourced.parcelId });
+  if (record && researched && record !== researched) return NextResponse.json({ error: "Parcel sources disagree. Review the property location before adding it." }, { status: 409 });
+  if (site.identityStatus === "address-conflict" && (!researched || record !== researched)) return NextResponse.json({ error: "Resolve the listing/parcel address conflict before adding this prospect." }, { status: 409 });
   const owner = sourced.owner ?? parcel?.owner ?? null;
   const situs = parcel?.situsAddress?.split(",")[0].replace(/\s+/g, " ").trim() || null;
 
@@ -47,6 +61,7 @@ export async function POST(req: NextRequest) {
   // Google pin, which the analyst has just looked at on the map.
   const address = sourced.parcelAddress ?? situs ?? site.address;
   const verified = sourced.parcelAddress ? await geocodeAddress([sourced.parcelAddress, sourced.city, canonicalMarket(market, sourced.city)], { requirePrecise: true, state: stateOfMarket(canonicalMarket(market, sourced.city)) }) : null;
+  if (verified && haversineMiles(site.lat, site.lng, verified.lat, verified.lng) > .25) return NextResponse.json({ error: "The researched address is away from the reviewed site. Review the location before adding it." }, { status: 409 });
   const point = verified ? { latitude: verified.lat, longitude: verified.lng, geocodePrecision: verified.precision } : { latitude: Number(site.lat), longitude: Number(site.lng), geocodePrecision: undefined };
 
   let result: any;
@@ -59,6 +74,7 @@ export async function POST(req: NextRequest) {
       currentOwnerName: owner ?? undefined,
       mla: { status: "assumed" },
       createdBy: user.email,
+      intakeKey,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message ?? "Could not create the prospect." }, { status: 400 });
@@ -66,7 +82,7 @@ export async function POST(req: NextRequest) {
   if (!result?.deal) {
     return NextResponse.json({ error: "Hopper already has a deal at this address.", duplicates: result?.duplicates ?? [] }, { status: 409 });
   }
-  const operators = Array.isArray(site.operators) ? site.operators.filter((o: unknown) => typeof o === "string").slice(0, 10).map((o: string) => o.slice(0, 120)) : [];
+  const operators = site.operators.map(o => o.name);
   // Owner: the market's coverer, else the analyst who ran the sweep. Never fatal.
   try {
     await db.from("deals").update({ assigned_analyst: await defaultOwner(market, sourced.city, user.email) }).eq("id", result.deal.id);

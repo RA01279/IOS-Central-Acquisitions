@@ -35,6 +35,8 @@ const NO_EXPIRY = 99999;
 
 const zeros = () => YEARS.map(() => 0);
 const sum = (xs: readonly number[]) => xs.reduce((s, x) => s + x, 0);
+/** Fraction of a model year before explicitly assumed full expense recovery. */
+export const ownerExpenseShare=(year:number,startMonth:number|undefined)=>startMonth===undefined?1:Math.max(0,Math.min(12,startMonth-12*(year-1)))/12;
 
 /** Inputs!B12 = MATCH(scenario, B4:D4, 0). */
 export function ScenIdx(scenario: ScenarioName): 1 | 2 | 3 {
@@ -268,6 +270,7 @@ export function debtForYear(
 // --- Validation -------------------------------------------------------------
 
 function validate(inputs: UwInputs): void {
+  if(inputs.ExpenseRecoveryStartMonth!==undefined&&(!Number.isInteger(inputs.ExpenseRecoveryStartMonth)||inputs.ExpenseRecoveryStartMonth<0||inputs.ExpenseRecoveryStartMonth>120))throw new Error("Recovery start must be whole months from 0 to 120");
   const finite=(key:string,v:number,min=-Infinity,max=Infinity)=>{if(!Number.isFinite(v)||v<min||v>max)throw new Error(`${key} must be a supported finite number between ${min} and ${max}`);};
   finite('PurchPrice',inputs.PurchPrice,Number.MIN_VALUE);finite('Acres',inputs.Acres,Number.MIN_VALUE);
   for(const key of ['Insurance','OtherOpex','ReservePerAcre','CompPerAcre','MinDSCR','StepG','StepCap','LoanRate','SellerTax'] as const)finite(key,inputs[key],0);
@@ -354,14 +357,15 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
 
   // Rows 24-32.
   const taxBase = TaxSwitch === 1 ? PurchPrice * TaxRate : SellerTax;
-  const propertyTax = ops((t) => -taxBase * grow(t));
-  const insurance = ops((t) => -Insurance * grow(t));
-  const otherOpex = ops((t) => -OtherOpex * grow(t));
+  const ownerShare=(t:number)=>ownerExpenseShare(t,inputs.ExpenseRecoveryStartMonth);
+  const propertyTax = ops((t) => -taxBase * grow(t)*ownerShare(t));
+  const insurance = ops((t) => -Insurance * grow(t)*ownerShare(t));
+  const otherOpex = ops((t) => -OtherOpex * grow(t)*ownerShare(t));
   const mgmtFee = ops((t) => -MgmtPct * egr[t]);
   const totalOpex = YEARS.map((t) => propertyTax[t] + insurance[t] + otherOpex[t] + mgmtFee[t]);
   const noi = YEARS.map((t) => (t >= 1 ? egr[t] + totalOpex[t] : 0));
-  const noiExReassessedTax = ops((t) => noi[t] + (TaxSwitch === 1 ? PurchPrice * TaxRate * grow(t) : 0));
-  const reassessedTaxPerDollar = ops((t) => TaxSwitch * TaxRate * grow(t));
+  const noiExReassessedTax = ops((t) => noi[t] + (TaxSwitch === 1 ? PurchPrice * TaxRate * grow(t)*ownerShare(t) : 0));
+  const reassessedTaxPerDollar = ops((t) => TaxSwitch * TaxRate * grow(t)*ownerShare(t));
 
   // Rows 35-36. SUMIF on the capex year; years outside 1..11 never match a column.
   const capexCosts = inputs.capex.map((item) => ({ year: item.year, cost: capexScenarioCost(item, inputs, lv.CapexOverrun) }));
@@ -404,8 +408,8 @@ export function buildCashFlow(inputs: UwInputs, overrides: CashFlowOverrides = {
       })
     );
     const egrY = rev * (1 - lv.Vacancy);
-    const noiY = egrY - (taxBase + Insurance + OtherOpex) * grow(y) - MgmtPct * egrY;
-    return { noi: noiY, ex: noiY + (TaxSwitch === 1 ? PurchPrice * TaxRate * grow(y) : 0) };
+    const noiY = egrY - (taxBase + Insurance + OtherOpex) * grow(y)*ownerShare(y) - MgmtPct * egrY;
+    return { noi: noiY, ex: noiY + (TaxSwitch === 1 ? PurchPrice * TaxRate * grow(y)*ownerShare(y) : 0) };
   };
   const stab = (inputs.ExitNoi ?? "forward") === "stabilized";
   const forwardNoi = ops((t) => (stab ? stabilized(t + 1).noi : noiAt(t + 1)));
@@ -512,7 +516,7 @@ export function computeReturns(inputs: UwInputs, cf: CashFlowTable): Returns {
     solvedPrice: solved,
     solvedPricePerAcre: solved / Acres,
     priceVsSolved: PurchPrice / solved - 1,
-    reassessedYear1Tax: PurchPrice * TaxRate,
+    reassessedYear1Tax: PurchPrice * TaxRate*ownerExpenseShare(1,inputs.ExpenseRecoveryStartMonth),
     capexAfterExit: capexAfterExit(inputs),
   };
 }

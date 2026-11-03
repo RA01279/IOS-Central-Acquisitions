@@ -152,10 +152,9 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         />
         <KpiCard label="Yr-1 yield" value={k.yieldLabel} sub={k.stabilizedLabel} />
         <KpiCard
-          label="Demand index"
-          value={k.demand.index ?? "—"}
-          sub={k.demand.index == null ? "Not searched yet" : "3 mi radius"}
-          subTone={k.demand.index == null ? undefined : scoreState(k.demand.index)}
+          label="Selected businesses"
+          value={site.snapshot ? k.demand.total : "—"}
+          sub={site.snapshot ? `Saved review · ${k.radius} mi · context only` : "No current saved map review"}
         />
       </div>
 
@@ -164,16 +163,16 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         <div className="stack">
           <div className="card" style={{ gap: 10 }}>
             <div className="card-head">
-              <span className="overline">Tenant demand</span>
+              <span className="overline">Reviewed Nearby Businesses</span>
               <a href={`/deals/${deal.id}/demand-map`} className="link-caps">
                 Open map
               </a>
             </div>
             {site.snapshot ? (
-              <DemandBars rows={k.demand.rows} limit={6} />
+              <><DemandBars rows={k.demand.rows} limit={6} /><p className="hint">Selected businesses only; active leasing demand and site suitability are unverified.</p></>
             ) : (
               <p className="hint" style={{ margin: 0 }}>
-                No demand search yet. Score this site, or run one from the map.
+                No current saved map review. Open the map to generate, review and save a business selection.
               </p>
             )}
           </div>

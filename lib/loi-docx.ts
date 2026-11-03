@@ -5,6 +5,16 @@
 // then name, title and entity lines of "{signer1_x}<tab>{signer2_x}". Drop the
 // right-hand image -- the one placed further across the page -- and the tabbed
 // second column, so no stray signature or blank line is left behind.
+export function omitBrokerDetails(xml: string): string {
+  // Match visible text so Word's arbitrary run boundaries do not affect tags.
+  return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = paragraph.replace(/<[^>]+>/g, "");
+    if (/\{(?:broker_clause_name|commission_payer)\}/.test(text)) return "";
+    if (/\{broker_(?:firm|address1|address2)\}/.test(text)) return "";
+    return paragraph;
+  });
+}
+
 export function dropSecondSigner(xml: string): string {
   const namesAt = xml.indexOf("{signer1_name}");
   const sigStart = namesAt < 0 ? -1 : xml.lastIndexOf("<w:p ", xml.lastIndexOf("<w:drawing>", namesAt));

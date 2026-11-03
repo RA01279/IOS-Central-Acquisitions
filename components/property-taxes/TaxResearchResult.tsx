@@ -15,5 +15,7 @@ export default function TaxResearchResult({state}:{state:TaxState}){
    </article>;
   })}
   {coverage.historyComplete&&<p className="hint">This confirms the displayed accounts and years only. Verify acquisition boundaries, separately billed authorities, temporary bills and parcel matches before relying on a combined property total.</p>}
+  <p className="hint">Capture provenance: {coverage.unattended} annual records from unattended retrieval; {coverage.assisted} from assisted imports. {coverage.datedWindow?'The year window is anchored to dated bill evidence.':'No dated bill establishes an available historical window; displayed years are research targets only.'} Property completeness remains unverified until the acquisition parcel set and every taxing authority are reconciled.</p>
+  {state.research?.discovery?.map(d=><article key={d.jurisdiction}><h3>{d.jurisdiction} — source investigation</h3><p>{d.status.replace(/_/g,' ')}{d.adapter?` · ${d.adapter}`:''} · {d.at}</p>{d.officialLinks.map((l,i)=><p key={i}><a href={l.url} target="_blank" rel="noreferrer">{l.label||'Official directory link'}</a></p>)}<ol>{d.nextSteps.map((step,i)=><li key={i}>{step}</li>)}</ol></article>)}
  </section>;
 }

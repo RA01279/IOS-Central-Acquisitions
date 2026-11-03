@@ -16,6 +16,10 @@ import { KpiCard } from "@/components/ui";
 import CompUnderwritingPanel from "@/components/CompUnderwritingPanel";
 import SensitivityPanel from "@/components/SensitivityPanel";
 import type { CompRecord } from "@/lib/comps/match";
+import InvestmentReview from "@/components/InvestmentReview";
+import DecisionContext from "@/components/DecisionContext";
+import { incomePosition, latestVersion as selectedVersion, modelIdentity } from "@/lib/investment-review";
+import { compReview } from "@/lib/comps/reviewed-evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
 
 export const metadata = { title: "Financials" };
@@ -35,21 +39,26 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
   const basisFlag = site.flags.find((f) => f.key === "basis");
   const rentFlag = site.flags.find((f) => f.key === "rent");
   const versionsDesc = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number);
-  const latestVersion = versionsDesc[0];
+  const sourceVersion=selectedVersion(deal);
+  const latestVersion = modelIdentity(deal,sourceVersion).authoritative ? sourceVersion : null;
+  const sourceWarnings=returns?.warnings??sourceVersion?.returns_summary?.warnings??[];
   const dealExitCap = deal.exit_cap_rate != null ? Number(deal.exit_cap_rate) : null;
-  const uw = compUnderwriting(evidence.comps as UwComp[], subjectOf(deal), { exitCap: dealExitCap ?? returns?.exitCapPct ?? null });
+  const reviewed=compReview(deal,evidence.comps,subjectOf(deal));
+  const uw = compUnderwriting(reviewed.comps as UwComp[], reviewed.subject, { exitCap: dealExitCap ?? returns?.exitCapPct ?? null });
 
   return (
     <div className="ws-body">
       <div className="kpi-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
         <KpiCard label="Price" value={k.priceLabel} sub={k.priceBasis} />
         <KpiCard label="Basis" value={k.basisLabel} unit={k.basis != null ? k.basisUnit : undefined} sub={basisFlag?.note} subTone={basisFlag?.state} />
-        <KpiCard label="Yr-1 yield" value={k.yieldLabel} sub="In-place cap on price" />
+        <KpiCard label="Workbook Yr-1 yield" value={k.yieldLabel} sub={incomePosition(deal).current ? "In-place status; workbook assumptions" : "Modeled income; current in-place yield unverified"} />
         <KpiCard label="Stabilized RoC" value={fmtPct(returns?.stabilizedReturnOnCostPct)} />
         <KpiCard label="IRR" value={fmtPct(returns?.irrPct)} sub={returns?.holdPeriodYears ? `${returns.holdPeriodYears}-yr hold` : undefined} />
         <KpiCard label="Equity multiple" value={k.emLabel} />
       </div>
 
+      <InvestmentReview key={deal.investment_review?.updatedAt??"initial"} deal={deal}/>
+      <DecisionContext deal={deal}/>
       <OffersPanel dealId={deal.id} offers={deal.offers ?? []} lotSf={deal.properties?.lot_sf ?? null} />
 
       {["uw", "offered", "moving_to_psa", "due_diligence"].includes(deal.stage) && (
@@ -86,11 +95,11 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
             <Metric label="Stabilized cash-on-cash" value={fmtPct(returns.stabilizedCashOnCashPct)} />
           </div>
         )}
-        {latestVersion?.returns_summary?.warnings?.length > 0 && (
+        {sourceWarnings.length > 0 && (
           <div className="warning">
             <p>Parser flagged on this version:</p>
             <ul>
-              {latestVersion.returns_summary.warnings.map((w: string, i: number) => (
+              {sourceWarnings.map((w: string, i: number) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
@@ -101,6 +110,7 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         {latestVersion?.model_detail?.warnings?.length > 0 && <div className="warning"><p>Source workbook discrepancies:</p><ul>{latestVersion.model_detail.warnings.map((w:string,i:number)=><li key={i}>{w}</li>)}</ul></div>}
       </section>
 
+      <p className="hint">{reviewed.label}. Building-rent recommendations require direct building quotes; acreage conversions are diagnostic equivalents only.</p>
       <CompUnderwritingPanel
         uw={uw}
         ios={deal.asset_class !== "industrial"}

@@ -26,6 +26,10 @@ it("streams partial Texas findings, preserves raw evidence and discloses missing
   expect(report.research?.gaps.join(" ")).toContain("five-year history");expect(report.sources.some(s=>s.evidence.includes("266787500"))).toBe(true);
   expect(fetcher.mock.calls.every(([url])=>!String(url).includes("example.gov"))).toBe(true);
 });
+it('retains conflicting GIS identities without selecting valuations or duplicating annual rows',async()=>{
+ const fetcher=async(input:any)=>String(input).includes('census.gov')?Response.json({result:{geographies:{Counties:[{NAME:'Tarrant County'}],States:[{STUSAB:'TX'}]}}}):String(input).includes('/identify')?Response.json({results:[{attributes:{...officialCapitol,COUNTY:'TARRANT'}},{attributes:{...officialCapitol,COUNTY:'TARRANT',SITUS_ADDR:'200 Other Road',MKT_VALUE:'100'}}]}):new Response('Official source');
+ const r=await researchTaxes({address:'100 Main Road',state:'TX',latitude:32.7,longitude:-97.3,precision:'manual'},emptyTaxState(),()=>{},fetcher as any);expect(r.parcels).toHaveLength(1);expect(r.records).toHaveLength(0);expect(r.research?.gaps.join(' ')).toContain('Conflicting GIS');
+});
 it("does not treat undated Gwinnett tax master amounts as current taxes",async()=>{
   const fetcher=vi.fn(async(input:any)=>{
     const u=String(input);

@@ -16,7 +16,7 @@ import type { DealImport } from "@/lib/agents/deal-import";
 import type { ImportedFile } from "./DealImport";
 
 type MlaChoice = "provided" | "requested" | "assumed";
-type Occupancy = "vacant" | "occupied";
+type Occupancy = "" | "vacant" | "occupied";
 
 // `prefill` comes from New Deal > Import (an OM or broker email). The parent
 // remounts this form with a new key when an import lands, so the uncontrolled
@@ -30,7 +30,7 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
   const [location, setLocation] = useState<LocationPoint | null>(null);
   const router = useRouter();
   const [mlaChoice, setMlaChoice] = useState<MlaChoice>("requested");
-  const [occupancy, setOccupancy] = useState<Occupancy>(f?.occupancy ?? "vacant");
+  const [occupancy, setOccupancy] = useState<Occupancy>(f?.occupancy ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const intakeKey = useRef<string | undefined>(undefined);
@@ -69,6 +69,9 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
 
     const payload = {
       intakeKey: intakeKey.current,
+      callForOffersOn: form.get("callForOffersOn") || null,
+      deadlineSourceDate: form.get("deadlineSourceDate") || null,
+      deadlineSourceQuote: form.get("deadlineSourceQuote") || null,
       latitude: location?.latitude,
       longitude: location?.longitude,
       geocodePrecision: location?.geocode_precision,
@@ -84,7 +87,7 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
       askingPrice: (form.get("askingPrice") as string) || undefined,
       marketingStatus: (form.get("marketingStatus") as string) || undefined,
       acquisitionType: (form.get("acquisitionType") as string) || undefined,
-      occupancyStatus: occupancy,
+      occupancyStatus: occupancy || undefined,
       // WALT only matters when occupied; send undefined otherwise.
       waltYears: occupancy === "occupied" ? num("waltYears") : undefined,
       tenancy: (form.get("tenancy") as string) || undefined,
@@ -126,6 +129,12 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
 
   return (
     <form onSubmit={handleSubmit} className="deal-form">
+      <fieldset><legend>Explicit offer deadline (optional)</legend>
+        <label>Call for offers date<input name="callForOffersOn" type="date" defaultValue={f?.callForOffersOn??""}/></label>
+        <label>Original source date<input name="deadlineSourceDate" type="date" defaultValue={f?.deadlineSourceDate??""}/></label>
+        <label>Verbatim quote / source reference<input name="deadlineSourceQuote" defaultValue={f?.deadlineSourceQuote??""}/></label>
+        <p className="hint">Unknown or ambiguous dates stay blank. Confirm the year and source before creating.</p>
+      </fieldset>
       {duplicates.map(match => <p key={match.id}><a href={`/deals/${match.id}`}>Open {match.address}, {match.city} ({match.stage})</a></p>)}
       <p className="hint">Choose IOS when a warehouse has a substantial, separately usable outdoor storage yard. Ordinary parking or loading areas alone do not establish IOS.</p>
       <label>
@@ -221,6 +230,7 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
             value={occupancy}
             onChange={(e) => setOccupancy(e.target.value as Occupancy)}
           >
+            <option value="">Unknown / not verified</option>
             <option value="vacant">Vacant</option>
             <option value="occupied">Occupied</option>
           </select>

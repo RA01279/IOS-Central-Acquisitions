@@ -9,6 +9,7 @@
 // own copy of the same composition, and the two drifted.
 import { getServiceClient } from "./supabase";
 import { fetchAll } from "./fetch-all";
+import { offerDeadlines, offerDeadlineLine } from "./offer-deadlines";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "./deals";
 import {
   assetClassOf,
@@ -46,7 +47,7 @@ export async function composeDigest() {
     fetchAll((from, to) => supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, asset_class, assigned_analyst, created_at, follow_up_on, pursuit_score, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), deal_events(created_at)"
+        "id, deal_type, stage, asset_class, assigned_analyst, created_at, follow_up_on, pursuit_score, call_for_offers_on, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), tasks(title, due_date, status), deal_events(created_at)"
       )
       .eq("deal_type", "acquisition")
       .order("id")
@@ -114,6 +115,8 @@ export async function composeDigest() {
       d.pursuit_score !== 0
   );
   const active = deals.filter((d: any) => d.stage !== "archived");
+  const callsForOffers = offerDeadlines(deals as any[], today);
+  const offersTomorrow = callsForOffers.filter(d => d.daysAway === 1);
 
   // The reminder the boss asked for: any DD expiry or closing within 7 days
   // (and anything already past that hasn't moved -- overdue is more urgent).
@@ -141,6 +144,7 @@ export async function composeDigest() {
   for (const d of active) if (d.stage !== "closed") bump(d.assigned_analyst, "active");
   for (const m of milestones) bump(ownerOf(m.dealId), "due");
   for (const m of diligence) bump(ownerOf(m.deal_id), "due");
+  for (const d of callsForOffers) if (d.daysAway <= 7) bump(d.assigned_analyst ?? null, "due");
   for (const d of stale) bump(d.assigned_analyst, "stale");
   const ownerLines = [...owners.entries()]
     .sort((a, b) => (a[0] === "Unassigned" ? 1 : b[0] === "Unassigned" ? -1 : b[1].active - a[1].active))
@@ -204,6 +208,10 @@ export async function composeDigest() {
       } ·
       <a href="${APP_URL}/" style="color:#2e6e62;">open home screen</a>
     </p>
+    <h3 style="margin:18px 0 6px;font-size:14px;color:#0A2540;">Call For Offers (${callsForOffers.length})</h3>
+    ${callsForOffers.length
+      ? `<ul style="margin:0;padding-left:18px;color:#364049;font-size:13px;line-height:1.7;">${callsForOffers.map(offerDeadlineLine).join("")}</ul>`
+      : `<p style="margin:0;color:#6B7A88;font-size:13px;">No upcoming call-for-offers dates entered.</p>`}
     ${section(`👤 By owner`, ownerLines, "No active deals.")}
     ${section(
       `⏳ DD expirations &amp; closings — next ${MILESTONE_WINDOW_DAYS} days (${milestones.length})`,
@@ -251,6 +259,8 @@ export async function composeDigest() {
   // Milestones lead the subject line: a closing in 3 days is the one thing
   // that has to survive being read on a phone lock screen.
   const subjectParts = [
+    offersTomorrow.length ? `${offersTomorrow.length} call for offers TOMORROW` : null,
+    callsForOffers.some(d => d.daysAway === 0) ? "call for offers TODAY" : null,
     milestones.length ? `${milestones.length} DD/closing in 7d` : null,
     diligence.length ? `${diligence.length} diligence due` : null,
     `${overdue.length} overdue`,
@@ -263,6 +273,8 @@ export async function composeDigest() {
     subject,
     html,
     counts: {
+      callsForOffers: callsForOffers.length,
+      offersTomorrow: offersTomorrow.length,
       milestones: milestones.length,
       diligence: diligence.length,
       leaseExpirations: expiring.length,

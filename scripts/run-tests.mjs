@@ -17,6 +17,8 @@ const NEEDS_SETUP = new Set([
   "test-comp-location.mjs",
   "test-intake-transaction.mjs",
   "test-demand-pptx.mjs",
+  // Writes a handoff to a real project; never run as part of isolated checks.
+  "test-uw-handoff-live.mjs",
 ]);
 
 const tests = readdirSync(new URL(".", import.meta.url))

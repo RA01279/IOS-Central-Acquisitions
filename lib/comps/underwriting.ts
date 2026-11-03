@@ -18,6 +18,7 @@
 
 import { COMP_POLICY, haversineMiles, isUsableForDistance, marketRange, scoreComps, suggestRange, unitValue } from "./match";
 import { rateStats } from "./market";
+import { directBuildingRent } from "./match";
 import type { CompRecord, CompType, Subject, ValueBasis } from "./match";
 
 const SQFT_PER_ACRE = 43560;
@@ -148,6 +149,7 @@ function median(xs: number[]): number | null {
  * building per SF per year, sale land per acre, sale building per SF.
  */
 function estimate(comps: UwComp[], subject: Subject, type: CompType, basis: ValueBasis, today: Date): Band & { used: UwComp[] } {
+  if(type==="lease"&&basis==="building") comps=comps.filter(directBuildingRent);
   const scale = basis === "land" ? SQFT_PER_ACRE : type === "lease" ? 12 : 1;
   const what = `${type === "lease" ? "lease" : "sale"} comps`;
   const { scored, range } = marketRange(comps, subject, type, basis, { today });
@@ -189,7 +191,7 @@ function estimate(comps: UwComp[], subject: Subject, type: CompType, basis: Valu
   });
   const stats = rateStats(pool.map((c) => unitValue(c, basis)! * scale));
   const nearby = `${range.count} within ${COMP_POLICY.radiusMiles} mi`;
-  if (stats.median === null) {
+  if (stats.median === null || stats.count < COMP_POLICY.minComps) {
     return {
       mid: null, low: null, high: null, count: stats.count,
       source: subject.market

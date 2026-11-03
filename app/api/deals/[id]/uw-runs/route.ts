@@ -23,7 +23,7 @@ const SOURCES = ["model", "comps", "deal", "default", "manual"];
 async function loadDeal(id: string) {
   return getServiceClient()
     .from("deals")
-    .select("id, asset_class, asking_price, contract_price, closed_price, in_place_rent, in_place_rent_basis, exit_cap_rate, properties(address, city, market, lot_sf, building_sf, occupancy_status), offers(price, offered_at), uw_versions(id, version_number, model_detail)")
+    .select("id, asset_class, investment_review, asking_price, contract_price, closed_price, in_place_rent, in_place_rent_basis, exit_cap_rate, properties(address, city, market, submarket, latitude, longitude, lot_sf, building_sf, occupancy_status), offers(price, offered_at), uw_versions(id, version_number, model_detail, returns_summary), deal_analysis_versions(*)")
     .eq("id", id)
     .maybeSingle();
 }
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   }
   const screen = await screenFor(deal);
   const model = latestModel(deal);
+  if((body.expectedCompReviewVersion??0)!==(screen.comps.reviewVersion??0)||(body.expectedModelVersion??null)!==(model?.versionNumber??null))return NextResponse.json({error:"Selected model or reviewed comps changed. Reload the screening case before saving; inputs have not been saved."},{status:409});
 
   const { data, error } = await getServiceClient()
     .from("uw_runs")

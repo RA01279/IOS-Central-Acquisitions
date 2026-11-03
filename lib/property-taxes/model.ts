@@ -1,6 +1,8 @@
 import { normalizedAddress, nameKey } from "./address";
 import {billAccountMatches} from './bill-account';
 import {obligationLimitation} from './obligation';
+import {accountKey} from './accounts';
+import {parcelScopeVerified} from './parcel-scope';
 import { METRICS, type TaxState, type TaxParcel, type TaxRecord, type Metric, type RateUnit, type TaxScenario, type ProjectionYear, type TaxSchedule } from "./types";
 
 export function rateFraction(value: number, unit: RateUnit): number {
@@ -20,7 +22,7 @@ export function includedParcels(state: TaxState): TaxParcel[] {
   const rows = state.parcels.filter(p => p.review === "included");
   const ids = new Set<string>(), groups = new Map<string, Set<string>>();
   for (const p of rows) {
-    const id = parcelKey(p.state, p.county, p.accountId);
+    const id = accountKey(p);
     if (ids.has(id)) throw new Error(`Duplicate account ${p.accountId}; include it once.`);
     ids.add(id);
     if (!p.reviewNote.trim() || !p.assessmentGroup.trim() || p.component === "unknown") throw new Error(`Review the match and account coverage for ${p.accountId}.`);
@@ -36,7 +38,8 @@ export function effectiveFact(state: TaxState, record: TaxRecord, metric: Metric
   return override ? { value: override.value, sourceId: override.sourceId, stage: override.stage ?? "reported" as const, reviewed: true, manual: true } : record.facts[metric];
 }
 export function annualTotal(state: TaxState, year: number, metric: Metric) {
-  const parcels = includedParcels(state), missing: string[] = state.parcels.filter(p=>p.review==="pending").map(p=>p.accountId),limitations:string[]=[]; let total = 0;
+  const parcels = includedParcels(state), missing: string[] = state.parcels.filter(p=>p.review==="pending").map(p=>p.accountId),limitations:string[]=[]; let total = 0,knownCount=0;
+  if(metric==='levied'&&!parcelScopeVerified(state)){missing.push('Unverified acquisition parcel set');limitations.push('Verify the complete acquisition parcel set against retained original evidence before reporting a full property levy.');}
   for (const parcel of parcels) {
     if(state.records.filter(r=>r.parcelKey===parcel.key&&r.year===year).length>1){missing.push(parcel.accountId);continue;}
     const row = state.records.find(r => r.parcelKey === parcel.key && r.year === year);
@@ -45,11 +48,12 @@ export function annualTotal(state: TaxState, year: number, metric: Metric) {
     if (!fact || typeof fact.value !== "number" || !Number.isFinite(fact.value) || fact.stage === "proposed" || !fact.reviewed) missing.push(parcel.accountId);
     else {
       total += Math.round(fact.value*100);
-      const limitation=metric==='levied'&&row?obligationLimitation(parcel,row):undefined;
+      knownCount++;
+      const limitation=metric==='levied'&&row?obligationLimitation(parcel,row,state):undefined;
       if(limitation){missing.push(parcel.accountId);limitations.push(limitation);}
     }
   }
-  return { total: parcels.length && !missing.length ? total/100 : null, knownSubtotal: total/100, missing,limitations };
+  return { total: parcels.length && !missing.length ? total/100 : null, knownSubtotal: total/100, knownCount,missing,limitations };
 }
 /** Keep manual overrides and reviewer decisions. Changed research facts lose review. */
 export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
@@ -75,8 +79,11 @@ export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
     if(correctedAccounts.has(row.parcelKey)) continue;
     const old = next.records.find(r => r.parcelKey === row.parcelKey && r.year === row.year);
     if (!old) { next.records.push(row); continue; }
-    const retainLevy=row.facts.levied?.stage==='proposed'&&old.facts.levied&&old.facts.levied.stage!=='proposed';
-    if(retainLevy)retainedBills.push(`${row.parcelKey}, ${row.year}: saved levy retained; new proposed amount is not an issued bill. Conflicting source evidence is retained in Sources.`);
+    const assistedSource=next.sources.find(s=>s.id===old.facts.levied?.sourceId)?.captureMethod==='user_import';
+    const retainAssisted=assistedSource&&row.facts.levied&&next.sources.find(s=>s.id===row.facts.levied?.sourceId)?.kind==='official';
+    const retainLevy=retainAssisted||row.facts.levied?.stage==='proposed'&&old.facts.levied&&old.facts.levied.stage!=='proposed';
+    if(retainLevy)retainedBills.push(`${row.parcelKey}, ${row.year}: saved levy retained; ${retainAssisted?'assisted bill set must be reconciled against the newly retrieved collector record':'new proposed amount is not an issued bill'}. Conflicting source evidence is retained in Sources.`);
+    if(retainAssisted&&old.obligationReview)old.obligationReview={...old.obligationReview,invalidatedBy:`${row.year} collector source ${row.facts.levied!.sourceId}; assisted annual bill set retained.`};
     for (const metric of METRICS) {
       if(metric==='levied'&&retainLevy)continue;
       const fact = row.facts[metric], prior = old.facts[metric];
@@ -86,7 +93,7 @@ export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
       if(row.billEvidence)old.billEvidence=structuredClone(row.billEvidence);
       else if(row.facts.levied&&old.billEvidence?.sourceId!==row.facts.levied.sourceId)delete old.billEvidence;
     }
-    if(row.jurisdictions.length) {
+    if(row.jurisdictions.length&&!retainLevy) {
       const manual=old.jurisdictions.filter(j=>current.sources.some(s=>s.id===j.sourceId && s.kind!=="official"));
       old.jurisdictions=[...row.jurisdictions,...manual.filter(j=>!row.jurisdictions.some(n=>n.name===j.name&&n.sourceId===j.sourceId))];
     }
@@ -99,6 +106,7 @@ export function mergeResearch(current: TaxState, incoming: TaxState): TaxState {
   if(incoming.records.some(r=>r.facts && Object.values(r.facts).some(Boolean)) || incoming.parcels.length) next.scenarios=next.scenarios.map(s=>({...s,rulesReviewed:false}));
   next.research = incoming.research ? {...incoming.research,gaps:[...incoming.research.gaps,...[...correctedAccounts].map(key=>`Manual account correction retained for ${key}. New figures from the old account were not imported; verify the corrected account's dated records.`)]} : next.research;
   if(retainedBills.length&&next.research)next.research.gaps.push(...retainedBills);
+  if(next.scopeReview&&next.parcels.some(p=>p.review==='pending'))delete next.scopeReview;
   return next;
 }
 const round = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;

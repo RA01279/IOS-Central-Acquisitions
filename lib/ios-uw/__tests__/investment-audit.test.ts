@@ -61,8 +61,9 @@ describe('source-backed investment audit regressions',()=>{
   expect((await parseReturnsSummary(await model('$ / SF / Month'))).marketRentPsfMo).toBe(12.6);
   expect((await parseReturnsSummary(await model('unknown'))).marketRentPsfMo).toBeNull();
  });
- it('rejects the documented Amwiler/Lathrop identity conflict before a version can be saved',async()=>{
-  await expect(parseReturnsSummary(await model('$ / SF / Year','1301-1347 Lathrop'),'3000 Amwiler Rd')).rejects.toThrow(/Resolve the source identity/);
+ it('retains the documented Amwiler/Lathrop discrepancy for explicit source review',async()=>{
+  const conflicted=await parseReturnsSummary(await model('$ / SF / Year','1301-1347 Lathrop'),'3000 Amwiler Rd');
+  expect(conflicted.warnings.join(' ')).toMatch(/Detected identity discrepancy/);
  });
  // Independently calculated from original Inputs/RentRoll/Capex, monthly
  // enumeration + amortization + bisection (scripts/reconcile-investment-cashflows.cjs).

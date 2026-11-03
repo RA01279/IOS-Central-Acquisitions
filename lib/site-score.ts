@@ -2,12 +2,11 @@
 //
 // Turns the six stored viability flags (deal_signals) into what every screen
 // shows: a resolved flag list in the fixed order, a 0-100 site score, and the
-// demand index. Pure -- no database access -- so the deal cards, the summary,
+// reviewed business counts. Pure -- no database access -- so the deal cards, the summary,
 // the compare view and the .pptx slide all compute identically.
 //
 // The rules that produce each flag live in lib/site-signals.ts; this file only
-// combines them. The weights and the demand index scale below are judgement
-// calls, kept as named constants so they can be tuned in one place.
+// combines them. Nearby business counts have no automatic demand grade.
 
 import {
   DEMAND_CATEGORIES,
@@ -63,7 +62,7 @@ export function resolveFlags(rows: SignalRow[] | null | undefined): Flag[] {
   const byKey = new Map((rows ?? []).map((r) => [r.key, r]));
   return FLAG_KEYS.map((key) => {
     const r = byKey.get(key);
-    const autoState: SignalState = r?.auto_state ?? "unknown";
+    const autoState: SignalState = key === "demand" ? "unknown" : r?.auto_state ?? "unknown";
     const overridden = !!r?.override_state;
     return {
       key,
@@ -72,14 +71,30 @@ export function resolveFlags(rows: SignalRow[] | null | undefined): Flag[] {
       state: overridden ? r!.override_state! : autoState,
       note: overridden
         ? r!.override_note || `Set by ${r!.override_by ?? "a teammate"}`
-        : r?.auto_note || "Not assessed yet",
-      source: overridden ? `Override · ${r!.override_by ?? ""}` : r?.auto_source ?? null,
+        : key === "demand" ? "Nearby businesses are context; verify active requirements and site fit separately" : r?.auto_note || "Not assessed yet",
+      source: overridden ? `Override · ${r!.override_by ?? ""}` : key === "demand" ? "Reviewed business map (context only)" : r?.auto_source ?? null,
       overridden,
       at: overridden ? r!.override_at : r?.auto_at ?? null,
       autoState,
-      autoNote: r?.auto_note ?? null,
+      autoNote: key === "demand" ? "Business proximity does not establish leasing demand" : r?.auto_note ?? null,
     };
   });
+}
+
+/** Cached automatic signals cannot outlive their reviewed source context. */
+export function resolveDecisionFlags(rows: SignalRow[] | null | undefined, deal:any): Flag[] {
+ const reviewAt=[deal.investment_review?.updatedAt,...(deal.deal_analysis_versions??[]).filter((v:any)=>v.kind==="comps").map((v:any)=>v.created_at)].filter(Boolean).sort().at(-1);
+ return resolveFlags(rows).map(f=>{
+  if(f.overridden||!["rent","basis"].includes(f.key))return f;
+  if(reviewAt&&(!f.at||f.at<reviewAt))return {...f,state:"unknown",note:"Source review changed; cached flag is stale. Open Financials for current evidence.",source:"Stale automatic assessment"};
+  if(f.key==="rent") {
+   const p=Array.isArray(deal.properties)?deal.properties[0]:deal.properties;
+   if(p?.occupancy_status==="vacant")return {...f,state:"watch",note:"Vacant; income is all lease-up, not current in-place rent"};
+   const r=deal.investment_review;
+   if(r?.incomeStatus!=="in_place"||!r.incomeSource||!r.incomeSourceDate||!r.incomeEffectiveDate||r.incomeEffectiveDate>new Date().toISOString().slice(0,10))return {...f,state:"unknown",note:"Current in-place income evidence is unverified"};
+  }
+  return f;
+ });
 }
 
 export interface SiteScore {
@@ -128,17 +143,8 @@ export interface DemandSnapshot {
   tenants: DemandHit[];
 }
 
-// Demand index = hits per radius-mile x this, capped at 99. Calibrated so ~25
-// yard users inside 3 miles (8+/mile) reads as Strong (75+).
-export const DEMAND_INDEX_SCALE = 9;
-// Per-category signal, in hits per radius-mile.
-const CAT_STRONG = 1.5;
-const CAT_WATCH = 0.5;
-
-export function demandIndex(hits: number, radius: number): number {
-  if (radius <= 0) return 0;
-  return Math.min(99, Math.round((hits / radius) * DEMAND_INDEX_SCALE));
-}
+/** Retired: a business count cannot establish leasing demand. Kept for old callers. */
+export function demandIndex(_hits: number, _radius: number): null { return null; }
 
 export interface CategoryRow {
   label: string;
@@ -163,16 +169,16 @@ export function demandBreakdown(
   );
   const max = Math.max(1, ...counts);
   const rows = DEMAND_CATEGORIES.map((c, i) => {
-    const per = counts[i] / radius;
+
     return {
       ...c,
       count: counts[i],
       share: counts[i] / max,
-      state: (per >= CAT_STRONG ? "strong" : per >= CAT_WATCH ? "watch" : "weak") as SignalState,
+      state: "unknown" as SignalState,
     };
   });
   const total = rows.reduce((a, r) => a + (active.has(r.key) ? r.count : 0), 0);
-  return { rows, total, index: snap ? demandIndex(total, radius) : null };
+  return { rows, total, index: null };
 }
 
 /** ?r=1|3|5&cats=truck,equip|none -> radius (default 3) and active category keys. */

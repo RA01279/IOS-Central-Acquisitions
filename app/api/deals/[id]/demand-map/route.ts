@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { DEFAULT_CATEGORIES } from "@/lib/sourcing/yard-users";
 import { searchNearby } from "@/lib/demand-search";
+import { LOCATED_PRECISIONS } from "@/lib/ic-deck/geo";
 import { stateOfMarket } from "@/lib/markets";
 
 // Several Google calls in sequence; each has its own timeout, this caps the total.
@@ -88,9 +89,7 @@ async function enrichTenants(tenants: Tenant[]): Promise<Tenant[]> {
 
 // GET /api/deals/[id]/demand-map?radiusMiles=5
 //
-// No lat/lng stored on properties -- the address is geocoded on the fly each
-// call rather than cached, since this is an occasional IC-deck export, not a
-// hot path, and it means a corrected address is always reflected immediately.
+// All maps use the stored, located property pin. No address re-geocoding or assumed state.
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const user = await getCurrentUser(req as any);
@@ -101,7 +100,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   }
 
   const url = new URL(req.url);
-  const radiusMiles = Number(url.searchParams.get("radiusMiles") ?? "5") || 5;
+  const radiusMiles = Number(url.searchParams.get("radiusMiles") ?? "5");
+  if (![3, 5, 7].includes(radiusMiles)) return NextResponse.json({ error: "Choose a 3, 5 or 7 mile radius" }, { status: 400 });
   const categories = parseCategoriesParam(url.searchParams.get("categories")) ?? DEFAULT_CATEGORIES;
   // "hybrid" is satellite plus road and place labels -- often the better IC
   // basemap, since viewers orient off the highway names. Anything else falls
@@ -122,7 +122,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
   const { data: property, error: propError } = await supabase
     .from("properties")
-    .select("address, city, market, submarket, latitude, longitude")
+    .select("address, city, market, submarket, latitude, longitude, geocode_precision")
     .eq("id", deal.property_id)
     .single();
   if (propError || !property) {
@@ -132,11 +132,15 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   // Centre on the deal's verified pin. Only without one is the address looked
   // up -- in the market's own state, never an assumed Texas (Savannah, GA).
   const fullAddress = [property.address, property.city, stateOfMarket(property.market)].filter(Boolean).join(", ");
+  if (property.latitude == null || property.longitude == null || !LOCATED_PRECISIONS.includes(property.geocode_precision ?? "") || !Number.isFinite(Number(property.latitude)) || !Number.isFinite(Number(property.longitude))) {
+    return NextResponse.json({ error: "Set and verify the property map pin before generating a business map" }, { status: 422 });
+  }
 
   try {
-    const pinned = property.latitude != null && property.longitude != null;
-    const center = pinned ? { lat: Number(property.latitude), lng: Number(property.longitude) } : await geocode(fullAddress);
-    const { tenants: found, screened } = await searchNearby({ ...center, radiusMiles, categories, perCategoryCap: PER_CATEGORY_CAP, apiKey: GOOGLE_KEY });
+    const center = { lat: Number(property.latitude), lng: Number(property.longitude) };
+    const { tenants: found, screened, searchSummary } = await searchNearby({ ...center, radiusMiles, categories, perCategoryCap: PER_CATEGORY_CAP, apiKey: GOOGLE_KEY });
+    if (searchSummary.failed) throw new Error("The business search was incomplete. Retry before reviewing or exporting.");
+    const fetchedAt = new Date().toISOString();
     // Basemap and enrichment are independent -- overlap them so the extra
     // Place Details round trips don't simply add to the wall clock.
     const [tenants, { imageBase64, zoom }] = await Promise.all([
@@ -146,6 +150,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
     return NextResponse.json({
       address: fullAddress,
+      fetchedAt,
+      locationSource: "Stored property pin",
+      perCategoryCap: PER_CATEGORY_CAP,
+      searchSummary,
       center,
       radiusMiles,
       zoom,
@@ -167,7 +175,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       // for and discarded on every generate.
       imageBase64,
       tenants,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json({ error: err.message }, { status: 502 });
@@ -190,20 +198,6 @@ function parseCategoriesParam(raw: string | null): { label: string; keywords: st
       return { label, keywords: keywords.length ? keywords : [label] };
     })
     .filter((c) => c.label);
-}
-
-async function geocode(address: string): Promise<{ lat: number; lng: number }> {
-  const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("address", address);
-  url.searchParams.set("key", GOOGLE_KEY!);
-
-  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
-  const data = await res.json();
-  if (data.status !== "OK" || !data.results?.length) {
-    throw new Error(`Geocoding failed for "${address}": ${data.status} ${data.error_message ?? ""}`);
-  }
-  const { lat, lng } = data.results[0].geometry.location;
-  return { lat, lng };
 }
 
 const PER_CATEGORY_CAP = 8;

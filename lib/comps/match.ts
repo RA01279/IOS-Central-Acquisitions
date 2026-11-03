@@ -264,6 +264,10 @@ export function unitValue(comp: CompRecord, basis: ValueBasis): number | null {
   return totalMonthly === null ? null : totalMonthly / denom;
 }
 
+export function directBuildingRent(comp: CompRecord): boolean {
+  return comp.comp_type==="lease" && ["per_sf_bldg_monthly","per_sf_bldg_annual"].includes(comp.rent_basis??"");
+}
+
 /** Months between a comp's date and the reference date. */
 export function ageMonths(comp: CompRecord, today: Date): number | null {
   const iso = comp.comp_type === "sale" ? comp.closed_on : comp.date_commenced;
@@ -517,6 +521,10 @@ export function suggestRange(
     }
   }
 
+  if(compType==="lease" && basis==="building") {
+    const converted=contributing.filter(s=>!directBuildingRent(s.comp)).length;
+    if(converted)caveats.push(`${converted} of ${contributing.length} are whole-site rent equivalents divided by building SF, not direct building-rent quotes. Conversion assumes the reported building denominator; do not treat yard income as independent building rent.`);
+  }
   return { basis, compType, mid, low, high, count: contributing.length, weight, caveats };
 }
 

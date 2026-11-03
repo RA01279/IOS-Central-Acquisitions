@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { validAnalysis } from "@/lib/analysis-validation";
+import { reviewMatchesPin } from "@/lib/demand-map-review";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -9,7 +10,15 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const kind=req.nextUrl.searchParams.get("kind");
   if (kind!=="comps" && kind!=="demand") return NextResponse.json({error:"Invalid analysis type"},{status:400});
   const {data,error}=await getServiceClient().from("deal_analysis_versions").select("version,payload,created_at,created_by").eq("deal_id",params.id).eq("kind",kind).order("version",{ascending:false}).limit(1).maybeSingle();
-  return error ? NextResponse.json({error:"Could not load saved analysis"},{status:500}) : NextResponse.json({saved:data});
+  if (error) return NextResponse.json({error:"Could not load saved analysis"},{status:500});
+  let locationCurrent: boolean | null = null;
+  if (kind === "demand" && data) {
+    const {data:deal,error:pinError}=await getServiceClient().from("deals").select("properties(latitude,longitude)").eq("id",params.id).maybeSingle();
+    if (pinError) return NextResponse.json({error:"Could not check the saved map location"},{status:500});
+    const p:any=deal?.properties, point=Array.isArray(p)?p[0]:p;
+    locationCurrent=reviewMatchesPin({...data,payload:data.payload},point?.latitude==null?null:Number(point.latitude),point?.longitude==null?null:Number(point.longitude));
+  }
+  return NextResponse.json({saved:data,locationCurrent},{headers:{"Cache-Control":"no-store"}});
 }
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -20,6 +29,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   let body;
   try {body=JSON.parse(text);} catch { return NextResponse.json({error:"Invalid request"},{status:400}); }
   if (!body || !["comps","demand"].includes(body.kind) || !Number.isInteger(body.expected) || body.expected<0 || !validAnalysis(body.kind,body.payload)) return NextResponse.json({error:"Invalid analysis. Refresh and try again."},{status:400});
+  if (body.kind === "demand") {
+    const {data:deal,error:locationError}=await getServiceClient().from("deals").select("properties(latitude,longitude)").eq("id",params.id).maybeSingle();
+    const property:any=deal?.properties; const point=Array.isArray(property)?property[0]:property;
+    if(locationError) return NextResponse.json({error:"Could not verify the property pin"},{status:500});
+    if(!reviewMatchesPin({payload:body.payload,version:0,created_at:"",created_by:""},point?.latitude==null?null:Number(point.latitude),point?.longitude==null?null:Number(point.longitude))) return NextResponse.json({error:"The property pin changed. Generate and review a new business map before saving."},{status:409});
+  }
   const {data,error}=await getServiceClient().rpc("save_deal_analysis",{p_deal:params.id,p_kind:body.kind,p_expected:body.expected,p_payload:body.payload,p_actor:user.email});
   if (error) return NextResponse.json({error:error.message},{status:409});
   return NextResponse.json({saved:{version:data.version,created_at:data.created_at,created_by:data.created_by}});

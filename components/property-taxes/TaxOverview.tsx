@@ -8,6 +8,7 @@ const figures:Metric[]=['market','assessed','taxable','levied','paid','balance']
 export default function TaxOverview({state,dealId}:{state:TaxState;dealId:string}){
  const coverage=taxAvailability(state),records=subjectRecords(state),years=Array.from({length:5},(_,i)=>new Date().getFullYear()-i);
  return <>
+  <p><a href="/property-taxes">Portfolio tax coverage and source onboarding</a></p>
   <TaxResearchResult state={state}/>
   <TaxBillHistory state={state} dealId={dealId}/>
   <section className="panel" aria-label="Tax research availability"><h2>{coverage.title}</h2><p>{coverage.detail}</p><p className="hint">{state.research?`Last researched ${state.research.at} · ${state.research.status}`:'No official tax research has been saved.'}</p></section>

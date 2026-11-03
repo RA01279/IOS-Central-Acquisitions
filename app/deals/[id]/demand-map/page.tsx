@@ -3,7 +3,6 @@
 // chasing nearby.
 
 import { getDeal, getEvidence, getSiteView, subjectOf } from "@/lib/deal-workspace";
-import { parseMapView } from "@/lib/site-score";
 import DemandMapView from "@/components/DemandMapView";
 import DealLocationEditor from "@/components/DealLocationEditor";
 import ZoningResearchPanel from "@/components/ZoningResearchPanel";
@@ -17,7 +16,6 @@ export default async function DemandMapPage(props: {
 }) {
   const [{ id }, sp] = await Promise.all([props.params, props.searchParams]);
   const [deal, site, evidence] = await Promise.all([getDeal(id), getSiteView(id), getEvidence()]);
-  const view = parseMapView(sp);
   const subject = subjectOf(deal);
   const center = subject.lat != null && subject.lng != null ? { lat: subject.lat, lng: subject.lng } : null;
 
@@ -25,10 +23,10 @@ export default async function DemandMapPage(props: {
     <>
       <DemandMapView
         dealId={deal.id}
-        center={center}
-        snapshot={site.snapshot}
-        initialRadius={view.radius}
-        initialCats={view.cats}
+        initialReview={site.review}
+        locationMismatch={site.locationMismatch}
+        addressForSubtitle={[deal.properties?.address, deal.properties?.city].filter(Boolean).join(", ")}
+        fileNameStem={deal.properties?.address?.replace(/[^a-zA-Z0-9]+/g, "_")}
       />
       <div className="ws-body">
         <DealLocationEditor

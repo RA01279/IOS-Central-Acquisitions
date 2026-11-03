@@ -7,11 +7,12 @@
 
 import { ASSET_CLASS_LABELS, STAGE_LABELS } from "./deals";
 import { dealValue, VALUE_BASIS_LABELS } from "./summary";
-import { resolveFlags, siteScore, type Flag, type SignalRow } from "./site-score";
+import { resolveFlags, resolveDecisionFlags, siteScore, type Flag, type SignalRow } from "./site-score";
 import { acres, dealRef, fmtAcres, fmtMoney, fmtSf } from "./format";
+import { callForOffersDate } from "./call-for-offers";
 
 export const DEAL_CARD_SELECT =
-  "id, ref, stage, asset_class, created_at, asking_price, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, assigned_analyst, deal_portfolio_id, deal_portfolios(name), properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf), offers(price, offered_at), deal_events(event_type, created_at)";
+  "id, ref, stage, asset_class, investment_review, deal_analysis_versions(kind,version,created_at), created_at, asking_price, call_for_offers_on, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, assigned_analyst, deal_portfolio_id, deal_portfolios(name), properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status), offers(price, offered_at), tasks(title, due_date, status), deal_events(event_type, created_at)";
 
 const DAY_MS = 86400000;
 
@@ -60,6 +61,7 @@ export interface DealCardData {
   days: number;
   createdAt: string;
   icOn: string | null;
+  callForOffersOn: string | null;
   lat: number | null;
   lng: number | null;
   geocodePrecision: string | null;
@@ -84,7 +86,7 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
   const ask = deal.asking_price != null ? Number(deal.asking_price) : null;
   const shown = value.amount ?? ask;
   const basisValue = shown ? (ios ? (ac ? shown / ac : null) : bsf ? shown / bsf : null) : null;
-  const flags = resolveFlags(signals);
+  const flags = resolveDecisionFlags(signals,deal);
   const s = siteScore(flags);
   return {
     id: deal.id,
@@ -109,6 +111,7 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
     days: daysInStage(deal),
     createdAt: deal.created_at,
     icOn: deal.ic_on ?? null,
+    callForOffersOn: callForOffersDate(deal),
     lat: p.latitude != null ? Number(p.latitude) : null,
     lng: p.longitude != null ? Number(p.longitude) : null,
     geocodePrecision: p.geocode_precision ?? null,

@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BUSINESS_MAP_TITLE, BUSINESS_MAP_LIMITATION, reviewedMap, observationLabel, type DemandMapReview } from "@/lib/demand-map-review";
 import SavedAnalysis from "./SavedAnalysis";
+import DemandMapExplorer from "./DemandMapExplorer";
 import {
   fetchDemandMap,
   computePixelPositions,
@@ -18,21 +21,33 @@ export default function IcDeckPanel({
   dealId,
   addressForSubtitle,
   fileNameStem,
+  initialReview = null,
+  locationMismatch = false,
 }: {
   dealId: string;
   addressForSubtitle?: string | null;
   fileNameStem?: string | null;
+  initialReview?: DemandMapReview | null;
+  locationMismatch?: boolean;
 }) {
-  const [radiusMiles, setRadiusMiles] = useState(5);
-  const [maptype, setMaptype] = useState<MapType>("satellite");
-  const [data, setData] = useState<DemandMapResponse | null>(null);
+  const router = useRouter();
+  const [radiusMiles, setRadiusMiles] = useState(initialReview?.payload.data.radiusMiles ?? 5);
+  const [maptype, setMaptype] = useState<MapType>(initialReview?.payload.data.maptype ?? "hybrid");
+  const [data, setData] = useState<DemandMapResponse | null>(initialReview?.payload.data ?? null);
   // Keyword screening gets most of the junk, but an IC deck shouldn't rely on
   // heuristics for the last mile -- anything that isn't a real yard user can be
   // dropped here, and the map, numbering, and deck all follow.
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [excluded, setExcluded] = useState<Set<string>>(new Set(initialReview?.payload.excluded ?? []));
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [reviewVersion, setReviewVersion] = useState(initialReview?.version ?? 0);
+  const [savedSignature, setSavedSignature] = useState(initialReview ? JSON.stringify(initialReview.payload) : "");
+  const payload = useMemo(() => ({ data, excluded: [...excluded] }), [data, excluded]);
+  const isSaved = !!data && savedSignature === JSON.stringify(payload);
+  const [generatedForCurrentPin, setGeneratedForCurrentPin] = useState(false);
+  const currentPin = !locationMismatch || generatedForCurrentPin;
 
   async function handleGenerate() {
     setLoading(true);
@@ -43,6 +58,7 @@ export default function IcDeckPanel({
         maptype,
         categories: DEFAULT_CATEGORIES,
       });
+      setGeneratedForCurrentPin(true);
       setData(result);
       setExcluded(new Set());
     } catch (e: any) {
@@ -57,20 +73,25 @@ export default function IcDeckPanel({
   // on screen.
   const view = useMemo<DemandMapResponse | null>(
     () =>
-      data ? { ...data, tenants: data.tenants.filter((t) => !excluded.has(t.placeId)) } : null,
+      data ? reviewedMap({ data, excluded: [...excluded] }) : null,
     [data, excluded]
   );
 
   async function handleExport() {
-    if (!view) return;
+    if (!view || !isSaved || !currentPin) return;
     setExporting(true);
     setError(null);
     try {
+      const latestResponse = await fetch(`/api/deals/${dealId}/analysis?kind=demand`, { cache: "no-store" });
+      const latest = await latestResponse.json();
+      if (!latestResponse.ok) throw new Error(latest.error ?? "Could not check the saved review");
+      if (latest.locationCurrent === false) throw new Error("The property pin changed. Generate and review a new map before exporting.");
+      if (latest.saved?.version !== reviewVersion) throw new Error("The saved map review changed. Reload before exporting.");
       await exportToPptx(
         view,
         {
           subtitle: addressForSubtitle
-            ? `${addressForSubtitle}  |  ${view.tenants.length} potential IOS users within a ${view.radiusMiles}-mile radius`
+            ? `${addressForSubtitle}  |  ${view.tenants.length} selected businesses within a ${view.radiusMiles}-mile radius`
             : undefined,
           fileName: fileNameStem ? `${fileNameStem}_IOS_Demand_Map` : undefined,
         },
@@ -99,19 +120,21 @@ export default function IcDeckPanel({
 
   return (
     <section className="panel">
-      <SavedAnalysis dealId={dealId} kind="demand" payload={{data,excluded:[...excluded]}} canSave={!!data}
-        onRestore={saved=>{
+      <SavedAnalysis dealId={dealId} kind="demand" payload={payload} canSave={!!data && currentPin}
+        onSaved={(saved, captured) => { setReviewVersion(saved.version); setSavedSignature(JSON.stringify(captured)); router.refresh(); }}
+        onRestore={(saved, metadata)=>{
           if(!saved.data?.center||!Array.isArray(saved.data.tenants)||typeof saved.data.imageBase64!=="string") return;
+          setReviewVersion(metadata?.version ?? 0);
+          setGeneratedForCurrentPin(false);
+          setSavedSignature(JSON.stringify(saved));
           setData(saved.data);setExcluded(new Set(saved.excluded??[]));setRadiusMiles(saved.data.radiusMiles);setMaptype(saved.data.maptype??"satellite");
         }} />
-      <h2>IC Deck — IOS Demand Map</h2>
+      <h2>{BUSINESS_MAP_TITLE}</h2>
       <p className="muted">
-        Yard-occupying businesses near the site, by use category, pulled live from Google Places
-        on a true-colour satellite basemap. Self-storage, movers, residential remodelers, and
-        showrooms are screened out; anything else that isn&apos;t a real IOS user can be removed
-        below before exporting.
+        {BUSINESS_MAP_LIMITATION} Review identities, outdoor use and duplicate listings below, then save the reviewed version. The saved selection is shared by this tab, deal summaries and IC exports.
       </p>
 
+      {locationMismatch && !currentPin && <p className="warning" role="alert">The saved map uses an older property pin. Generate and review a new map before saving or exporting.</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0", flexWrap: "wrap" }}>
         <label className="label" htmlFor="radius-select" style={{ margin: 0 }}>
           Radius
@@ -143,20 +166,22 @@ export default function IcDeckPanel({
         </select>
 
         <button onClick={handleGenerate} disabled={loading}>
-          {loading ? "Generating…" : data ? "Regenerate" : "Generate Demand Map"}
+          {loading ? "Generating…" : data ? "New search draft" : "Generate Demand Map"}
         </button>
         {view && (
-          <button onClick={handleExport} disabled={exporting}>
+          <button onClick={handleExport} disabled={exporting || !isSaved || !currentPin}>
             {exporting ? "Exporting…" : "Export IC Deck (.pptx)"}
           </button>
         )}
       </div>
 
-      {error && <p className="warning">{error}</p>}
+      {error && <p className="warning" role="alert">{error}</p>}
+      {data && <p className="hint">Observed: {observationLabel(data)} · Google Places · Straight-line distances · Imagery capture date unavailable. {isSaved ? "Using the saved reviewed selection." : "Draft: save the reviewed version to use it across Hopper and enable export."}</p>}
 
       {data && view && preview && (
         <>
-          <div style={{ position: "relative", width: "100%", maxWidth: 640, marginTop: 8 }}>
+          <DemandMapExplorer data={view}>
+          <div style={{ position: "relative", width: "100%" }}>
             <img
               src={data.imageBase64}
               alt={`Satellite basemap centred on ${data.address}`}
@@ -227,8 +252,10 @@ export default function IcDeckPanel({
             </svg>
           </div>
 
+          </DemandMapExplorer>
+
           <p className="hint" style={{ marginTop: 8 }}>
-            {view.tenants.length} IOS users within {view.radiusMiles} mi of {data.address}
+            {view.tenants.length} selected businesses within {view.radiusMiles} mi of {data.address}
             {bands.length > 0 && (
               <> · {bands.map((b) => `${b.count} within ${b.mi} mi`).join(" · ")}</>
             )}
@@ -318,7 +345,7 @@ export default function IcDeckPanel({
                         <button
                           type="button"
                           className="link-remove"
-                          title="Not an IOS user — remove from the map and deck"
+                          title="Remove this business from the reviewed selection"
                           onClick={() => toggle(t.placeId)}
                         >
                           ×

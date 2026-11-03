@@ -176,7 +176,7 @@ export default function UwScreen(props: {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch(`/api/deals/${props.dealId}/uw-runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inputs, sources, label }) });
+      const res = await fetch(`/api/deals/${props.dealId}/uw-runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inputs, sources, label, expectedCompReviewVersion:props.comps.reviewVersion??0,expectedModelVersion:props.model?.versionNumber??null }) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error ?? "Couldn't save the run");
       setRuns((r) => [j.run, ...r]);
@@ -322,7 +322,8 @@ export default function UwScreen(props: {
           Net leases: tenants reimburse taxes, insurance and other opex <Chip s={sources.NnnRecovered} />
         </label>
         <div className="grid-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12, opacity: 1 }}>
-          {!inputs.NnnRecovered && (
+          {inputs.NnnRecovered&&field("RecoveryStartMonth","Full recovery starts (month)",inputs.RecoveryStartMonth??0,"int",v=>({RecoveryStartMonth:Math.min(120,Math.max(0,v))}))}
+          {(
             <>
               <label className="stack" style={{ gap: 2 }}>
                 <span className="label" style={{ display: "flex", gap: 6 }}>Property tax <Chip s={sources.TaxSwitch} /></span>
@@ -338,6 +339,7 @@ export default function UwScreen(props: {
               {field("OtherOpex", "Other opex ($/yr)", inputs.OtherOpex, "usd", (v) => ({ OtherOpex: v }))}
             </>
           )}
+          {inputs.NnnRecovered&&<p className="hint">Recovery is an explicit whole-property assumption, not proof of an executed lease. Month 0 assumes full recovery from closing. Taxes, insurance and other expenses below remain owner carrying costs until the stated month; management, reserves and debt remain separate. Review recovery timing when changing lease commencement.</p>}
           {field("MgmtPct", "Management (% of revenue)", inputs.MgmtPct, "pct", (v) => ({ MgmtPct: v }))}
           {field("ReservePerAcre", "Reserves ($/ac/yr)", inputs.ReservePerAcre, "usd", (v) => ({ ReservePerAcre: v }))}
           {field("LoanLTV", "Loan to price (%)", inputs.LoanLTV, "pct", (v) => ({ LoanLTV: v }))}
@@ -360,7 +362,8 @@ export default function UwScreen(props: {
       </section>
 
       <section className="panel">
-        <h2 style={{ display: "flex", gap: 8, alignItems: "center" }}>Rent roll <Chip s={sources.rentRoll} /></h2>
+        <h2 style={{ display: "flex", gap: 8, alignItems: "center" }}>Modeled rent roll <Chip s={sources.rentRoll} /></h2>
+        <p className="hint">Pipeline means proposed income in this screening case, not current in-place rent. Record executed/in-place evidence on Financials. Enter commencement months explicitly; taxes, insurance, other operating expenses and debt service continue during lease-up unless explicitly changed.</p>
         <p className="hint">{sources.rentRoll?.note}. Months count from closing; a blank lease end means no expiry. Market rent is what a renewal or a new tenant pays; downtime and free months apply to a new tenant.</p>
         <div className="table-scroll">
           <table className="summary-table">
@@ -381,7 +384,7 @@ export default function UwScreen(props: {
                     <td><input aria-label="Tenant" value={t.name} onChange={(e) => editTenant(i, { name: e.target.value })} style={{ width: 170 }} /></td>
                     <td>
                       <select aria-label="Status" value={t.status} onChange={(e) => editTenant(i, { status: e.target.value as Tenant["status"] })}>
-                        <option>In-place</option><option>Pipeline</option>
+                        <option value="In-place">In-place (modeled)</option><option value="Pipeline">Proposed / not commenced</option>
                       </select>
                     </td>
                     <td><Num label="Acres" value={t.acres} kind="num" style={TINY} allowBlank onCommit={(v) => editTenant(i, { acres: v })} /></td>

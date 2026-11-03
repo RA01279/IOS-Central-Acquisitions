@@ -42,6 +42,7 @@ export const NAV_GROUPS: Array<{ label: string | null; links: NavLink[] }> = [
     links: [
       { href: "/", label: "Home", key: "home", icon: Gauge },
       { href: "/tasks", label: "Tasks", key: "tasks", icon: ListChecks },
+      { href: "/uw-handoffs", label: "UW Handoffs", key: "uw-handoffs", icon: FileText },
       { href: "/sourcing", label: "Sourcing", key: "sourcing", icon: Radar },
       { href: "/offers", label: "Offers", key: "offers", icon: Handshake },
       { href: "/targets", label: "Targets", key: "targets", icon: Target },

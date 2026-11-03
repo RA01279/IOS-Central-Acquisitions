@@ -3,6 +3,7 @@ import { userContext, json, reap } from "@/lib/agents/server";
 import { AGENTS, UUID, isAgentId, buildPrompt } from "@/lib/agents/catalog";
 import { loadEvidence } from "@/lib/agents/context";
 import { MAX_SOURCING_SITES } from "@/lib/agents/sourcing";
+import { SNAPSHOT_LABEL, selectReviewedSites, validBuyBox, type ReviewedSourcing } from "@/lib/sourcing/snapshot";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
  try {
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     return json(data);
   }
   const [runs, helper, deals] = await Promise.all([
-    db.from("agent_runs").select("id,agent,status,created_at,reviewed_at").eq("owner_email", email).order("created_at", { ascending: false }).limit(30),
+    (() => { let query = db.from("agent_runs").select("id,agent,status,created_at,reviewed_at").eq("owner_email", email); const agent = req.nextUrl.searchParams.get("agent"); if (agent && isAgentId(agent)) query = query.eq("agent", agent); return query.order("created_at", { ascending: false }).limit(30); })(),
     db.from("outlook_helpers").select("agents_last_seen_at,expires_at").eq("owner_email", email).maybeSingle(),
     db.from("deals").select("id,properties(address)").order("updated_at", { ascending: false }).limit(500),
   ]);
@@ -46,16 +47,22 @@ export async function POST(req: NextRequest) {
   const agent = AGENTS.find(a => a.id === body.agent)!;
   if (agent.needsDeal && !body.dealId) return json({ error: "Select a deal first." }, 400);
   if ((body.agent === "deal-intake" || body.agent === "deal-import" || body.agent === "comp-import" || body.agent === "portfolio-import" || body.agent === "market-report" || body.agent === "market-narrative") && !body.text.trim()) return json({ error: "Paste the broker email or offering text." }, 400);
+  let reviewed: ReviewedSourcing | null = null;
   if (body.agent === "off-market-sourcing") {
-    let sweep: any = null; try { sweep = JSON.parse(body.text); } catch {}
-    if (!Array.isArray(sweep?.sites) || !sweep.sites.length || sweep.sites.length > MAX_SOURCING_SITES) return json({ error: `Select 1 to ${MAX_SOURCING_SITES} sites from a sweep.` }, 400);
+    if (!UUID.test(body.sweepId ?? "") || !validBuyBox(body.buyBox)) return json({ error: "Run a saved sweep and check the usable-acreage and coverage limits." }, 400);
+    const saved = await db.from("sourcing_sweeps").select("snapshot").eq("id", body.sweepId).eq("owner_email", email).maybeSingle();
+    if (saved.error) throw saved.error;
+    const sites = saved.data ? selectReviewedSites(saved.data.snapshot.sites, body.refs) : null;
+    if (!sites) return json({ error: `Select 1 to ${MAX_SOURCING_SITES} available sites from your saved sweep.` }, 400);
+    reviewed = { version: 2, sweepId: body.sweepId, market: saved.data!.snapshot.market, searchLabel: saved.data!.snapshot.label, buyBox: body.buyBox, sites };
   }
   const { data: helper, error: he } = await db.from("outlook_helpers").select("id,agents_last_seen_at").eq("owner_email", email).gt("expires_at", new Date().toISOString()).maybeSingle();
   if (he) throw he;
   if (!helper?.agents_last_seen_at || Date.now() - Date.parse(helper.agents_last_seen_at) > 45000) return json({ error: "Start the updated Hopper helper on your computer." }, 409);
   await reap(db, email);
   const evidence = await loadEvidence(body.agent, body.dealId || undefined);
-  const prompt = buildPrompt(body.agent, evidence, body.text, new Date().toISOString());
+  if (reviewed) evidence.push({ label: SNAPSHOT_LABEL, data: reviewed });
+  const prompt = buildPrompt(body.agent, evidence, reviewed ? JSON.stringify(reviewed) : body.text, new Date().toISOString());
   if (prompt.length > 350000) return json({ error: "Evidence is too large. Narrow the selected deal or shorten the source text." }, 413);
   const { data, error } = await db.from("agent_runs").insert({ owner_email: email, helper_id: helper.id, agent: body.agent,
     deal_id: body.dealId || null, prompt, sources: evidence }).select("id").single();

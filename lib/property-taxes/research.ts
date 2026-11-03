@@ -5,6 +5,7 @@ import { matchParcel, parcelKey, mergeResearch } from "./model";
 import {normalizedAddress} from './address';
 import {researchAccount} from './collector-research';
 import {historyCoverage} from './coverage';
+import {discoverTaxSources,jurisdictionKey} from './discovery';
 
 export const TX_PARCELS = "https://feature.geographic.texas.gov/arcgis/rest/services/Parcels/stratmap_land_parcels_48_most_recent/MapServer/0";
 export const GA_PARCELS = "https://services3.arcgis.com/RfpmnkSAQleRbndX/ArcGIS/rest/services/Property_and_Tax/FeatureServer/0";
@@ -79,6 +80,9 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
     } catch { gaps.push("Census county lookup unavailable; county must be verified from parcel evidence."); }
   }
   emit(`County identification: ${county || "unresolved"}, ${state || "state unresolved"}`, report);
+  const investigated=new Set<string>();
+  async function discover(s:string,c:string){const key=jurisdictionKey(s,c);if(investigated.has(key))return;investigated.add(key);const result=await discoverTaxSources(s,c,fetcher,retain,true);report.sources.push(...result.sources);(report.research!.discovery??=[]).push(result.discovery);if(result.discovery.status!=='adapter_available')gaps.push(`${key}: official source onboarding remains open. ${result.discovery.nextSteps[0]}`);}
+  if(state&&county)await discover(state,county);
   if(cachedSource && Array.isArray(subject.existingEvidence)) for(const event of subject.existingEvidence) {
     const detail=event?.detail??{},roll=detail.appraisalRoll??{},accountId=text(detail.parcelId||roll.propId),cachedCounty=text(detail.county||roll.county);
     const cachedState=state ?? (/TxGIO|Texas|appraisal district/i.test(text(roll.source))?"TX":null);
@@ -91,15 +95,24 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
     try {
       if(lat==null||lng==null) throw new Error("A verified point is required for the TxGIO identify service.");
       const url = texasIdentify(lat,lng), data = await read(url, true, fetcher);
+      const ambiguous=new Set<string>();
       for (const feature of data.results ?? []) {
         const source = addSource(report, "TxGIO county appraisal roll (not a tax bill)", url, feature.attributes);
         const parsed = texasParcel(feature.attributes, subjectResolved, source); if (!parsed) continue;
         source.taxYear = parsed.year;
         const existingIndex=report.parcels.findIndex(p=>p.key===parsed.parcel.key);
         if(existingIndex<0) report.parcels.push(parsed.parcel);
-        else report.parcels[existingIndex]={...parsed.parcel,sourceIds:[...new Set([...report.parcels[existingIndex].sourceIds,source.id])]};
-        if (parsed.year && parsed.market !== null) report.records.push({ parcelKey: parsed.parcel.key, year: parsed.year, facts: { market:{ value:parsed.market, sourceId:source.id, stage:"reported", reviewed:false } }, jurisdictions:[] });
+        else {const prior=report.parcels[existingIndex];
+          if(normalizedAddress(prior.address)!==normalizedAddress(parsed.parcel.address)){ambiguous.add(parsed.parcel.key);gaps.push(`Official GIS repeats account ${parsed.parcel.accountId} across different situs addresses; identity and valuation require county-record review.`);}
+          report.parcels[existingIndex]={...prior,sourceIds:[...new Set([...prior.sourceIds,source.id])],matchEvidence:[...new Set([...prior.matchEvidence,...parsed.parcel.matchEvidence])]};
+        }
+        if (parsed.year && parsed.market !== null) {const prior=report.records.find(r=>r.parcelKey===parsed.parcel.key&&r.year===parsed.year);
+          if(prior&&prior.facts.market?.value!==parsed.market)ambiguous.add(parsed.parcel.key);
+          if(!prior)report.records.push({ parcelKey: parsed.parcel.key, year: parsed.year, facts: { market:{ value:parsed.market, sourceId:source.id, stage:"reported", reviewed:false } }, jurisdictions:[] });
+        }
       }
+      report.records=report.records.filter(r=>!ambiguous.has(r.parcelKey));
+      if(ambiguous.size)gaps.push('Conflicting GIS account valuations were retained as source evidence only; no arbitrary value was selected.');
       if (!report.parcels.length) gaps.push("TxGIO did not identify a dated parcel at the pin. Manually identify every acquisition parcel.");
     } catch(e) { gaps.push(`Texas parcel lookup unavailable: ${e instanceof Error ? e.message : "retry needed"}`); }
     gaps.push("TxGIO publishes market value and parcel identity only. Historical tax bills are imported only from a separate supported collector source. Other counties still require a collector connector or official bill upload. A collector total may exclude separately billed authorities; payment status and complete five-year history require their own evidence.");
@@ -130,6 +143,7 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
   // an already identified account from reaching its collector.
   const candidates=mergeResearch(existing,report).parcels.filter(p=>p.review!=='excluded');
   for(const parcel of candidates){
+    await discover(parcel.state,parcel.county);
     if(deadline.aborted){attempts.push({parcelKey:parcel.key,status:'failed',message:'Research time limit reached before this account could finish. Retry; saved findings are retained.'});continue;}
     const index=report.parcels.findIndex(p=>p.key===parcel.key);
     if(index<0)report.parcels.push(structuredClone(parcel));else report.parcels[index]=structuredClone(parcel);
@@ -162,7 +176,7 @@ export async function researchTaxes(subject: TaxSubject, existing: TaxState, emi
     } catch { gaps.push(`Rule source inaccessible: ${rule.url}. Open it manually; no access controls were bypassed.`); }
   }
   gaps.push("Protests, appeals, delinquency, payments, penalties and interest are unknown unless supported by a dated record. Proposed values/rates and forecasts are not issued bills.");
-  report.research = { at:new Date().toISOString(), status:"partial", gaps, attempts };
+  report.research = { ...report.research, at:new Date().toISOString(), status:"partial", gaps, attempts };
   const coverage=historyCoverage(mergeResearch(existing,report));
   emit(`Research run finished: ${coverage.retrieved}/${coverage.expected||5} annual account bills retrieved${coverage.historyComplete?'; review account coverage':'; history incomplete'}`, report);
   return report;

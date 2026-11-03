@@ -3,8 +3,10 @@
 
 import { getServiceClient } from "@/lib/supabase";
 import { DEAL_CARD_SELECT, toDealCard } from "@/lib/deal-view";
-import { loadDemandSnapshot, loadSignals } from "@/lib/site-signals";
+import { loadSignals } from "@/lib/site-signals";
 import { demandBreakdown } from "@/lib/site-score";
+import { getSiteView } from "@/lib/deal-workspace";
+import { authoritativeReturns } from "@/lib/investment-review";
 import { fmtPct } from "@/lib/format";
 import { hex, signal } from "@/lib/hopper-tokens";
 import Nav from "@/components/Nav";
@@ -23,19 +25,20 @@ export default async function ComparePage(props: { searchParams: Promise<{ ids?:
 
   const supabase = getServiceClient();
   const { data: rows } = ids.length
-    ? await supabase.from("deals").select(`${DEAL_CARD_SELECT}, uw_versions(version_number, returns_summary)`).in("id", ids)
+    ? await supabase.from("deals").select(`${DEAL_CARD_SELECT}, uw_versions(*)`).in("id", ids)
     : { data: [] as any[] };
   const signals = await loadSignals(ids);
-  const snapshots = await Promise.all(ids.map((id) => loadDemandSnapshot(id)));
+  const sites = await Promise.all(ids.map((id) => getSiteView(id)));
+  const snapshots = sites.map(site => site.snapshot);
 
   const cols = ids
     .map((id, i) => {
       const d = (rows ?? []).find((r: any) => r.id === id);
       if (!d) return null;
-      const card = toDealCard(d, signals.get(id));
-      const latest = [...((d as any).uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number)[0];
-      const demand = demandBreakdown(snapshots[i], 3);
-      return { card, yieldPct: latest?.returns_summary?.goingInYieldPct ?? null, irr: latest?.returns_summary?.irrPct ?? null, demand };
+      const card = {...toDealCard(d, signals.get(id)),flags:sites[i].flags,score:sites[i].score.score,scoreCounts:sites[i].score.counts};
+      const returns=authoritativeReturns(d);
+      const demand = demandBreakdown(snapshots[i], snapshots[i]?.radiusMiles ?? 5);
+      return { card, yieldPct: returns?.goingInYieldPct ?? null, irr: returns?.irrPct ?? null, demand };
     })
     .filter(Boolean) as Array<{ card: ReturnType<typeof toDealCard>; yieldPct: number | null; irr: number | null; demand: ReturnType<typeof demandBreakdown> }>;
 
@@ -60,7 +63,7 @@ export default async function ComparePage(props: { searchParams: Promise<{ ids?:
     },
     { label: "Yr-1 yield", vals: cols.map((c) => fmtPct(c.yieldPct)), bestIdx: best(cols.map((c) => c.yieldPct), "max") },
     { label: "IRR", vals: cols.map((c) => fmtPct(c.irr)), bestIdx: best(cols.map((c) => c.irr), "max") },
-    { label: "Demand index (3 mi)", vals: cols.map((c) => String(c.demand.index ?? "—")), bestIdx: best(cols.map((c) => c.demand.index), "max") },
+    { label: "Selected businesses (saved radius)", vals: cols.map((c, i) => snapshots[i] ? String(c.demand.total) : "—"), bestIdx: -1 },
     { label: "Days in stage", vals: cols.map((c) => String(c.card.days)), bestIdx: -1 },
   ];
 
@@ -119,8 +122,8 @@ export default async function ComparePage(props: { searchParams: Promise<{ ids?:
                   ))}
                 </div>
                 <div className="card" style={{ gap: 10 }}>
-                  <span className="overline">Tenant demand · 3 mi</span>
-                  {c.demand.index == null ? <p className="hint" style={{ margin: 0 }}>Not searched yet.</p> : <DemandBars rows={c.demand.rows} limit={6} />}
+                  <span className="overline">Reviewed nearby businesses</span>
+                  {!c.demand.total ? <p className="hint" style={{ margin: 0 }}>No selected businesses in a current saved review.</p> : <DemandBars rows={c.demand.rows} limit={6} />}
                 </div>
               </div>
             ))}

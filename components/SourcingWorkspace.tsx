@@ -14,8 +14,10 @@ import { SOURCING_PROFILES, selectedProfiles } from "@/lib/sourcing/profiles";
 import SourcingProfilePicker from "./SourcingProfilePicker";
 import SourcingExportAssignment from "./SourcingExportAssignment";
 import { assignmentFor, type ExportAssignee } from "@/lib/sourcing/export-assignment";
+import { blocksSourcing } from "@/lib/sourcing/identity";
+import { reviewedSites, validBuyBox } from "@/lib/sourcing/snapshot";
 
-type Sweep = { center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string; criteriaKey?: string; profileIds?: string[]; searches?: { profileId: string; profile: string; keyword: string; failed: boolean; returned: number; limited: boolean }[]; contacts?: { requested: number; failed: number } };
+type Sweep = { sweepId?: string; market?: string; createdAt?: string; coverage?: { requests: number; budget: number; partial: boolean; budgetExhausted: boolean; deadlineReached: boolean }; center: { lat: number; lng: number }; label: string; radiusMiles: number; sites: Site[]; screened: number; failedSearches: number; note: string; criteriaKey?: string; profileIds?: string[]; searches?: { profileId: string; profile: string; keyword: string; failed: boolean; returned: number; limited: boolean; pages?: number; cells?: number }[]; contacts?: { requested: number; failed: number } };
 type Saved = { market: string; buyBox: BuyBox; sites: Site[]; searchLabel?: string };
 type RunInfo = { id: string; status: string; error?: string | null; created_at?: string };
 
@@ -59,6 +61,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   const [directoryRevision, setDirectoryRevision] = useState(0);
   const [online, setOnline] = useState<boolean | null>(null);
   const [recent, setRecent] = useState<RunInfo[]>([]);
+  const [savedSweeps, setSavedSweeps] = useState<{ id: string; created_at: string; label: string }[]>([]);
   const [run, setRun] = useState<RunInfo | null>(null);
   const [report, setReport] = useState<{ sites: SourcedSite[]; saved: Saved } | null>(null);
   const [added, setAdded] = useState<Record<string, { dealId?: string; error?: string; busy?: boolean }>>({});
@@ -123,7 +126,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
     let live = true;
     const refresh = async () => {
       try {
-        const r = await fetch("/api/agents", { cache: "no-store" });
+        const r = await fetch("/api/agents?agent=off-market-sourcing", { cache: "no-store" });
         const d = await r.json();
         if (!live || !r.ok) return;
         setOnline(d.online);
@@ -134,6 +137,23 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
     const t = setInterval(refresh, 15000);
     return () => { live = false; clearInterval(t); };
   }, []);
+
+  useEffect(() => {
+    let live = true;
+    void fetch("/api/sourcing/sweeps", { cache: "no-store" }).then(async r => {
+      if (!r.ok) return; const d = await r.json(); if (live) setSavedSweeps(d.sweeps ?? []);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [sweep?.sweepId]);
+
+  async function openSweep(id: string) {
+    cancelPendingSweep(); setError(null);
+    try {
+      const r = await fetch(`/api/sourcing/sweeps?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      const data = await r.json(); if (!r.ok) throw new Error(data.error ?? "Could not open sweep");
+      setSweep(data); setReport(null); setRun(null); setSelected([]); setAdded({});
+    } catch (e: any) { setError(e.message); }
+  }
 
   // Poll the open run until it finishes, then parse its report.
   useEffect(() => {
@@ -146,8 +166,8 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
         if (!live || !r.ok) return;
         if (d.status !== run.status) setRun({ id: run.id, status: d.status, error: d.error });
         if (d.status === "completed" && d.result?.report) {
-          const saved = load(run.id);
-          const parsed = parseSourcing(d.result.report);
+          const saved = reviewedSites(d.sources) ?? load(run.id);
+          const parsed = parseSourcing(d.result.report, saved?.sites.map(s => s.ref));
           if (!saved) setError("This report's sweep isn't saved in this browser, so its sites can't be mapped or added. Run a new sweep.");
           else if (!parsed) setError("The report couldn't be read.");
           else setReport({ sites: parsed.sites, saved });
@@ -180,14 +200,15 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
 
   async function qualify() {
     if (!sweep) return;
-    const sites = sweep.sites.filter((s) => selected.includes(s.ref));
+    if (!sweep.sweepId) { setError("Run a new sweep to save the reviewed sites before qualifying."); return; }
+    if (!validBuyBox(buyBox)) { setError("Check the usable-acreage range and maximum coverage."); return; }
+    const sites = sweep.sites.filter((s) => selected.includes(s.ref) && !blocksSourcing(s));
     setBusy("agent"); setError(null); setReport(null); setAdded({});
     try {
-      const text = JSON.stringify({ market: market.label, buyBox, sites: sites.map((s) => ({ ref: s.ref, address: s.address, lat: s.lat, lng: s.lng, ownerUser: s.ownerUser, operators: s.operators.map((o) => ({ name: o.name, category: o.category })), parcel: s.parcel })) });
-      const r = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: "off-market-sourcing", text }) });
+      const r = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: "off-market-sourcing", text: "", sweepId: sweep.sweepId, refs: sites.map(s => s.ref), buyBox }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Could not start the agent.");
-      save(d.id, { market: market.label, buyBox, sites, searchLabel: sweep.label });
+      save(d.id, { market: sweep.market ?? "", buyBox, sites, searchLabel: sweep.label });
       setRun({ id: d.id, status: "queued" });
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   }
@@ -199,7 +220,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
     setAdded((a) => ({ ...a, [s.ref]: { busy: true } }));
     try {
       const r = await fetch("/api/sourcing/prospect", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: run.id, ref: s.ref, market: report.saved.market, site: { lat: site.lat, lng: site.lng, address: site.address, operators: site.operators.map((o) => o.name) } }) });
+        body: JSON.stringify({ runId: run.id, ref: s.ref }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Could not add the prospect.");
       setAdded((a) => ({ ...a, [s.ref]: { dealId: d.dealId } }));
@@ -224,11 +245,12 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
 
   const inBox = (s: Site) => s.parcel?.acres != null && s.parcel.acres >= buyBox.minAcres && s.parcel.acres <= buyBox.maxAcres;
   const visible = useMemo(() => {
-    const list = (sweep?.sites ?? []).filter((s) => (showKnown || !s.known) && (!hidePublic || s.parcel?.ownerClass !== "public") && (!inBoxOnly || inBox(s)));
-    return ownerUsersFirst ? [...list].sort((a, b) => Number(b.ownerUser) - Number(a.ownerUser)) : list;
+    const list = (sweep?.sites ?? []).filter((s) => (showKnown || !blocksSourcing(s)) && (!hidePublic || s.parcel?.ownerClass !== "public") && (!inBoxOnly || s.parcel?.acres == null || inBox(s)));
+    const rank = (s: Site) => (s.identityStatus === "address-conflict" ? -5 : s.parcel ? 3 : 0) + (inBox(s) ? 2 : s.parcel?.acres != null && s.parcel.acres < buyBox.minAcres ? -4 : 0) + (s.ownerUser ? .5 : 0);
+    return ownerUsersFirst ? [...list].sort((a, b) => rank(b) - rank(a) || a.distanceMi - b.distanceMi) : list;
   }, [sweep, showKnown, hidePublic, inBoxOnly, ownerUsersFirst, buyBox]);
   const publicCount = (sweep?.sites ?? []).filter((s) => s.parcel?.ownerClass === "public").length;
-  const knownCount = (sweep?.sites ?? []).filter((s) => s.known).length;
+  const knownCount = (sweep?.sites ?? []).filter(blocksSourcing).length;
   const points: MapPoint[] = useMemo(() => {
     const src = report ? report.saved.sites.filter((s) => report.sites.some((r) => r.ref === s.ref)) : visible;
     const fit = new Map(report?.sites.map((s) => [s.ref, s.fit]) ?? []);
@@ -236,7 +258,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
       ...(sweep && !report ? [{ id: "center", lat: sweep.center.lat, lng: sweep.center.lng, color: "132B46", title: sweep.label, lines: [`${sweep.radiusMiles} mi sweep centre`], emphasis: true }] : []),
       ...src.map((s) => ({
         id: s.ref, lat: s.lat, lng: s.lng,
-        color: s.known ? "9AA3AD" : report ? (FIT_COLOR[fit.get(s.ref) ?? "unknown"] ?? "#66717E").slice(1) : selected.includes(s.ref) ? "D35400" : "2E6DA4",
+        color: blocksSourcing(s) ? "9AA3AD" : report ? (FIT_COLOR[fit.get(s.ref) ?? "unknown"] ?? "#66717E").slice(1) : selected.includes(s.ref) ? "0E5AA7" : "2E6DA4",
         title: `${s.ref} · ${s.operators.map((o) => o.name).join(", ")}`.slice(0, 120),
         lines: [s.address, s.categories.join(", "), s.known ? `In Hopper: ${s.known.label}` : `${s.distanceMi.toFixed(1)} mi from centre`],
         href: s.known?.href,
@@ -249,7 +271,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   return (
     <>
       <h1>Off-market sourcing</h1>
-      <p className="hint">Businesses that run outdoor yards — trucking, equipment rental, contractors, container storage, building materials — are sitting on IOS sites, listed or not. Sweep a submarket and Hopper pulls each site's owner of record from the county appraisal roll. Pick the sites worth chasing and the agent researches the owner, confirms occupancy and zoning, and drafts outreach. Nothing is sent; you add the good ones to the pipeline.</p>
+      <p className="hint">Businesses that run outdoor yards — trucking, equipment rental, contractors, container storage, building materials — can reveal potential IOS sites, whether listed or off market. Sweep a submarket and Hopper pulls each site's owner of record from the county appraisal roll. Pick the sites worth chasing and the agent researches the owner, confirms occupancy and zoning, and drafts outreach. Nothing is sent; you add the good ones to the pipeline.</p>
 
       <section className="panel">
         <h2>1. Sweep</h2>
@@ -294,7 +316,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           <label>Max building coverage %<input type="number" min={0} max={100} step={5} value={buyBox.maxCoveragePct} onChange={(e) => setBuyBox({ ...buyBox, maxCoveragePct: Number(e.target.value) })} /></label>
         </fieldset>
         </div>
-        <button type="submit" disabled={!restored || !profileIds.length || busy !== null || (mode === "address" && !address.trim())}>{busy === "sweep" ? "Sweeping… (about 20 seconds)" : "Sweep"}</button>
+        <button type="submit" disabled={!restored || !profileIds.length || busy !== null || (mode === "address" && !address.trim())}>{busy === "sweep" ? "Sweeping… (up to two minutes)" : "Sweep"}</button>
         {!profileIds.length && <p className="hint">Select at least one profile to run Google sourcing.</p>}
         {error && <p role="alert" className="error">{error}</p>}
         </form>
@@ -306,7 +328,8 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           {sweep && !report && <>
             <p><strong>Reviewed search:</strong> {sweep.label}, {sweep.radiusMiles} miles. Profiles: {SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All existing yard-use profiles (previous sweep)"}. <strong>{visible.length} filtered properties</strong> / {sweep.sites.length} discovered properties. Map and filtered export use these same {visible.length} properties.</p>
             {sweep.criteriaKey && criteriaKey !== sweep.criteriaKey && <p role="status">Search criteria changed. Run Sweep to replace these results; the displayed list and export still reflect the reviewed search above.</p>}
-            {sweep.searches && <details><summary>Google search coverage ({sweep.searches.filter((s) => !s.failed).length}/{sweep.searches.length} searches succeeded)</summary><ul>{sweep.searches.map((s) => <li key={`${s.profileId}:${s.keyword}`}>{s.profile}: {s.keyword} — {s.failed ? "failed; results incomplete" : `${s.returned} returned${s.limited ? "; first-page limit reached / additional results may exist" : ""}`}</li>)}</ul></details>}
+            {sweep.coverage && <p className="hint">Search coverage: {sweep.coverage.requests} of {sweep.coverage.budget} requests used. {sweep.coverage.partial ? "Some areas remain limited or incomplete." : "Available pages checked; Google results are still a sample."} {sweep.createdAt && `Saved ${new Date(sweep.createdAt).toLocaleString()}.`}</p>}
+            {sweep.searches && <details><summary>Google search coverage ({sweep.searches.filter((s) => !s.failed).length}/{sweep.searches.length} searches succeeded)</summary><ul>{sweep.searches.map((s) => <li key={`${s.profileId}:${s.keyword}`}>{s.profile}: {s.keyword} — {s.failed ? "failed; results incomplete" : `${s.returned} results across ${s.pages ?? 1} pages / ${s.cells ?? 1} areas${s.limited ? "; coverage remains limited" : ""}`}</li>)}</ul></details>}
             {!!sweep.contacts?.failed && <p role="status">Business contact lookup incomplete for {sweep.contacts.failed} of {sweep.contacts.requested} businesses. Unavailable phone and website fields remain blank.</p>}
           </>}
           {exportError && <p role="alert" className="error">{exportError}</p>}
@@ -315,7 +338,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           {sweep && !report && (
             <p className="hint">
               {sweep.label}: {sweep.sites.length - knownCount} new yard site{sweep.sites.length - knownCount === 1 ? "" : "s"}
-              {knownCount > 0 && <> · {knownCount} already in Hopper (<button type="button" className="link-button" onClick={() => setShowKnown(!showKnown)}>{showKnown ? "hide" : "show"}</button>)</>}
+              {knownCount > 0 && <> · {knownCount} matching active deals / owned assets (<button type="button" className="link-button" onClick={() => setShowKnown(!showKnown)}>{showKnown ? "hide" : "show"}</button>)</>}
               {publicCount > 0 && <> · {publicCount} publicly owned{hidePublic ? " (hidden)" : ""}</>}
               {" · "}{sweep.screened} listings screened out as non-yard uses{sweep.failedSearches ? ` · ${sweep.failedSearches} searches failed` : ""}. {sweep.note}
             </p>
@@ -325,28 +348,28 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
             <>
               <p style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                 <label><input type="checkbox" checked={hidePublic} onChange={(e) => setHidePublic(e.target.checked)} /> Hide publicly owned</label>
-                <label><input type="checkbox" checked={inBoxOnly} onChange={(e) => setInBoxOnly(e.target.checked)} /> Only {buyBox.minAcres}–{buyBox.maxAcres} acres</label>
-                <label><input type="checkbox" checked={ownerUsersFirst} onChange={(e) => setOwnerUsersFirst(e.target.checked)} /> Owner-users first</label>
+                <label><input type="checkbox" checked={inBoxOnly} onChange={(e) => setInBoxOnly(e.target.checked)} /> Filter gross parcel size ({buyBox.minAcres}–{buyBox.maxAcres} acres; unknowns retained)</label>
+                <label><input type="checkbox" checked={ownerUsersFirst} onChange={(e) => setOwnerUsersFirst(e.target.checked)} /> Prioritize documented parcel and size signals</label>
               </p>
               <p style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button type="button" className="secondary" disabled={exporting || !selected.length} onClick={() => exportSites(sweep.sites.filter((s) => selected.includes(s.ref)), sweep.label)}>Export selected to Excel ({selected.length})</button>
-                <button type="button" className="secondary" disabled={exporting || !visible.length} onClick={() => exportSites(visible, `${sweep.label} | ${sweep.radiusMiles} mi | Profiles: ${SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All profiles"} | ${sweep.failedSearches} failed searches | Google first-page sample`)}>Export filtered results to Excel ({visible.length})</button>
+                <button type="button" className="secondary" disabled={exporting || !visible.length} onClick={() => exportSites(visible, `${sweep.label} | ${sweep.radiusMiles} mi | Profiles: ${SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All profiles"} | ${sweep.failedSearches} failed searches | Bounded Google sample`)}>Export filtered results to Excel ({visible.length})</button>
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
-                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Acres</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th></tr></thead>
+                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th></tr></thead>
                   <tbody>
                     {visible.map((s) => (
                       <tr key={s.ref} data-site-ref={s.ref}>
-                        <td>{!s.known && <input type="checkbox" aria-label={`Select ${s.ref}`} checked={selected.includes(s.ref)} onChange={() => toggle(s.ref)} disabled={!selected.includes(s.ref) && selected.length >= MAX_SOURCING_SITES} />}</td>
+                        <td>{!blocksSourcing(s) && <input type="checkbox" aria-label={`Select ${s.ref}`} checked={selected.includes(s.ref)} onChange={() => toggle(s.ref)} disabled={!selected.includes(s.ref) && selected.length >= MAX_SOURCING_SITES} />}</td>
                         <td>{s.ref}</td>
                         <td>{s.operators.map((o) => <div key={o.placeId} data-place-id={o.placeId} data-profile-ids={o.profileIds?.join(",")}><strong>{o.name}</strong><br /><span className="hint">Matched profiles: {(o.categories ?? [o.category]).join(", ")}</span><br />{o.phone && <>Business phone: {o.phone}<br /></>}{o.website && <><a href={o.website} target="_blank" rel="noopener noreferrer">Business website</a>{" · "}</>}<a href={o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`} target="_blank" rel="noopener noreferrer">Google business source</a></div>)}<span className="hint">Business contacts are not verified owner contacts.</span></td>
-                        <td>{s.parcel?.owner ?? "—"}{s.ownerUser && <strong title="Owner name matches an operator: a sale-leaseback lead"> · owner-user</strong>}{s.parcel && s.parcel.ownerClass !== "private" && <span className="hint"> · {s.parcel.ownerClass}</span>}</td>
+                        <td>{s.parcel?.owner ?? "Owner unverified"}{s.ownerUser && <span className="hint"> · possible owner-user (name similarity only)</span>}{s.parcel && s.parcel.ownerClass !== "private" && <span className="hint"> · {s.parcel.ownerClass}</span>}</td>
                         <td style={{ fontWeight: inBox(s) ? 600 : 400, color: s.parcel?.acres != null && !inBox(s) ? "#8a8f98" : undefined }}>{s.parcel?.acres ?? "—"}</td>
                         <td>{s.parcel?.yearBuilt ?? "—"}</td>
-                        <td>{s.address}</td>
+                        <td>{s.address}{s.identityStatus === "address-conflict" && <p className="hint" role="status">Listing / parcel address conflict: {s.parcel?.situsAddress}. Review location.</p>}{!s.parcel && <p className="hint">Parcel not returned; ownership and area remain unverified.</p>}</td>
                         <td>{s.distanceMi.toFixed(1)} mi</td>
-                        <td>{s.known ? <Link href={s.known.href}>{s.known.kind}</Link> : "—"}</td>
+                        <td>{s.known && <div><Link href={s.known.href}>{s.known.relation ?? s.known.kind}</Link> · same property ({s.known.evidence})</div>}{s.nearby?.map(k => <div key={`${k.kind}:${k.id}`}><Link href={k.href}>{k.label}</Link> · {k.match === "same_property" ? "same property" : "nearby, not a duplicate"}</div>)}{!s.known && !s.nearby?.length && "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -373,6 +396,8 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                       <tr><th scope="row">Owner of record</th><td>{s.owner ?? site?.parcel?.owner ?? "Not found"}{s.ownerType !== "unknown" ? ` (${s.ownerType})` : ""}{(s.ownerMailingAddress ?? site?.parcel?.mailingAddress) ? ` · mail: ${s.ownerMailingAddress ?? site?.parcel?.mailingAddress}` : ""}{!s.owner && site?.parcel?.owner ? " (appraisal roll)" : ""}</td></tr>
                       <tr><th scope="row">Parcel</th><td>{[s.parcelId && `ID ${s.parcelId}`, s.county && `${s.county} County`, s.ownedSince && `owned since ${s.ownedSince}`].filter(Boolean).join(" · ") || "—"}</td></tr>
                       <tr><th scope="row">Site</th><td>{[(s.acres ?? site?.parcel?.acres) != null && `${s.acres ?? site?.parcel?.acres} AC`, s.buildingSf != null && `${Math.round(s.buildingSf).toLocaleString("en-US")} SF bldg`, s.yearBuilt && `built ${s.yearBuilt}`].filter(Boolean).join(" · ") || "—"}</td></tr>
+                      <tr><th scope="row">Usable yard</th><td>{s.usableAcres == null ? "Unverified; gross parcel acres are not usable yard acres" : `${s.usableAcres} acres`}</td></tr>
+                      <tr><th scope="row">Building footprint</th><td>{s.buildingFootprintSf == null ? "Unverified" : `${s.buildingFootprintSf.toLocaleString()} SF`}</td></tr>
                       <tr><th scope="row">Zoning</th><td>{s.zoning ?? "—"} · outdoor storage {s.outdoorStorage}</td></tr>
                     </tbody></table>
                     {s.signals.length > 0 && <><strong>Off-market signals</strong><ul>{s.signals.map((x) => <li key={x}>{x}</li>)}</ul></>}
@@ -402,11 +427,12 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           <h2>Recent sourcing runs</h2>
           <ul>{recent.map((r) => (
             <li key={r.id}>{r.created_at?.slice(0, 16).replace("T", " ")} · {r.status}{" "}
-              {r.status === "completed" && load(r.id) && <button type="button" className="link-button" onClick={() => setRun({ id: r.id, status: "processing" })}>open</button>}
+              {r.status === "completed" && <button type="button" className="link-button" onClick={() => setRun({ id: r.id, status: "processing" })}>open</button>}
             </li>
           ))}</ul>
         </section>
       )}
+      {savedSweeps.length > 0 && <section className="panel"><h2>Saved sweeps</h2><p className="hint">Reopen the original reviewed sites from any browser.</p><ul>{savedSweeps.map(s => <li key={s.id}>{new Date(s.created_at).toLocaleString()} · {s.label} <button type="button" className="link-button" onClick={() => void openSweep(s.id)}>Open sweep</button></li>)}</ul></section>}
     </>
   );
 }

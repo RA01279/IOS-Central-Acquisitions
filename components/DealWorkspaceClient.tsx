@@ -17,6 +17,7 @@ const UW_ENGINE_TAB = process.env.NEXT_PUBLIC_UW_ENGINE_TAB === "screen";
 
 export const DEAL_TABS = [
   { seg: "", label: "Summary", short: "Summary", icon: LayoutGrid },
+  { seg: "uw-handoff", label: "UW Handoff", short: "Handoff", icon: null },
   { seg: "demand-map", label: "Demand Map", short: "Map", icon: MapIcon },
   { seg: "property-taxes", label: "Property Taxes", short: "Taxes", icon: Calculator },
   { seg: "ios-underwriting", label: "IOS model", short: "IOS UW", icon: null },

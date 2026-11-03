@@ -20,6 +20,7 @@
 // with it and with each other at any radius.
 
 import { latLngToWorldPixel, milesPerLogicalPixel } from "./geo";
+import { BUSINESS_MAP_TITLE, BUSINESS_MAP_LIMITATION, observationLabel } from "../demand-map-review";
 
 export type Category = { label: string; keywords: string[]; color: string };
 
@@ -30,16 +31,16 @@ export const DEFAULT_CATEGORIES: Category[] = [
   // "truck parking lot" is deliberately absent -- it returned food-truck parks
   // and supermarket car parks. The client's list is what the API actually runs
   // (it overrides the route's defaults), so these must stay in step.
-  { label: "Auto & RV Storage", keywords: ["RV boat outdoor storage lot", "trailer storage yard"], color: "7F8C8D" },
-  { label: "Building Materials", keywords: ["building materials supplier", "lumber yard", "roofing supply"], color: "C9971F" },
-  { label: "Chemical/Waste Mgmt", keywords: ["waste management chemical distributor"], color: "16A085" },
-  { label: "Container Storage", keywords: ["shipping container storage", "portable storage container sales"], color: "8E44AD" },
-  { label: "Contractor Yard", keywords: ["paving contractor", "fence company", "excavating contractor"], color: "C0562B" },
-  { label: "Equip. Rental & Sales", keywords: ["equipment rental sales", "crane service"], color: "2E6DA4" },
-  { label: "Stone & Masonry", keywords: ["stone yard", "natural stone supplier", "masonry supply"], color: "7D5A3C" },
-  { label: "Trucking & Towing", keywords: ["trucking company", "towing service"], color: "2C3E50" },
-  { label: "Landscape & Soil", keywords: ["landscape supply yard", "soil compost mulch supplier"], color: "5B8C3A" },
-  { label: "Pipe & Steel", keywords: ["pipe supply", "steel supply"], color: "B03A5B" },
+  { label: "Auto & RV Storage", keywords: ["RV boat outdoor storage lot", "trailer storage yard"], color: "9EC3E5" },
+  { label: "Building Materials", keywords: ["building materials supplier", "lumber yard", "roofing supply"], color: "5E7A93" },
+  { label: "Chemical/Waste Mgmt", keywords: ["waste management chemical distributor"], color: "9AA8B5" },
+  { label: "Container Storage", keywords: ["shipping container storage", "portable storage container sales"], color: "2C4A63" },
+  { label: "Contractor Yard", keywords: ["paving contractor", "fence company", "excavating contractor"], color: "4E9FD6" },
+  { label: "Equip. Rental & Sales", keywords: ["equipment rental sales", "crane service"], color: "0E5AA7" },
+  { label: "Stone & Masonry", keywords: ["stone yard", "natural stone supplier", "masonry supply"], color: "6BA3D6" },
+  { label: "Trucking & Towing", keywords: ["trucking company", "towing service"], color: "0A2540" },
+  { label: "Landscape & Soil", keywords: ["landscape supply yard", "soil compost mulch supplier"], color: "3E82C4" },
+  { label: "Pipe & Steel", keywords: ["pipe supply", "steel supply"], color: "0B4884" },
 ];
 
 export type Tenant = {
@@ -69,6 +70,10 @@ export type DemandMapResponse = {
   mapScale?: number;
   /** Keyword matches rejected as non-yard uses (self-storage, movers, ...). */
   screenedOut?: number;
+  fetchedAt?: string | null;
+  locationSource?: string;
+  perCategoryCap?: number;
+  searchSummary?: { queries: number; succeeded: number; failed: number; firstPageLimited: number };
   imageBase64: string;
   tenants: Tenant[];
 };
@@ -332,19 +337,19 @@ export async function exportToPptx(
     slide.addShape("rect", {
       x: 0, y: 0, w: SLIDE_W, h: HEADER_H, fill: { color: NAVY }, line: { type: "none" },
     });
-    slide.addText("IOS DEMAND MAP", {
-      x: 0.5, y: 0.1, w: 9, h: 0.4, fontFace: "Arial", fontSize: 21, bold: true,
+    slide.addText(BUSINESS_MAP_TITLE.toUpperCase(), {
+      x: 0.5, y: 0.1, w: 9, h: 0.4, fontFace: "Arial", fontSize: 16, bold: true,
       charSpacing: 1, color: WHITE, margin: 0,
     });
     slide.addText(
-      (dealMeta.subtitle || data.address) + (continued ? "  —  tenant key (cont.)" : ""),
+      (dealMeta.subtitle || data.address) + (continued ? "  —  business key (cont.)" : ""),
       { x: 0.5, y: 0.52, w: 12.3, h: 0.34, fontFace: "Arial", fontSize: 11, color: "C9D3E0", margin: 0 }
     );
   };
 
   const addFooter = (slide: any) => {
     slide.addText(
-      `Sources: Google Places & Static Maps API. Distances are straight-line from the subject property (${data.address}). Generated ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.`,
+      `Google Places / Static Maps. Observed: ${observationLabel(data)}. Exported: ${new Date().toISOString().slice(0, 10)}. Straight-line distances; imagery capture date unavailable.`,
       { x: MAP_X, y: FOOTER_Y, w: 12.5, h: 0.22, fontFace: "Arial", fontSize: 7.5, italic: true, color: SUBTLE, margin: 0 }
     );
   };
@@ -431,12 +436,14 @@ export async function exportToPptx(
   });
   slide.addText(
     [
-      { text: "potential IOS users\n", options: { bold: true, color: INK } },
+      { text: "selected businesses\n", options: { bold: true, color: INK } },
       { text: `within ${data.radiusMiles} miles of the subject`, options: { color: SUBTLE } },
     ],
     { x: RAIL_X + 1.05, y: railY + 0.02, w: RAIL_W - 1.05, h: 0.55, fontFace: "Arial", fontSize: 10, lineSpacingMultiple: 1.1, margin: 0 }
   );
   railY += 0.68;
+  slide.addText(BUSINESS_MAP_LIMITATION, { x: RAIL_X, y: railY, w: RAIL_W, h: 0.48, fontFace: "Arial", fontSize: 8, color: SUBTLE, margin: 0 });
+  railY += 0.55;
 
   // Density by proximity band -- how concentrated the demand is, not just how much.
   const bands = densityByBand(data.tenants, rings);
@@ -456,7 +463,7 @@ export async function exportToPptx(
     x: RAIL_X, y: railY, w: RAIL_W, h: 0.012, fill: { color: HAIRLINE }, line: { type: "none" },
   });
   railY += 0.14;
-  slide.addText("TENANT KEY BY USE CATEGORY", {
+  slide.addText("BUSINESS KEY BY USE CATEGORY", {
     x: RAIL_X, y: railY, w: RAIL_W, h: 0.24,
     fontFace: "Arial", fontSize: 10, bold: true, charSpacing: 0.6, color: NAVY, margin: 0,
   });

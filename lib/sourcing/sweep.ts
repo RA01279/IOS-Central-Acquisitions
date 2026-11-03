@@ -9,9 +9,11 @@
 import { haversineMiles } from "@/lib/comps/match";
 import { DEFAULT_CATEGORIES, normalizeName, rejectReason } from "./yard-users";
 import { likelyOwnerUser, type Parcel } from "./parcels";
+import { discoverYardUsers, type DiscoveryOptions } from "./discovery";
+import { addressKey, parcelKey, addressConflict } from "./identity";
 
 export interface Operator { placeId: string; name: string; category: string; sourcePlaceIds?: string[]; profileIds?: string[]; categories?: string[]; phone?: string | null; website?: string | null; googleUrl?: string | null }
-export interface Known { kind: "deal" | "asset" | "comp"; id: string; label: string; href: string; distanceMi: number }
+export interface Known { kind: "deal" | "asset" | "comp"; id: string; label: string; href: string; distanceMi: number; stage?: string; match?: "same_property" | "nearby"; relation?: "active-deal" | "archived-deal" | "owned-asset" | "asset" | "comp"; evidence?: "parcel" | "address" | "distance" }
 export interface Site {
   ref: string;
   lat: number;
@@ -26,46 +28,18 @@ export interface Site {
   parcel: Parcel | null;
   /** Owner of record looks like one of the operators: a sale-leaseback lead. */
   ownerUser: boolean;
+  nearby?: Known[];
+  identityStatus?: "parcel-matched" | "address-conflict" | "unverified";
 }
-export interface KnownPoint { kind: Known["kind"]; id: string; label: string; href: string; lat: number; lng: number }
+export interface KnownPoint { kind: Known["kind"]; id: string; label: string; href: string; lat: number; lng: number; address?: string; stage?: string; status?: string; parcel?: Parcel | null }
 
-/** A Hopper record this close to a site is the same property. */
+/** Nearby records provide context, without establishing property identity. */
 const KNOWN_MI = 0.12;
 
 type Place = { place_id: string; name: string; vicinity?: string; geometry: { location: { lat: number; lng: number } }; business_status?: string; types?: string[]; categories?: string[]; profileIds?: string[] };
 
-export async function searchYardUsers(center: { lat: number; lng: number }, radiusMiles: number, key: string, fetcher: typeof fetch = fetch, profiles: { id?: string; label: string; keywords: string[] }[] = DEFAULT_CATEGORIES) {
-  const radius = String(Math.round(radiusMiles * 1609.34));
-  let screened = 0;
-  const found = new Map<string, Place & { category: string }>();
-  const jobs = profiles.flatMap((cat) => cat.keywords.map((keyword) => ({ cat, keyword })));
-  const results = await Promise.all(jobs.map(async ({ cat, keyword }) => {
-    const url = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
-    url.search = new URLSearchParams({ location: `${center.lat},${center.lng}`, radius, keyword, key }).toString();
-    try {
-      const r = await fetcher(url, { signal: AbortSignal.timeout(10000) } as RequestInit);
-      const data = await r.json();
-      if (data.status !== "OK" && data.status !== "ZERO_RESULTS") return { cat, places: [] as Place[], failed: true };
-      return { cat, places: (data.results ?? []) as Place[], failed: false, limited: !!data.next_page_token || data.results?.length >= 20 };
-    } catch {
-      return { cat, places: [] as Place[], failed: true };
-    }
-  }));
-  const failed = results.filter((r) => r.failed).length;
-  const searches = results.map((r, i) => ({ profileId: r.cat.id ?? r.cat.label, profile: r.cat.label, keyword: jobs[i].keyword, failed: r.failed, returned: r.places.length, limited: !!r.limited }));
-  for (const { cat, places } of results) {
-    for (const p of places) {
-      if (rejectReason(p, cat.label)) { screened++; continue; }
-      if (!p.place_id || !Number.isFinite(p.geometry?.location?.lat) || !Number.isFinite(p.geometry?.location?.lng)) continue;
-      const prior = found.get(p.place_id);
-      if (!prior) found.set(p.place_id, { ...p, category: cat.label, categories: [cat.label], profileIds: cat.id ? [cat.id] : [] });
-      else {
-        if (!prior.categories!.includes(cat.label)) prior.categories!.push(cat.label);
-        if (cat.id && !prior.profileIds!.includes(cat.id)) prior.profileIds!.push(cat.id);
-      }
-    }
-  }
-  return { places: [...found.values()], screened, failedSearches: failed, totalSearches: jobs.length, searches };
+export async function searchYardUsers(center: { lat: number; lng: number }, radiusMiles: number, key: string, fetcher: typeof fetch = fetch, profiles: { id?: string; label: string; keywords: string[] }[] = DEFAULT_CATEGORIES, options?: DiscoveryOptions) {
+  return discoverYardUsers(center, radiusMiles, key, fetcher, profiles, options);
 }
 
 function mergeOperator(operators: Operator[], op: Operator) {
@@ -134,7 +108,29 @@ export function attachParcels(sites: Site[], parcels: Array<Parcel | null>): Sit
     if (key) byParcel.set(key, merged);
     out.push(merged);
   });
-  return out.map((s, i) => ({ ...s, ref: `S${i + 1}`, ownerUser: likelyOwnerUser(s.parcel?.owner ?? null, s.operators.map((o) => o.name)) }));
+  return out.map((s, i) => ({ ...s, ref: `S${i + 1}`, ownerUser: likelyOwnerUser(s.parcel?.owner ?? null, s.operators.map((o) => o.name)),
+    identityStatus: s.parcel ? addressConflict(s.address, s.parcel.situsAddress) ? "address-conflict" as const : "parcel-matched" as const : "unverified" as const }));
+}
+
+export function matchKnownSites(sites: Site[], known: KnownPoint[]): Site[] {
+  return sites.map(s => {
+    const matches: Known[] = [];
+    for (const k of known) {
+      const distanceMi = haversineMiles(s.lat, s.lng, k.lat, k.lng);
+      if (distanceMi > .25) continue;
+      const a = parcelKey(s.parcel), b = parcelKey(k.parcel);
+      const sameParcel = !!a && a === b;
+      const sameAddress = !(a && b && a !== b) && !!addressKey(s.address) && addressKey(s.address) === addressKey(k.address ?? k.label.replace(/\s+\([^)]*\)$/, ""));
+      const same = sameParcel || sameAddress;
+      if (!same && distanceMi > KNOWN_MI) continue;
+      matches.push({ kind: k.kind, id: k.id, label: k.label, href: k.href, distanceMi, stage: k.stage,
+        match: same ? "same_property" : "nearby", evidence: sameParcel ? "parcel" : sameAddress ? "address" : "distance",
+        relation: k.kind === "deal" ? ["archived", "closed"].includes(k.stage ?? "") ? "archived-deal" : "active-deal" : k.kind === "comp" ? "comp" : k.status === "owned" ? "owned-asset" : "asset" });
+    }
+    const priority = (k: Known) => k.relation === "active-deal" ? 0 : k.relation === "owned-asset" ? 1 : k.relation === "archived-deal" ? 2 : 3;
+    const exact = matches.filter(k => k.match === "same_property").sort((a, b) => priority(a) - priority(b) || a.distanceMi - b.distanceMi);
+    return { ...s, known: exact[0] ?? null, nearby: matches.filter(k => k !== exact[0]).sort((a, b) => a.distanceMi - b.distanceMi).slice(0, 5) };
+  });
 }
 
 export function buildSites(center: { lat: number; lng: number }, radiusMiles: number, places: Array<Place & { category: string }>, known: KnownPoint[]): Site[] {
@@ -161,13 +157,5 @@ export function buildSites(center: { lat: number; lng: number }, radiusMiles: nu
     }
     sites.push({ ref: `S${sites.length + 1}`, lat, lng, address: p.vicinity ?? "", distanceMi: d, operators: [op], categories: [...categories], profileIds: [...(p.profileIds ?? [])], known: null, parcel: null, ownerUser: false });
   }
-  for (const s of sites) {
-    let best: Known | null = null;
-    for (const k of known) {
-      const dist = haversineMiles(s.lat, s.lng, k.lat, k.lng);
-      if (dist <= KNOWN_MI && (!best || dist < best.distanceMi)) best = { kind: k.kind, id: k.id, label: k.label, href: k.href, distanceMi: dist };
-    }
-    s.known = best;
-  }
-  return sites;
+  return matchKnownSites(sites, known);
 }

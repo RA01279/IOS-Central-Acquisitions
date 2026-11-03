@@ -1,6 +1,9 @@
 import {effectiveFact} from './model';
 import type {TaxState,TaxRecord} from './types';
 import {billAccountMatches} from './bill-account';
+import {accountKey} from './accounts';
+import {obligationLimitation} from './obligation';
+import {parcelScopeVerified} from './parcel-scope';
 
 /** A valuation, payment, balance or proposed levy never satisfies bill-history coverage. */
 export function sourcedBill(state:TaxState,row:TaxRecord){
@@ -23,9 +26,15 @@ export function historyCoverage(state:TaxState,now=new Date()){
   return {parcel,retrieved,missing:years.filter(y=>!retrieved.includes(y))};
  });
  const expected=accounts.length*5,retrieved=accounts.reduce((n,p)=>n+p.retrieved.length,0);
- const accountIds=parcels.map(p=>`${p.state}:${p.county.toLowerCase().replace(/ county$/,'')}:${p.accountId.replace(/\s/g,'').toUpperCase()}`);
+ const accountIds=parcels.map(accountKey);
  const historyComplete=expected>0&&retrieved===expected&&new Set(accountIds).size===accountIds.length;
  const needsReview=parcels.some(p=>p.review!=='included'||p.component==='unknown')||bills.some(r=>!effectiveFact(state,r,'levied')?.reviewed);
- return {latest,years,accounts,expected,retrieved,historyComplete,needsReview,
+ const assisted=bills.filter(r=>state.sources.find(s=>s.id===effectiveFact(state,r,'levied')?.sourceId)?.captureMethod==='user_import').length;
+ const authorityGaps=bills.flatMap(r=>{const p=parcels.find(p=>p.key===r.parcelKey)!;const gap=obligationLimitation(p,r,state);return gap?[{account:p.accountId,year:r.year,reason:gap}]:[];});
+ const datedWindow=bills.length>0;
+ const parcelSetVerified=parcelScopeVerified(state);
+ const authorityCompleteness=bills.map(r=>({parcelKey:r.parcelKey,year:r.year,knownAuthorities:r.obligationReview?.authorities??r.jurisdictions.map(j=>({name:j.name,levied:j.levied??null})),status:authorityGaps.some(g=>g.account===parcels.find(p=>p.key===r.parcelKey)!.accountId&&g.year===r.year)?r.billEvidence?.obligationStatus==='reconciled'?'unverified':r.billEvidence?.obligationStatus??'unverified':'reconciled'}));
+ const propertyComplete=historyComplete&&!needsReview&&parcelSetVerified&&authorityGaps.length===0;
+ return {latest,years,accounts,expected,retrieved,historyComplete,needsReview,assisted,unattended:bills.length-assisted,datedWindow,authorityGaps,parcelSetVerified,authorityCompleteness,propertyComplete,
   title:!state.research?'Research has not run':!historyComplete?'Research finished — historical bills incomplete':needsReview?'Five-year saved account history — review required':'Five-year saved account history'};
 }

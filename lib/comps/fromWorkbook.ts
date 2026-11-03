@@ -37,7 +37,7 @@ export function withoutComments(buffer: Buffer): Buffer | null {
 }
 
 /** Cell -> text, resolving the shapes ExcelJS returns for formulas and links. */
-function cellText(value: unknown): string {
+function cellText(value: unknown, preserveWhitespace = false): string {
   let out: string;
   if (value === null || value === undefined) return "";
   if (value instanceof Date) out = value.toISOString().slice(0, 10);
@@ -85,6 +85,7 @@ function cellText(value: unknown): string {
   //
   // Replaced with a slash rather than dropped, so a comment that used pipes to
   // separate clauses stays readable.
+  if (preserveWhitespace) return out;
   return out
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\|/g, "/")
@@ -98,6 +99,8 @@ export interface SheetText {
   text: string;
   /** Rows the sheet contributed, for reporting what was skipped and why. */
   rows: number;
+  /** Parallel to text lines: physical sheet row and unflattened source cells. */
+  sourceRows?: { row: number; cells: { text: string; format?: string; note?: string }[] }[];
 }
 
 export interface WorkbookText {
@@ -141,6 +144,33 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
     };
   }
 
+  // Keep modern Excel on the existing reader; load BIFF support only for .xls.
+  if (/\.xls$/i.test(fileName)) {
+    const XLSX = await import("xlsx");
+    let legacy;
+    try { legacy = XLSX.read(buffer, { type: "buffer", cellDates: true, cellNF: true }); }
+    catch { throw new Error("Could not read this .xls workbook. Open it in Excel and save it as .xlsx, then try again."); }
+    for (const name of legacy.SheetNames) {
+      const source = legacy.Sheets[name];
+      const sheet = workbook.addWorksheet(name);
+      const hidden = legacy.Workbook?.Sheets?.find(s => s.name === name)?.Hidden;
+      if (hidden) sheet.state = hidden === 2 ? "veryHidden" : "hidden";
+      if (!source["!ref"]) continue;
+      const range = XLSX.utils.decode_range(source["!ref"]);
+      if (range.e.r > 100000 || range.e.c > 500) throw new Error("This workbook is too large for comp review. Export just the comp table and try again.");
+      // Walk populated cells, not the whole used rectangle (often mostly blank).
+      for (const [address, value] of Object.entries(source)) {
+        if (!/^[A-Z]+\d+$/.test(address)) continue;
+        if (!value || value.t === "e" || value.v == null) continue;
+        const { r, c } = XLSX.utils.decode_cell(address);
+        const cell = sheet.getCell(r+1,c+1);
+        cell.value = value.v;
+        if (value.z) cell.numFmt = value.z;
+        if (value.c?.length) cell.note = value.c.map((n: { t?: string }) => n.t ?? "").join("\n");
+      }
+    }
+    if (!workbook.worksheets.length) throw new Error("No worksheets could be read from this .xls file. Save it as .xlsx in Excel and try again.");
+  } else
   try {
     await workbook.xlsx.load(buffer as any);
   } catch (err: any) {
@@ -153,7 +183,7 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
     if (!stripped) throw new Error(`Could not read that workbook: ${err.message}`);
     try {
       await workbook.xlsx.load(stripped as any);
-      warnings.push("This workbook's cell comments were skipped; they can't be read and aren't needed for comps.");
+      warnings.push("This workbook's cell comments could not be read. Review them in the original file for additional terms or unit evidence; missing units have not been inferred.");
     } catch (retryErr: any) {
       throw new Error(`Could not read that workbook: ${retryErr.message}`);
     }
@@ -175,6 +205,7 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
       continue;
     }
     const lines: string[] = [];
+    const sourceRows: NonNullable<SheetText["sourceRows"]> = [];
     sheet.eachRow({ includeEmpty: false }, (row) => {
       const cells: string[] = [];
       // row.values is 1-based with a leading hole; slice it off.
@@ -183,9 +214,14 @@ export async function workbookToDelimitedText(buffer: Buffer, fileName = ""): Pr
       while (cells.length && cells[cells.length - 1] === "") cells.pop();
       if (!cells.length) return;
       lines.push(cells.join(" | "));
+      sourceRows.push({ row: row.number, cells: cells.map((_, i) => {
+        const cell = row.getCell(i + 1);
+        const note = typeof cell.note === "string" ? cell.note : cell.note?.texts?.map((t) => t.text).join("");
+        return { text: cellText(cell.value, true), ...(cell.numFmt && cell.numFmt !== "General" ? { format: cell.numFmt } : {}), ...(note ? { note } : {}) };
+      }) });
     });
     if (lines.length === 0) warnings.push(`Sheet "${sheet.name}" was empty.`);
-    else sheets.push({ name: sheet.name, text: lines.join("\n"), rows: lines.length });
+    else sheets.push({ name: sheet.name, text: lines.join("\n"), rows: lines.length, sourceRows });
   }
 
   if (hiddenSkipped.length) {

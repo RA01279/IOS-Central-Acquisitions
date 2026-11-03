@@ -30,6 +30,8 @@ export function loiDefaults(deal: any, dealContacts: any[]) {
   const sellerLink: any = dealContacts.find((l) => l.role === "seller")?.contacts;
   const brokerFirm = brokerLink?.companies?.name;
   return {
+    offerChannel: saved.offerChannel ?? "broker",
+    ownerAttn: saved.offerChannel === "direct" ? saved.attn ?? sellerLink?.name ?? "" : sellerLink?.name ?? "",
     date: new Date().toISOString().slice(0, 10),
     tel: saved.tel ?? (industrial ? INDUSTRIAL_TEL : IOS_TEL),
     attn: (brokerLink ? `${brokerLink.name}${brokerFirm ? `, ${brokerFirm}` : ""}` : null) ?? saved.attn ?? "",

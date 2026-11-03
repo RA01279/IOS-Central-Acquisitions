@@ -10,6 +10,7 @@ import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import CardDeleteButton from "@/components/CardDeleteButton";
 import DealGrid from "@/components/DealGrid";
+import CallForOffersDate from "@/components/CallForOffersDate";
 import DealFilters, { type FilterState } from "@/components/DealFilters";
 import { DarkKpi } from "@/components/ui";
 import { fetchAll } from "@/lib/fetch-all";
@@ -141,6 +142,7 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
       stageMix: sites.length < totalSites ? `${sites.length} of ${totalSites} portfolio assets in ${STAGE_LABELS[sites[0].stage]}` : null,
       acres,
       price: sites.reduce((t, c) => t + ask(c), 0),
+      callForOffersDates: [...new Set(sites.map(c => c.callForOffersOn).filter((date): date is string => !!date))].sort(),
     };
   });
   const totalShown = singles.length + packages.length;
@@ -230,6 +232,7 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
                             <a href={`/deals/${c.id}`} className="pipeline-card">
                               <span className="address">{c.name}</span>
                               <span className="market muted">{c.market ?? ""}</span>
+                              <CallForOffersDate date={c.callForOffersOn} />
                               <span className={c.days >= 14 ? "stage-age stage-age-old" : "stage-age"}>
                                 {s === "closed" ? `closed ${deal?.closed_on ?? ""}` : c.days === 0 ? "today" : `${c.days}d in stage`}
                               </span>
@@ -265,6 +268,7 @@ interface PortfolioCard {
   stageMix: string | null;
   acres: number;
   price: number;
+  callForOffersDates: string[];
 }
 
 /** One card per portfolio and stage; every card opens the portfolio page. */
@@ -280,6 +284,7 @@ function PackageCard({ p }: { p: PortfolioCard }) {
           {[p.acres ? `${p.acres.toFixed(1)} ac` : null, p.price ? fmtMoney(p.price) : "Unpriced"].filter(Boolean).join(" · ")}
         </span>
         {p.stageMix && <span className="stage-age">{p.stageMix}</span>}
+        {p.callForOffersDates.map(date => <CallForOffersDate key={date} date={date} />)}
       </a>
       <CardDeleteButton portfolio={{ id: p.id, sites: p.totalSites }} />
     </div>

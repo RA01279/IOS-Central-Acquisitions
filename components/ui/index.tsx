@@ -156,7 +156,7 @@ export function DemandBars({ rows, active, limit }: { rows: CategoryRow[]; activ
           <CategoryIcon k={r.key} />
           <span className="nm">{r.label}</span>
           <div className="tr">
-            <div style={{ width: `${Math.round(r.share * 100)}%`, background: hex(signal[r.state].fg) }} />
+            <div style={{ width: `${Math.round(r.share * 100)}%`, background: hex(r.color) }} />
           </div>
           <span className="ct">{r.count}</span>
         </div>

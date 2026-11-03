@@ -12,7 +12,7 @@ import Docxtemplater from "docxtemplater";
 import { getServiceClient } from "@/lib/supabase";
 import { logDealEvent, recordOffer } from "@/lib/deals";
 import { getCurrentUser } from "@/lib/auth";
-import { dropSecondSigner, appendPortfolioSchedule } from "@/lib/loi-docx";
+import { dropSecondSigner, appendPortfolioSchedule, omitBrokerDetails } from "@/lib/loi-docx";
 import { parseMoney } from "@/lib/money";
 import { validDate } from "@/lib/stage-rules";
 
@@ -54,6 +54,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const t = await req.json();
+  if (t.offerChannel === "direct") {
+    t.attn = String(t.attn ?? "").trim() || "Property Owner";
+    for (const key of ["brokerFirm", "brokerAddress1", "brokerAddress2", "brokerClauseName", "commissionPayer"]) t[key] = "";
+  }
   const supabase = getServiceClient();
   let portfolioSites: any[] | null = null;
   let anchorTerms: Record<string, unknown> = {};
@@ -108,7 +112,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       sender_email: t.senderEmail ?? "",
       date: dateLong,
       expiry_date: longDate(expiryIso),
-      seller_name: t.sellerName ?? "",
+      seller_name: t.sellerName || (t.offerChannel === "direct" ? "Property Owner" : ""),
       attn: t.attn ?? "",
       broker_firm: t.brokerFirm ?? "",
       broker_address1: t.brokerAddress1 ?? "",
@@ -181,6 +185,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   let buffer: Buffer;
   try {
     const zip = new PizZip(Buffer.from(await tpl.arrayBuffer()));
+    if (t.offerChannel === "direct") zip.file("word/document.xml", omitBrokerDetails(zip.file("word/document.xml")!.asText()));
     if (portfolioSites) zip.file("word/document.xml", appendPortfolioSchedule(zip.file("word/document.xml")!.asText()));
     if (!data.signer2_name.trim()) {
       zip.file("word/document.xml", dropSecondSigner(zip.file("word/document.xml")!.asText()));

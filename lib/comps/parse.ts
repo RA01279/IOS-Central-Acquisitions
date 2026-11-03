@@ -18,6 +18,13 @@ export type CompType = "lease" | "sale";
 export type DatePrecision = "day" | "month" | "quarter" | "year";
 
 export interface ParsedComp {
+  /** Original source evidence, distinct from normalized underwriting fields. */
+  sourceRow?: number;
+  sourceBuilding?: string;
+  leasedSf?: number | null;
+  leaseDateText?: string;
+  quotedRentText?: string;
+  sourceTerms?: { header: string; value: string; format?: string; note?: string }[];
   /** A transaction candidate recovered from labeled email text, even if incomplete. */
   fromEmailText?: boolean;
   powerAmps?: number | null;
@@ -117,6 +124,19 @@ const MAX_PLAUSIBLE_BLDG_MONTHLY = 4;
 // Brokers write "±9,900", "$1,485,000", "16.40%", and "—" for unknown. Anything
 // that isn't a number becomes null rather than 0: a zero rent would quietly
 // drag a recommendation down, a null is visibly missing.
+function splitBuildingCell(value: string): { address: string | null; projectName: string | null } {
+  const street = value.search(/\b\d{3,6}\s+[A-Za-z]/);
+  if (street < 0) return { address: null, projectName: value.trim() || null };
+  const prefix = value.slice(0, street).trim();
+  const rest = value.slice(street).trim();
+  const suffix = rest.match(/\s+-\s+(Bldg\.?\s*\S+|Building\s*\S+)$/i);
+  return { address: (suffix ? rest.slice(0, suffix.index) : rest).trim(), projectName: [prefix, suffix?.[1]].filter(Boolean).join(" - ") || null };
+}
+
+function displaySourceCell(value: string, format?: string): string {
+  return format?.includes("%") && value.trim() && Number.isFinite(Number(value)) ? `${Number((Number(value) * 100).toFixed(8))}%` : value;
+}
+
 function quotedRent(raw: string | undefined): { value: number; basis: string } | null {
   const match = raw?.trim().match(/^\$?([\d,]+(?:\.\d+)?|\.\d+)\s*(?:(?:\/|per\s+)(sf|sq\.?\s*ft|acre|ac)|p(sf))\s*(?:\/|per\s+)(mo(?:nth)?|yr|year)(?:\s+(?:NNN|gross))?$/i);
   if (!match) return null;
@@ -172,6 +192,9 @@ export function parseCompDate(raw: string | undefined): { date: string; precisio
     const month = (Number(q[1]) - 1) * 3 + 1;
     return { date: `${q[2]}-${String(month).padStart(2, "0")}-01`, precision: "quarter" };
   }
+  // Brokers also put the year before the quarter (2026 Q3).
+  const yearQuarter = s.match(/^(\d{4})\s*[-/ ]?\s*Q([1-4])$/i);
+  if (yearQuarter) return parseCompDate("Q" + yearQuarter[2] + " " + yearQuarter[1]);
   // Jan 2026 / January 2026 / Jan-26
   const my = s.match(/^([A-Za-z]{3,9})\.?\s*[-/ ]?\s*(\d{2,4})$/);
   if (my) {
@@ -241,12 +264,16 @@ type Field =
   // The standard TX IOS lease comp template.
   | "ratePerAcre" | "rateLandSfMonthly" | "ratePerStall" | "dealDate"
   | "region" | "parkingSpaces" | "institutionalLandlord" | "tenantUsage"
-  | "dealKind" | "sourceRef" | "latitude" | "longitude" | "state";
+  | "dealKind" | "sourceRef" | "latitude" | "longitude" | "state"
+  | "building" | "leasedSf" | "quotedRent";
 
 // Header aliases, matched on letters only so punctuation, case, and typos in
 // spacing don't matter. "addres" is in there because that is genuinely how the
 // header arrived in a real broker email -- misspelled.
 const HEADER_ALIASES: [RegExp, Field][] = [
+  [/^building$/, "building"],
+  [/^(sfleased|leasedsf|leasedarea|leasablesf|leasedsquarefeet)$/, "leasedSf"],
+  [/^(leaserate|quotedrent)(sfmo|sfyr|persfpermonth|persfperyear|persfmonth|persfyear|psfmo|psfyr)?$/, "quotedRent"],
   // "propertyaddress" and "streetaddress" matter: without them the address is
   // only found by the "first column" fallback, which works right up until a
   // broker's sheet puts something else first.
@@ -256,13 +283,13 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // is only ever right by accident of column order. It's a project name.
   [/^(address|addres|adress|property|site|location|propertyaddress|streetaddress|siteaddress)$/, "address"],
   [/^(yearbuilt|yrbuilt|built|vintage|year)$/, "yearBuilt"],
-  [/^(sf|buildingsf|bldgsf|buildingarea|size|squarefeet|squarefootage|buildingsize|gla|rba|totalsf)$/, "buildingSf"],
-  [/^(ac|acres|acreage|landac|siteacres|landacres)$/, "acres"],
+  [/^(sf|buildingsf|bldgsf|buildingarea|size|squarefeet|squarefootage|buildingsize|gla|rba|totalsf|sfbuilding|buildingsizeifapplicable)$/, "buildingSf"],
+  [/^(ac|acres|acreage|landac|siteacres|landacres|grossacreage)$/, "acres"],
   [/^(landsf|lotsf|sitesf|landarea)$/, "lotSf"],
   [/^(coverage|coverageratio|bldgcoverage|far)$/, "coverage"],
   [/^(saledate|closedate|closingdate|dateclosed|datesold|sold)$/, "saleDate"],
   [/^(saleprice|price|purchaseprice|consideration|salesprice|salepricedollars|saleprice\$)$/, "salePrice"],
-  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|salepricesf)$/, "psf"],
+  [/^(psf|pricesf|persf|pricepersf|ppsf|rentsf|baserentsf|rate|pricepsf|rentpsf|salepricepsf|salepricesf|ratepsf)$/, "psf"],
   // Rate columns that declare their own basis. Handled as distinct fields
   // rather than aliases of "psf", because the basis is the whole point: an
   // annual $13.20 and a monthly $1.10 are the same rent, and treating either
@@ -275,7 +302,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(startingratemonthly|monthlyrate|ratemonthly|baserentmonthly|monthlybaserent|ratebuildingsfmo|ratebldgsfmo|ratepersfbldgmo|psfmo|persfmo)$/, "rateMonthly"],
   [/^(leasetype|renttype|type|structure|leasestructure)$/, "leaseType"],
   [/^(monthlybase|monthlyrent|baserent|monthlybaserent|rent|monthly)$/, "monthlyRent"],
-  [/^(leasedate|commenced|commencement|datecommenced|startdate|leasestart|executed)$/, "leaseDate"],
+  [/^(leasedate|commenced|commencement|datecommenced|startdate|leasestart|executed|executiondate|leaseexecutiondate)$/, "leaseDate"],
   [/^(caprate|cap|yield)$/, "capRate"],
   // Distinguishes buildings that share a street address ("Pine Crossing
   // Business Park - Bldg. C" vs "- Bldg. D"), which is what stops one of them
@@ -290,16 +317,16 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(term|termmonths|leaseterm|termmos|months)$/, "termMonths"],
   [/^(clearheight|clear|clearht|height|ceilingheight)$/, "clearHeight"],
   [/^(officesf|office|officearea)$/, "officeSf"],
-  [/^(yardacres|yardac|usableacres|usableac|yard)$/, "yardAcres"],
+  [/^(yardacres|yardac|usableacres|usableac|yard|totalacreageusable|usableacreage)$/, "yardAcres"],
   [/^(trailerstalls|trailerparking|trailers|stalls)$/, "trailerStalls"],
   [/^(dockdoors|dockhigh|docks|dh|dockhighdoors)$/, "dockDoors"],
   [/^(gradedoors|gradelevel|driveins|gl|gradeleveldoors)$/, "gradeDoors"],
-  [/^(surface|surfacetype|yardsurface|paving)$/, "surfaceType"],
+  [/^(surface|surfacetype|yardsurface|paving|pavedorgravel|gravelpaved)$/, "surfaceType"],
   [/^(zoning|zone)$/, "zoning"],
-  [/^(escalations|escalation|bumps|annualincrease)$/, "escalations"],
+  [/^(escalations|escalation|rentescalations|bumps|annualincrease)$/, "escalations"],
   [/^(freerent|freerentmonths|freerentmo|freerentmos|abatement)$/, "freeRent"],
-  [/^(ti|tipsf|tiallowance|tenantimprovement)$/, "tiPsf"],
-  [/^(noi|netoperatingincome)$/, "noi"],
+  [/^(ti|tis|tipsf|tiallowance|tenantimprovement)$/, "tiPsf"],
+  [/^(noi|netoperatingincome|annualnoi)$/, "noi"],
   [/^(buyer|purchaser|grantee|buyercompanyname|buyername)$/, "buyer"],
   [/^(seller|grantor|vendor|sellercompanyname|sellername)$/, "seller"],
   [/^(broker|listingbroker|agent|brokerage)$/, "broker"],
@@ -347,7 +374,7 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   [/^(parkingspaces|parkingstalls|spaces|stalls|parking)$/, "parkingSpaces"],
   [/^(institutionallandlordyesno|institutionallandlord|institutional)$/, "institutionalLandlord"],
   [/^(tenantusage|tenantuse|usage|useclass|usertype)$/, "tenantUsage"],
-  [/^(newrenewal|newvsrenewal|dealtype|newrenewalexpansion|renewal|typenrexp)$/, "dealKind"],
+  [/^(newrenewal|newvsrenewal|dealtype|newrenewalexpansion|renewal|typenrexp|nre)$/, "dealKind"],
   [/^(source|sourcedetail|comp source|sourcenotes)$/, "sourceRef"],
   [/^(latitude|lat)$/, "latitude"],
   [/^(longitude|long|lng|lon)$/, "longitude"],
@@ -355,14 +382,14 @@ const HEADER_ALIASES: [RegExp, Field][] = [
   // Rate columns that name their own denominator. IOS is priced per ACRE per
   // month, so "Rate (AC/Mo)" is the authoritative one and the others are
   // conveniences derived from it.
-  [/^(rateacmo|rateperacmo|rateacremo|rateperacremonth|acmo|peracremonthly|rateperacre|acremo)$/, "ratePerAcre"],
+  [/^(rateacmo|rateperacmo|rateacremo|rateperacremonth|acmo|peracremonthly|rateperacre|acremo|rentacmth|rentacmo|rentacremonth|rentperacremonth|rentperacremonthly|monthlyperacre)$/, "ratePerAcre"],
   [/^(ratelandsfmo|ratelandsfmonth|landsfmo|perlandsfmonthly|ratepersflandmo)$/, "rateLandSfMonthly"],
   [/^(rateperstallspotdoor|rateperstall|ratepersp|perstallmo|ratepersspot|ratesperdoor)$/, "ratePerStall"],
   // A bare "Date" column. Deliberately NOT a lease signal and NOT a sale
   // signal: on a lease tab it's the commencement, on a sale tab it's the close,
   // and voting either way would mistype whole tables -- the same trap that
   // "Close Date" on a lease tab already set once.
-  [/^(date|dealdate|effectivedate|transactiondate|signeddate)$/, "dealDate"],
+  [/^(date|dealdate|effectivedate|transactiondate|signeddate|quarter|salequarter|transactionquarter)$/, "dealDate"],
 ];
 
 /**
@@ -437,6 +464,9 @@ function dealKindFrom(raw: string | undefined): string | null {
   if (!raw) return null;
   const s = raw.trim().toLowerCase();
   if (!s || s === "-" || s === "—") return null;
+  if (/^(e|exp)$/.test(s)) return "expansion";
+  if (s === "r") return "renewal";
+  if (s === "n") return "new";
   if (/expansion/.test(s)) return "expansion";
   if (/renew/.test(s)) return "renewal";
   if (/sublease|sublet/.test(s)) return "sublease";
@@ -462,9 +492,10 @@ function surfaceFrom(raw: string | undefined): string | null {
 // Columns that can only belong to one kind of comp. Deliberately excludes
 // saleDate/closeDate: brokers put a "Close Date" on lease tabs to mean the date
 // the deal was signed, so it says nothing about which kind of table this is.
-const SALE_SIGNALS: Field[] = ["salePrice", "capRate", "noi", "buyer", "seller"];
+const SALE_SIGNALS: Field[] = ["salePrice", "capRate", "buyer", "seller"];
 const LEASE_SIGNALS: Field[] = [
-  "rateAnnual", "rateMonthly", "monthlyRent", "leaseType", "termMonths",
+  "quotedRent", "leasedSf",
+  "rateAnnual", "rateMonthly", "ratePerAcre", "rateLandSfMonthly", "monthlyRent", "leaseType", "termMonths",
   "leaseExpiry", "tenant", "landlord", "leaseDate", "freeRent", "tiPsf",
 ];
 
@@ -774,7 +805,7 @@ export function assessSheet(name: string, text: string): SheetAssessment {
   const distinct = new Set(best);
   const fieldCount = distinct.size;
 
-  const hasValue = ["salePrice", "psf", "monthlyRent", "rateAnnual", "rateMonthly", "ratePerAcre", "totalMonthly"].some(
+  const hasValue = ["salePrice", "psf", "monthlyRent", "rateAnnual", "rateMonthly", "ratePerAcre", "totalMonthly", "quotedRent"].some(
     (f) => distinct.has(f as Field)
   );
 
@@ -1021,6 +1052,9 @@ export function parseCompInput(
   // and returning the first successful format hides the rest of a mixed email.
   const text = input.html && /<t[dr]\b|<table\b/i.test(input.html) ? htmlToDelimitedText(input.html) : input.text || (input.html ? htmlToDelimitedText(input.html) : "");
   if (!text.trim()) return { comps: [], warnings: ["Nothing to parse."] };
+  // Workbook evidence is indexed by physical source row. Do not split a sheet
+  // into email scopes or strip reply-like cell text and shift that evidence.
+  if (opts.sourceRows) return parseCompTable(text, opts);
   const body = opts.includeQuotedReply ? text : stripQuotedReply(text);
   const lines = body.split(/\r?\n/);
   const addressHeading = /^\s*(?:address\s*(?::|\t)\s*\S.*|address|\d+[A-Za-z-]*\s+[^\t|]*?\b(?:Rd|Road|St|Street|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ave|Avenue|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway|Loop|Trail|Trl|Tollway)\.?(?:\s+(?:N|S|E|W|NE|NW|SE|SW))?(?:,\s*[^\t|]+)?(?:\s*\((?:leased\s+)?[^)]+\))?)\s*$/i;
@@ -1065,6 +1099,7 @@ export function parseCompInput(
 // -- the parser -----------------------------------------------------------
 
 export interface ParseOptions {
+  sourceRows?: import("./fromWorkbook").SheetText["sourceRows"];
   /** Applied to every comp, since broker tables carry bare street addresses. */
   city?: string | null;
   market?: string | null;
@@ -1112,6 +1147,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
   const comps: ParsedComp[] = [];
 
   let mapping: (Field | null)[] | null = null;
+  let headers: string[] = [];
   let tableType: CompType | null = null;
   let rowsInTable = 0;
   /** Market values the sheet stated and the caller's context overrode. */
@@ -1124,7 +1160,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
   /** Comps whose rent was taken FROM that column, and so would move with it. */
   const fromMonthlyColumn: ParsedComp[] = [];
 
-  for (const line of lines) {
+  for (const [lineIndex, line] of lines.entries()) {
     // These section titles are TERMINAL, not merely a break. Everything after
     // them in a rent roll or a data tape is summary, and the sections have
     // their own headers that the parser will otherwise adopt as a new comp
@@ -1158,6 +1194,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       // generic Type column silently consume it.
       const explicitStructure = cells.findIndex(c => /^(renttype|leasetype|leasestructure|structure)$/.test(c.toLowerCase().replace(/[^a-z]/g, "")));
       mapping = asFields.map((f, i) => f === "leaseType" && i !== explicitStructure && explicitStructure >= 0 ? "dealKind" : f);
+      headers = cells;
       rowsInTable = 0;
       // Headers reveal the type more reliably than surrounding prose -- but by
       // WEIGHING the signals, not taking the first hit. A real lease tab led
@@ -1179,14 +1216,20 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       const i = mapping!.indexOf(f);
       return i === -1 ? undefined : cells[i];
     };
+    const evidence = opts.sourceRows?.[lineIndex];
+    const rawCell = (f: Field) => evidence?.cells[mapping!.indexOf(f)];
+    const raw = (f: Field) => rawCell(f)?.text ?? get(f);
+    const header = (f: Field) => headers[mapping!.indexOf(f)] ?? "";
+    const building = get("building");
+    const identity = building === undefined ? null : splitBuildingCell(building);
 
     // A rent roll's rows are suites in ONE building, so the address comes from
     // the caller (the property the roll belongs to) and the first column is a
     // suite number. Without this the address becomes "Ste A".
     const suiteCell = get("suite")?.trim() || get("address")?.match(/\b(?:suite|ste\.?|unit)\s+([A-Za-z0-9-]+)/i)?.[1] || null;
-    const address = (get("address") ?? (suiteCell ? opts.address : null) ?? opts.address ?? cells[0] ?? "").trim();
+    const address = (get("address") ?? identity?.address ?? (suiteCell ? opts.address : null) ?? opts.address ?? (building === undefined ? cells[0] : "") ?? "").trim();
 
-    if (!address) continue;
+    if (!address && !building) continue;
     if (num(address) !== null) continue; // a stray numeric first column
     // Totals and summary rows carry real-looking numbers and would otherwise
     // import as a comp with an address of "TOTAL".
@@ -1198,7 +1241,8 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
     const compType: CompType = tableType ?? opts.defaultCompType ?? "sale";
 
     const buildingSf = num(get("buildingSf"));
-    const acres = num(get("acres"));
+    const compoundAcres = get("acres")?.match(/^\s*([\d.]+)\s*(?:ac(?:res?)?)?\s*\(\s*([\d.]+)\s*(?:ac(?:res?)?)?\s*usable\s*\)\s*$/i);
+    const acres = num(get("acres")) ?? (compoundAcres ? Number(compoundAcres[1]) : null);
     const lotSfDirect = num(get("lotSf"));
     const lotSf = lotSfDirect ?? (acres !== null ? Math.round(acres * SQFT_PER_ACRE) : null);
 
@@ -1213,7 +1257,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
     // gross and usable differ (3782 Reese Rd is 9.3 gross, 4.09 usable) and its
     // own Coverage column agrees with usable on every one of them. Checking
     // against gross reported all 30 as mismatches when the file was right.
-    const yardAcres = num(get("yardAcres"));
+    const yardAcres = num(get("yardAcres")) ?? (compoundAcres ? Number(compoundAcres[2]) : null);
     const coverageDenom =
       yardAcres !== null ? Math.round(yardAcres * SQFT_PER_ACRE) : lotSf;
     if (buildingSf && coverageDenom) {
@@ -1242,7 +1286,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
     const parsed: ParsedComp = {
       compType,
       address,
-      projectName: get("projectName")?.trim() || null,
+      projectName: get("projectName")?.trim() || identity?.projectName || null,
       suite: suiteCell,
       // CAM comes as either a monthly dollar amount or a $/SF/year rate, and
       // the two are told apart by their COLUMN, never by sniffing the value --
@@ -1316,6 +1360,56 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       warnings: rowWarnings,
     };
 
+    if (evidence || building !== undefined || get("leasedSf") !== undefined || get("quotedRent") !== undefined) {
+      parsed.sourceRow = evidence?.row ?? lineIndex + 1;
+      parsed.sourceBuilding = raw("building");
+      parsed.leasedSf = num(get("leasedSf"));
+      parsed.leaseDateText = raw("leaseDate") ?? raw("dealDate");
+      parsed.quotedRentText = raw("quotedRent");
+      parsed.sourceTerms = headers.map((h, i) => ({ header: h, value: evidence?.cells[i]?.text ?? cells[i] ?? "", ...(evidence?.cells[i]?.format ? { format: evidence.cells[i].format } : {}), ...(evidence?.cells[i]?.note ? { note: evidence.cells[i].note } : {}) })).filter((v) => v.value !== "" || v.note);
+      if (building && !identity?.address) rowWarnings.push("Building contains a name but no identifiable street address. Original wording retained; enter the street address before saving.");
+      if (parsed.leasedSf !== null && parsed.leasedSf !== undefined) rowWarnings.push("SF Leased is the tenancy area, not total building area. Total Building SF was not inferred.");
+      // New quoted-rate layouts do not carry the conventions of the existing
+      // explicitly-unit-labelled lease templates. Preserve terms, not guesses.
+      if (get("quotedRent") !== undefined) {
+        if (get("termMonths") !== undefined && !/month|\bmos?\b/i.test(header("termMonths"))) {
+          parsed.leaseTermMonths = null;
+          rowWarnings.push(`Term "${raw("termMonths")}" has no stated period; retained as quoted, not assumed months.`);
+        }
+        if (get("freeRent") !== undefined && !/month|\bmos?\b/i.test(header("freeRent"))) {
+          parsed.freeRentMonths = null;
+          rowWarnings.push(`Free Rent "${raw("freeRent")}" has no stated unit; confirm months and concession terms.`);
+        }
+        if (get("tiPsf") !== undefined && !/psf|\/\s*sf|per\s*sf/i.test(header("tiPsf"))) {
+          parsed.tiPsf = null;
+          rowWarnings.push(`TI "${raw("tiPsf")}" is retained as quoted; no per-SF allowance was inferred.`);
+        }
+        if (get("escalations") !== undefined && !/annual|year/i.test(header("escalations"))) {
+          parsed.escalationsPct = null;
+          rowWarnings.push(`Rent Escalations "${displaySourceCell(raw("escalations") ?? "", rawCell("escalations")?.format)}" has no stated cadence; no annual increase was inferred.`);
+        }
+        const concession = get("notes")?.match(/(\d+)\s*[- ]month\s+abat(?:ed|ement)/i);
+        if (concession && num(get("freeRent")) !== Number(concession[1])) rowWarnings.push(`Free Rent column (${get("freeRent")}) differs from comments (${concession[1]}-month abatement). Confirm the concession; both statements retained.`);
+      }
+      parsed.notes = [parsed.notes, `Source row ${parsed.sourceRow} (original values; unspecified units are not normalized):`, ...parsed.sourceTerms.map((t) => `${t.header}: ${t.value}${t.format ? ` [Excel format: ${t.format}]` : ""}${t.note ? ` [Note: ${t.note}]` : ""}`)].filter(Boolean).join("\n");
+    }
+
+    // Preserve ambiguous allowances; a dollar amount is not automatically $/SF.
+    const tiText = raw("tiPsf");
+    if (tiText && !/^(?:-|—|n\/?a)$/i.test(tiText.trim()) &&
+        !/psf|\/\s*sf|per\s*sf/i.test(header("tiPsf")) &&
+        (/\$/.test(header("tiPsf")) || /\d\s*[km]\b/i.test(tiText) || (parsed.tiPsf ?? 0) > 1000)) {
+      parsed.tiPsf = null;
+      parsed.notes = [parsed.notes, "TI as stated: " + tiText + " (confirm allowance units)"].filter(Boolean).join("\n");
+      rowWarnings.push("TI allowance units need review; no per-SF allowance was inferred.");
+    }
+    const compoundTerm = get("termMonths")?.match(/^\s*(\d+)\s*\(\s*(\d+)\s*free\s*\)\s*$/i);
+    if (compoundTerm && /months?|mos?\b/i.test(header("termMonths"))) {
+      parsed.leaseTermMonths = Number(compoundTerm[1]);
+      if (parsed.freeRentMonths === null) parsed.freeRentMonths = Number(compoundTerm[2]);
+      rowWarnings.push("Free-rent months read from the lease term; confirm the concession before saving.");
+    }
+
     // A term in months given without a commencement date still pins the
     // expiry once a date is filled in at review, so keep both.
     if (parsed.leaseTermMonths && parsed.leaseTermMonths > 600) {
@@ -1353,7 +1447,10 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       // a 12x error, so an explicitly-labelled column always wins.
       // "Total Monthly" is a whole-site monthly rent too (the comp-import
       // agent's column for one); it was mapped but never read.
-      const explicit = ["rateMonthly", "rateAnnual", "monthlyRent", "psf"].map(key => quotedRent(get(key as Field))).find(Boolean);
+      const quotedHeader = header("quotedRent").toLowerCase().replace(/[()$\s]/g, "");
+      const headerUnits = quotedHeader.match(/(?:\/|per)(sf|acre|ac)(?:\/|per)(mo|month|yr|year)$/i);
+      const explicit = ["rateMonthly", "rateAnnual", "monthlyRent", "psf", "quotedRent"].map(key => quotedRent(get(key as Field))).find(Boolean)
+        ?? (headerUnits ? quotedRent(`${get("quotedRent")}/${headerUnits[1]}/${headerUnits[2]}`) : null);
       const monthly = num(get("monthlyRent")) ?? num(get("totalMonthly"));
       const rateAnnual = num(get("rateAnnual")) ?? (explicit?.basis === "per_sf_bldg_annual" ? explicit.value : null);
       const rateMonthly = num(get("rateMonthly")) ?? (explicit?.basis === "per_sf_bldg_monthly" ? explicit.value : null);
@@ -1384,6 +1481,10 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
         parsed.rent = quotedPsf;
         parsed.rentBasis = null;
         rowWarnings.push("Quoted rent per SF has no supported monthly/annual period. Confirm rent units before saving; no period was assumed.");
+      } else if (get("quotedRent") !== undefined) {
+        parsed.rent = num(get("quotedRent"));
+        parsed.rentBasis = null;
+        rowWarnings.push(`Lease Rate "${raw("quotedRent")}" has no stated denominator or monthly/annual period. Confirm rent units before saving or underwriting; none were assumed.`);
       }
       // The per-acre and per-land-SF columns are the same number in different
       // units, so they must agree. 43,560 SF to the acre.
@@ -1424,6 +1525,7 @@ export function parseCompTable(text: string, opts: ParseOptions = {}): ParseResu
       if (d) {
         parsed.dateCommenced = d.date;
         parsed.datePrecision = d.precision;
+        if (d.precision === "quarter") rowWarnings.push(`Lease date is ${get("leaseDate") ?? get("dealDate")}; the stored quarter-start value is a sorting anchor, not an exact execution date.`);
       }
       if (parsed.rent !== null && monthly !== null && buildingSf && quotedPsf) {
         const computed = monthly / buildingSf;

@@ -6,19 +6,22 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import { getServiceClient } from "./supabase";
-import { loadDemandSnapshot, loadSignals } from "./site-signals";
+import { loadSignals, computeBasis, computeRent } from "./site-signals";
+import { loadDemandMapReview } from "./demand-map-evidence";
+import { snapshotFromReview, reviewMatchesPin } from "./demand-map-review";
 import { resolveFlags, siteScore, demandBreakdown, type DemandSnapshot } from "./site-score";
 import { dealValue, VALUE_BASIS_LABELS } from "./summary";
 import { acres, fmtMoney, fmtPct } from "./format";
 import { LOCATED_PRECISIONS } from "./ic-deck/geo";
 import { loadCompEvidence, subjectOf } from "./comps/evidence";
+import { authoritativeReturns } from "./investment-review";
 
 export { subjectOf };
 
 export const getDeal = cache(async (id: string) => {
   const { data: deal } = await getServiceClient()
     .from("deals")
-    .select("*, properties(*), mla_data(*), uw_versions(*), documents(*), deal_events(*), offers(*)")
+    .select("*, properties(*), mla_data(*), uw_versions(*), uw_runs(*), documents(*), deal_events(*), offers(*), deal_analysis_versions(*)")
     .eq("id", id)
     .maybeSingle();
   if (!deal) notFound();
@@ -26,9 +29,17 @@ export const getDeal = cache(async (id: string) => {
 });
 
 export const getSiteView = cache(async (id: string) => {
-  const [signals, snapshot] = await Promise.all([loadSignals([id]), loadDemandSnapshot(id)]);
-  const flags = resolveFlags(signals.get(id));
-  return { flags, score: siteScore(flags), snapshot: snapshot as DemandSnapshot | null };
+  const [signals, review, deal] = await Promise.all([loadSignals([id]), loadDemandMapReview(id), getDeal(id)]);
+  const p = deal.properties ?? {};
+  const locationMismatch = !!review && !reviewMatchesPin(review, p.latitude == null ? null : Number(p.latitude), p.longitude == null ? null : Number(p.longitude));
+  const snapshot = locationMismatch ? null : snapshotFromReview(review);
+  const comps=await loadCompEvidence();
+  const flags = resolveFlags(signals.get(id)).map(f=>{
+    if(f.overridden || !["basis","rent"].includes(f.key))return f;
+    const current=f.key==="basis"?computeBasis(deal,comps):computeRent(deal,comps,null);
+    return {...f,state:current.state,note:current.note,source:current.source};
+  });
+  return { flags, score: siteScore(flags), snapshot, review, locationMismatch };
 });
 
 // Assets we own, located well enough to measure from -- the Summary tab's
@@ -88,8 +99,7 @@ export const getEvidence = cache(async () => {
 });
 
 export function latestReturns(deal: any) {
-  const latest = [...(deal.uw_versions ?? [])].sort((a: any, b: any) => b.version_number - a.version_number)[0];
-  return (latest?.returns_summary ?? null) as any;
+  return authoritativeReturns(deal);
 }
 
 /** The KPI figures the summary, financials and IC slide all show. */
@@ -103,7 +113,8 @@ export function dealKpis(deal: any, snapshot: DemandSnapshot | null, radius = 3,
   const shown = value.amount ?? ask;
   const basis = shown ? (ios ? (ac ? shown / ac : null) : bsf ? shown / bsf : null) : null;
   const r = latestReturns(deal);
-  const demand = demandBreakdown(snapshot, radius, cats);
+  radius = snapshot?.radiusMiles ?? 5;
+  const demand = demandBreakdown(snapshot, radius);
   return {
     ios,
     price: shown,

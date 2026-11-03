@@ -2,11 +2,22 @@ import {CollectorSession} from './collector-http';
 import {parseGwinnettBill,gwinnettPdfText} from './gwinnett';
 import {researchHarrisHistory} from './harris';
 import {researchTravisHistory} from './travis';
+import {researchActHistory} from './act';
+import {researchModernAct} from './act-modern';
 import type {TaxParcel,TaxSource,TaxRecord,TaxResearchAttempt,RetainTaxEvidence} from './types';
 
 export async function researchAccount(parcel:TaxParcel,fetcher:typeof fetch=fetch,retain?:RetainTaxEvidence):Promise<{sources:TaxSource[];records:TaxRecord[];attempt:TaxResearchAttempt}>{
  const county=parcel.county.toLowerCase().replace(/\s+county$/,'').trim();
  const attempt:TaxResearchAttempt={parcelKey:parcel.key,status:'unsupported',message:`Historical collector retrieval is not connected for ${parcel.county}, ${parcel.state}. No historical bills were fetched for this account.`};
+ if(parcel.state==='TX'&&county==='montgomery'){
+  attempt.sourceUrl='https://actweb.acttax.com/montgomery/montgomery/index.jsp';
+  try{const result=await researchModernAct(parcel,fetcher,retain);return {sources:result.sources,records:result.records,attempt:{...attempt,status:'partial',message:result.message}};}catch(e){return {sources:[],records:[],attempt:{...attempt,status:'failed',message:e instanceof Error?e.message:String(e)}};}
+ }
+ if(parcel.state==='TX'&&['dallas','bexar'].includes(county)){
+  attempt.sourceUrl=county==='bexar'?'https://bexar.acttax.com/act_webdev/bexar/index.jsp':'https://www.dallasact.com/act_webdev/dallas/index.jsp';
+  try{const result=await researchActHistory(parcel,fetcher,retain);return {sources:result.sources,records:result.records,attempt:{...attempt,status:result.gaps.length?'failed':'retrieved',message:`${result.records.length} dated original ACT levy records retrieved; separate collectors and parcel scope require review. ${result.gaps.join(' ')}`}};}
+  catch(e){return {sources:[],records:[],attempt:{...attempt,status:'failed',message:e instanceof Error?e.message:String(e)}};}
+ }
  if(parcel.state==='TX'&&['harris','travis'].includes(county)){
   attempt.sourceUrl=county==='harris'?'https://www.hctax.net/Property/ViewStatementReceipts':'https://tax-office.traviscountytx.gov/properties/taxes/account-search';
   try{const result=await(county==='harris'?researchHarrisHistory(parcel,fetcher,retain):researchTravisHistory(parcel,fetcher,retain));return {sources:[result.source],records:result.records,attempt:{...attempt,status:'retrieved',message:`Official bill history retrieved for ${result.records.length} published years. Verify collector scope and parcel coverage.`}};}

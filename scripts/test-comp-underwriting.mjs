@@ -40,7 +40,11 @@ const leases = [lease(), lease({ rent: 9000 }), lease({ rent: 10000, free_rent_m
 const uw = compUnderwriting([...leases], subject, { today });
 check("nearby comps give a per-acre rent", () => { near(uw.lease.perAcreMonthly.mid, 9000, 0.06); assert.equal(uw.lease.perAcreMonthly.count, 3); });
 check("source says nearby", () => assert.match(uw.lease.perAcreMonthly.source, /within 10 mi/));
-check("per SF is per year", () => near(uw.lease.perSfAnnual.mid, (9000 * 4 / 8000) * 12, 0.06));
+check("acreage quotes do not establish building rent", () => assert.equal(uw.lease.perSfAnnual.mid, null));
+check("direct building quotes retain yearly normalization", () => {
+  const r=compUnderwriting(leases.map(c=>({...c,rent:2,rent_basis:"per_sf_bldg_monthly"})),subject,{today});
+  near(r.lease.perSfAnnual.mid,24);
+});
 check("whole-site monthly rent is rate x lot acres", () => near(uw.lease.monthlyByAcre.mid, uw.lease.perAcreMonthly.mid * 5));
 check("term median", () => assert.equal(uw.lease.termMonths, 60));
 check("free rent only from comps that state it", () => { assert.equal(uw.lease.freeRentMonths, 2); assert.equal(uw.lease.freeCount, 2); });

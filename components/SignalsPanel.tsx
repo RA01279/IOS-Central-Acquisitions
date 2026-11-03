@@ -83,7 +83,7 @@ export default function SignalsPanel({
       </div>
       {refreshedAt && (
         <span className="hint" style={{ margin: 0, fontSize: 11 }}>
-          Checked {new Date(refreshedAt).toLocaleString()} · FEMA, OpenStreetMap, municipal GIS, comps, Google Places
+          Checked {new Date(refreshedAt).toLocaleString()} · FEMA, OpenStreetMap, municipal GIS and comps
         </span>
       )}
       {error && !open && <p className="error" style={{ margin: 0 }}>{error}</p>}
@@ -141,16 +141,7 @@ export default function SignalsPanel({
                   Use Hopper&apos;s reading
                 </button>
               )}
-              {open.key === "demand" && (
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!!busy}
-                  onClick={() => post({ action: "refresh", demand: true }, "demand")}
-                >
-                  {busy === "demand" ? "Searching…" : "Re-run demand search"}
-                </button>
-              )}
+              {open.key === "demand" && <a className="link-caps" href={`/deals/${dealId}/demand-map`}>Open Demand Map</a>}
             </div>
             {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
           </div>

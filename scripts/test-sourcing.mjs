@@ -20,9 +20,12 @@ const match = load("lib/comps/match.ts");
 const yard = load("lib/sourcing/yard-users.ts");
 const profiles = load("lib/sourcing/profiles.ts", { "./yard-users": yard });
 const parcels = load("lib/sourcing/parcels.ts");
-const sweep = load("lib/sourcing/sweep.ts", { "@/lib/comps/match": match, "./yard-users": yard, "./parcels": parcels });
+const identity = load("lib/sourcing/identity.ts");
+const discovery = load("lib/sourcing/discovery.ts", { './yard-users': yard });
+const sweep = load("lib/sourcing/sweep.ts", { "@/lib/comps/match": match, "./yard-users": yard, "./parcels": parcels , './identity': identity, './discovery': discovery });
 const sourcing = load("lib/agents/sourcing.ts");
 const markets = load("lib/sourcing/markets.ts");
+const snapshot = load("lib/sourcing/snapshot.ts", { "./identity": identity });
 
 // ---- grouping and de-duplication ----------------------------------------------
 const center = { lat: 30, lng: -95 };
@@ -97,11 +100,16 @@ assert.match(sourcing.SOURCING_INSTRUCTIONS, /must come from the appraisal distr
 const NextResponse = { json: (body, init) => ({ body, status: init?.status ?? 200 }) };
 let user = { email: "Owner@Example.com" };
 const runFilters = [];
-let runRow = { result: { report: JSON.stringify(good) } };
+let runRow;
+let previousDeal = null;
+const reviewed = { version: 2, sweepId: "00000000-0000-4000-8000-000000000002", market: "Houston", searchLabel: "Test", buyBox: { minAcres: 2, maxAcres: 10, maxCoveragePct: 30 }, sites: [sites[0]] };
+const sourceRows = [{ label: snapshot.SNAPSHOT_LABEL, data: reviewed }];
+function strictReport(report) { for (const s of report.sites) { s.fieldSources = Object.fromEntries(Object.entries(s).filter(([k,v]) => ["parcelAddress","city","county","parcelId","owner","ownerMailingAddress","acres","buildingSf","yearBuilt","ownedSince","occupant","zoning"].includes(k) && v != null).map(([k]) => [k, "https://hcad.org/"])); if (s.ownerType === "owner-user") s.fieldSources.ownerRelationship = "https://hcad.org/"; } return report; }
+runRow = { sources: sourceRows, result: { report: JSON.stringify(strictReport({ ...good, sites: [site("S1")] })) } };
 const db = { from: (table) => {
-  const b = { select: () => b, not: () => b, order: () => b, eq: (k, v) => { if (table === "agent_runs") runFilters.push([k, v]); return b; },
+  const b = { insert: () => b, single: async () => ({ data: { id: reviewed.sweepId }, error: null }), select: () => b, not: () => b, order: () => b, eq: (k, v) => { if (table === "agent_runs") runFilters.push([k, v]); return b; },
     range: async (from) => ({ data: from === 0 && table === "properties" ? [{ id: "p1", address: "100 Yard Rd", latitude: 30.001, longitude: -95.001, deals: [{ id: "d9", stage: "archived" }] }] : [], error: null }),
-    maybeSingle: async () => ({ data: runFilters.some(([k, v]) => k === "owner_email" && v === "owner@example.com") ? runRow : null, error: null }) };
+    maybeSingle: async () => ({ data: table === "deals" ? previousDeal : runFilters.some(([k, v]) => k === "owner_email" && v === "owner@example.com") ? runRow : null, error: null }) };
   return b;
 } };
 const auth = { getCurrentUser: async () => user };
@@ -111,7 +119,7 @@ globalThis.fetch = async (url) => ({ json: async () => ({ status: "OK", results:
 try {
   const sweepRoute = load("app/api/sourcing/sweep/route.ts", { "next/server": { NextResponse }, "@/lib/auth": auth, "@/lib/supabase": { getServiceClient: () => db },
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/geocode": { geocodeAddress: async () => null }, "@/lib/location": load("lib/location.ts"),
-    "@/lib/sourcing/markets": markets, "@/lib/sourcing/profiles": profiles, "@/lib/sourcing/sweep": sweep, "@/lib/sourcing/parcels": parcels });
+    "@/lib/sourcing/markets": markets, "@/lib/sourcing/profiles": profiles, "@/lib/sourcing/sweep": sweep, "@/lib/sourcing/parcels": parcels, "@/lib/comps/match": match });
   const req = (body) => ({ json: async () => body });
   const r = await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3, profileIds: ["trucking-towing"] }));
   assert.equal(r.status, 200);
@@ -127,10 +135,10 @@ try {
     "@/lib/deals": { createDeal: async (input) => { created.push(input); return dupe ? { duplicates: [{ id: "old" }] } : { deal: { id: "new-deal" } }; }, logDealEvent: async (...a) => { events.push(a); } },
     "@/lib/geocode": { geocodeAddress: async () => ({ lat: 30.0012, lng: -95.0013, precision: "rooftop", formatted: "100 Yard Rd" }) },
     "@/lib/location": load("lib/location.ts"), "@/lib/agents/catalog": { UUID: /^[0-9a-f-]{36}$/i }, "@/lib/agents/sourcing": sourcing,
-    "@/lib/sourcing/parcels": { lookupParcel: async () => ({ ...p1, owner: "ROLL OWNER LLC", situsAddress: "100 YARD RD , TESTVILLE, TX" }) },
-    "@/lib/markets": load("lib/markets.ts"), "@/lib/market-owners": { defaultOwner: async (_m, _c, creator) => creator } });
+    "@/lib/sourcing/parcels": { lookupParcel: async () => ({ ...p1, propId: "123", owner: "ROLL OWNER LLC", situsAddress: "100 YARD RD , TESTVILLE, TX" }) },
+    "@/lib/markets": load("lib/markets.ts"), "@/lib/market-owners": { defaultOwner: async (_m, _c, creator) => creator }, "@/lib/sourcing/snapshot": snapshot, "@/lib/sourcing/identity": identity, "@/lib/comps/match": match });
   const runId = "00000000-0000-4000-8000-000000000001";
-  const body = { runId, ref: "S1", market: "Houston", site: { lat: 30.001, lng: -95.001, address: "100 Yard Rd, Testville", operators: ["Acme Trucking"] } };
+  const body = { runId, ref: "S1", market: "Atlanta", site: { lat: 1, lng: 1, address: "100 Yard Rd, Testville", operators: ["Acme Trucking"] } };
   const ok = await prospectRoute.POST(req(body));
   assert.equal(ok.status, 200);
   assert.equal(ok.body.dealId, "new-deal");
@@ -141,20 +149,24 @@ try {
   assert.equal(c.currentOwnerName, "Acme Holdings LLC");
   assert.equal(c.geocodePrecision, "rooftop", "verified parcel address preferred over the business pin");
   assert.equal(c.acres, 3.2);
+  assert.equal(c.market, "Houston", "browser market is ignored");
+  previousDeal = { id: "new-deal" };
+  assert.equal((await prospectRoute.POST(req(body))).body.dealId, "new-deal", "promotion retry returns the original deal");
+  assert.equal(created.length, 1); previousDeal = null;
   assert.equal(events[0][1], "sourcing_research");
   assert(events[0][2].outreachDraft && events[0][2].sources.length, "research and outreach draft attached to the deal");
   // An agent that found no owner falls back to the appraisal roll, looked up server-side.
-  runRow = { result: { report: JSON.stringify({ ...good, sites: [site("S1", { owner: null, parcelAddress: null, acres: null })] }) } };
+  runRow = { sources: sourceRows, result: { report: JSON.stringify(strictReport({ ...good, sites: [site("S1", { owner: null, parcelAddress: null, acres: null })] })) } };
   await prospectRoute.POST(req(body));
   assert.equal(created[1].currentOwnerName, "ROLL OWNER LLC");
   assert.equal(created[1].address, "100 YARD RD");
   assert.equal(events[1][2].appraisalRoll.owner, "ROLL OWNER LLC");
-  runRow = { result: { report: JSON.stringify(good) } };
+  runRow = { sources: sourceRows, result: { report: JSON.stringify(strictReport({ ...good, sites: [site("S1")] })) } };
   dupe = true;
   assert.equal((await prospectRoute.POST(req(body))).status, 409, "existing address is not duplicated");
   assert.equal((await prospectRoute.POST(req({ ...body, ref: "S7" }))).status, 404, "refs outside the report are refused");
   user = { email: "someone@else.com" }; runFilters.length = 0;
-  assert.equal((await prospectRoute.POST(req(body))).status, 404, "another user's run can't be used");
+  assert.equal((await prospectRoute.POST(req(body))).status, 409, "another user's run can't be used");
   user = null;
   assert.equal((await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3, profileIds: ["trucking-towing"] }))).status, 401);
   assert.equal((await prospectRoute.POST(req(body))).status, 401);

@@ -47,6 +47,11 @@ export default function IcSlidePreview({
     setBusy("pptx");
     setMsg("");
     try {
+      const latestResponse = await fetch(`/api/deals/${dealId}/analysis?kind=demand`, { cache: "no-store" });
+      const latest = await latestResponse.json();
+      if (!latestResponse.ok) throw new Error(latest.error ?? "Could not check the saved map review");
+      if (latest.locationCurrent === false) throw new Error("The property pin changed. Review a new business map before exporting.");
+      if ((latest.saved?.version ?? 0) !== (model.mapReviewVersion ?? 0)) throw new Error("The saved map review changed. Reload before exporting.");
       await saveRec();
       await toPptx({ ...model, recommendation: rec });
       fetch(`/api/deals/${dealId}`, {
@@ -64,7 +69,7 @@ export default function IcSlidePreview({
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setMsg("Link copied: it opens this exact slide.");
+      setMsg("Link copied: it opens the current saved map review and deal data.");
     } catch {
       setMsg(window.location.href);
     }
@@ -76,7 +81,7 @@ export default function IcSlidePreview({
         <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 220 }}>
           <span style={{ font: "800 20px/1 var(--font-display)", letterSpacing: "-.02em", color: "#0A2540" }}>IC Summary Slide</span>
           <span className="hint" style={{ margin: 0, fontSize: 12 }}>
-            Built from live deal data · map follows the Demand Map tab ({model.radius} mi)
+            Deal data with the saved reviewed business map ({model.radius} mi)
           </span>
         </div>
         {missing.length ? (
@@ -146,7 +151,7 @@ export default function IcSlidePreview({
                     onChange={(e) => setRec(e.target.value)}
                     onBlur={saveRec}
                     maxLength={600}
-                    placeholder="Click to write the recommendation, e.g. Approve LOI at $8.4M. Strong trucking demand within 3 mi."
+                    placeholder="Click to write the recommendation, e.g. Approve LOI at $8.4M. Leasing assumptions supported by reviewed tenant requirements and comps."
                     aria-label="Recommendation"
                   />
                 </div>
@@ -155,8 +160,8 @@ export default function IcSlidePreview({
                 <div className="slide-map">
                   {model.mapImages && (
                     <>
-                      <img src={model.mapImages.imagery} alt="Satellite view of the site" style={{ position: "absolute", inset: 0 }} />
-                      <img src={model.mapImages.roads} alt="" style={{ position: "absolute", inset: 0 }} />
+                      <img src={model.mapImages.imagery} alt="Satellite view of the site" style={{ position: "absolute", top: 0, left: model.mapImages.x ?? 0, width: model.mapImages.width ?? MAP_W, height: MAP_H }} />
+                      {model.mapImages.roads && <img src={model.mapImages.roads} alt="" style={{ position: "absolute", inset: 0 }} />}
                     </>
                   )}
                   <svg width={MAP_W} height={MAP_H} viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ display: "block", position: "relative" }}>
@@ -185,7 +190,7 @@ export default function IcSlidePreview({
                     <rect x={MAP_W / 2 - 6} y={MAP_H / 2 - 6} width={12} height={12} fill="#0A2540" stroke="#fff" strokeWidth={2} transform={`rotate(45 ${MAP_W / 2} ${MAP_H / 2})`} />
                   </svg>
                 </div>
-                <span style={{ font: "600 9px/1 var(--font-body)", letterSpacing: ".14em", textTransform: "uppercase", color: "#0A2540" }}>Tenant demand · {model.radius} mi</span>
+                <span style={{ font: "600 9px/1 var(--font-body)", letterSpacing: ".14em", textTransform: "uppercase", color: "#0A2540" }}>Selected businesses · {model.radius} mi</span>
                 {model.demandRows.slice(0, 7).map((r) => {
                   const on = model.activeCats.includes(r.key);
                   return (

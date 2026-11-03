@@ -68,6 +68,16 @@ export default async function WeeklyReportPage() {
           <p className="hint">Value is the closing, contract or latest offer price, whichever is most advanced.</p>
         </section>
 
+        <section className="panel"><h2>Active investment decisions ({r.decisions.length})</h2>
+          <p className="hint">Includes active pursuits without a recent event. Unknown fields require review; returns are from the named source, not approval. Generated {r.generatedAt}.</p>
+          {r.decisions.map(d=><details key={d.id}><summary><Link href={`/deals/${d.id}/financials`}>{d.address}</Link> · {d.status} · {d.owner??"Unassigned"} · {d.nextAction??"Action unknown"}</summary>
+            <p>Pursuit: {d.rationale??"Unknown"} · Vehicle / partner: {d.vehicle??"Unknown"} · Follow-up {d.followUpOn??"Unassigned"} · CFO {d.deadline??"Unknown"}</p>
+            <p>Ask {usd(d.askingPrice)} ({d.askingDate??"date unknown"}; {d.askingSource??"source unknown"}); model {usd(d.modelPrice)} ({d.returnSource}); bid {usd(d.latestBid)} ({d.bidDate??"date unknown"}).</p>
+            <p>{d.income}. Workbook IRR {d.modelIrr==null?"withheld / unknown":`${(d.modelIrr*100).toFixed(2)}%`}; screening IRR {d.screeningIrr==null?"unknown":`${(d.screeningIrr*100).toFixed(2)}%`} ({d.screenDate??"no saved run"}).</p>
+            <p>{d.bridge}</p><p>{d.assumptions}</p><p>Conflicts: {d.conflicts||"None detected"}. Downside: {d.downside??"Not recorded"}. Comp evidence: {d.compReview}.</p>
+          </details>)}
+        </section>
+
         <section className="panel">
           <h2>Next 14 days ({r.upcoming.length})</h2>
           {r.upcoming.length ? (

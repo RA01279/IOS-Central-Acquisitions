@@ -1,15 +1,15 @@
 // Public collector sessions only. Origins and every redirect are checked;
 // cookies stay in this server-side request and are never persisted as evidence.
-const ORIGINS=new Set(['https://www.hctax.net','https://www.dallasact.com','https://travis.go2gov.net','https://www.gwinnetttaxcommissioner.com']);
+const ORIGINS=new Set(['https://www.hctax.net','https://www.dallasact.com','https://bexar.acttax.com','https://actweb.acttax.com','https://travis.go2gov.net','https://www.gwinnetttaxcommissioner.com']);
 export class CollectorSession {
  private cookies=new Map<string,string>();
  constructor(private fetcher:typeof fetch=fetch){}
- async read(input:string,options:{referer?:string;ajax?:boolean;binary?:boolean}={}){
+ async read(input:string,options:{referer?:string;ajax?:boolean;binary?:boolean;form?:URLSearchParams}={}){
   let url=new URL(input);
   for(let n=0;n<4;n++){
    if(!ORIGINS.has(url.origin)||url.username||url.password)throw Error('Collector URL is outside the approved official hosts.');
    const cookie=this.cookies.get(url.origin)??'';
-   const response=await this.fetcher(url.toString(),{cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(12000),headers:{Accept:options.binary?'application/pdf':'text/html,application/json',...(cookie?{Cookie:cookie}:{}),...(options.referer?{Referer:options.referer}:{}),...(options.ajax?{'X-Requested-With':'XMLHttpRequest'}:{})}});
+   const response=await this.fetcher(url.toString(),{cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(12000),...(options.form?{method:'POST',body:options.form}:{}),headers:{Accept:options.binary?'application/pdf':'text/html,application/json',...(options.form?{'Content-Type':'application/x-www-form-urlencoded'}:{}),...(cookie?{Cookie:cookie}:{}),...(options.referer?{Referer:options.referer}:{}),...(options.ajax?{'X-Requested-With':'XMLHttpRequest'}:{})}});
    const jar=new Map(cookie.split('; ').filter(Boolean).map(x=>{const p=x.indexOf('=');return [x.slice(0,p),x.slice(p+1)];}));
    for(const c of response.headers.getSetCookie()){const first=c.split(';')[0],p=first.indexOf('=');if(p>0)jar.set(first.slice(0,p),first.slice(p+1));}
    this.cookies.set(url.origin,[...jar].map(([k,v])=>`${k}=${v}`).join('; '));

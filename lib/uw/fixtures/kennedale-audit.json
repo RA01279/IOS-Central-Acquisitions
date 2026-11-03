@@ -1,0 +1,407 @@
+{
+  "method": "Python monthly enumeration from retained screening inputs, independent annual IRR bisection and numerical price solve; native original workbook read directly with openpyxl, source cached monthly XIRR independently reproduced. Does not recalculate upstream ARGUS/Excel formulas or establish lease execution.",
+  "cases": [
+    {
+      "name": "Base",
+      "inputs": {
+        "Hold": 5,
+        "Acres": 8.7,
+        "IOYrs": 10,
+        "LevOn": 1,
+        "StepG": 0.01,
+        "capex": [],
+        "TgtLev": 0.15,
+        "levers": {
+          "ExitCap": [
+            0.065,
+            0.060000000000000005,
+            0.07250000000000001
+          ],
+          "Vacancy": [
+            0.034,
+            0.014000000000000002,
+            0.084
+          ],
+          "RenewProb": [
+            0.7,
+            0.8,
+            0.5
+          ],
+          "LeaseDelay": [
+            0,
+            0,
+            6
+          ],
+          "RentGrowth": [
+            0.035,
+            0.045000000000000005,
+            0.020000000000000004
+          ],
+          "CapexOverrun": [
+            0,
+            0,
+            0.15
+          ]
+        },
+        "ExitNoi": "stabilized",
+        "LoanFee": 0,
+        "LoanLTV": 0.6,
+        "MgmtPct": 0.02,
+        "MinDSCR": 1.25,
+        "StepCap": 0.005,
+        "TaxRate": 0.022,
+        "AmortYrs": 30,
+        "LoanRate": 0.06583,
+        "SaleCost": 0.02,
+        "TgtUnlev": 0.1,
+        "property": "7321 Kennedale Pkwy",
+        "rentRoll": [
+          {
+            "bump": 0.04,
+            "name": "Ansco and Associates",
+            "rent": 660000,
+            "acres": 8.7,
+            "status": "In-place",
+            "include": [
+              1,
+              1,
+              1
+            ],
+            "newDealLC": 264000,
+            "newDealTI": 50000,
+            "renewalLC": 264000,
+            "renewalTI": 25000,
+            "retention": 0.7,
+            "rentPeriod": "Annual",
+            "startMonth": 0,
+            "newDealRent": 660000,
+            "renewalRent": 660000,
+            "leaseEndMonth": 60,
+            "freeRentMonths": 0,
+            "renewalProbOverride": 0.7,
+            "newDealDowntimeMonths": 9,
+            "newDealFreeRentMonths": 1,
+            "freeRentOnRenewalMonths": 0
+          }
+        ],
+        "scenario": "Base",
+        "CloseCost": 0.0251,
+        "ExpGrowth": 0.03,
+        "Insurance": 2175,
+        "OtherOpex": 0,
+        "SellerTax": 0,
+        "TaxSwitch": 1,
+        "PurchPrice": 7500000,
+        "RollMethod": 2,
+        "CompPerAcre": 1049989.124800638,
+        "NnnRecovered": false,
+        "ReservePerAcre": 276
+      },
+      "independent": {
+        "rent": [
+          660000.0,
+          686400.0,
+          713856.0000000001,
+          742410.24,
+          772106.6496000001
+        ],
+        "noi": [
+          457633.80000000005,
+          477610.902,
+          498437.24058,
+          520148.2897782,
+          542780.9877315781
+        ],
+        "unleveredCF": [
+          -7688249.999999999,
+          455232.60000000003,
+          475137.666,
+          495889.8075,
+          517524.4337058,
+          9079252.580008999
+        ],
+        "leveredCF": [
+          -3188249.999999999,
+          158997.60000000003,
+          178902.66600000003,
+          199654.8075,
+          221289.43370579998,
+          4283017.5800089985
+        ],
+        "unleveredIrr": 0.08293256580912078,
+        "leveredIrr": 0.104874218951022,
+        "minDscr": 1.5448336624639223,
+        "npvAtTarget": -518179.3967337196,
+        "solvedPrice": 7116707.201062271
+      }
+    },
+    {
+      "name": "Status only",
+      "inputs": {
+        "Hold": 5,
+        "Acres": 8.7,
+        "IOYrs": 10,
+        "LevOn": 1,
+        "StepG": 0.01,
+        "capex": [],
+        "TgtLev": 0.15,
+        "levers": {
+          "ExitCap": [
+            0.065,
+            0.060000000000000005,
+            0.07250000000000001
+          ],
+          "Vacancy": [
+            0.034,
+            0.014000000000000002,
+            0.084
+          ],
+          "RenewProb": [
+            0.7,
+            0.8,
+            0.5
+          ],
+          "LeaseDelay": [
+            0,
+            0,
+            6
+          ],
+          "RentGrowth": [
+            0.035,
+            0.045000000000000005,
+            0.020000000000000004
+          ],
+          "CapexOverrun": [
+            0,
+            0,
+            0.15
+          ]
+        },
+        "ExitNoi": "stabilized",
+        "LoanFee": 0,
+        "LoanLTV": 0.6,
+        "MgmtPct": 0.02,
+        "MinDSCR": 1.25,
+        "StepCap": 0.005,
+        "TaxRate": 0.022,
+        "AmortYrs": 30,
+        "LoanRate": 0.06583,
+        "SaleCost": 0.02,
+        "TgtUnlev": 0.1,
+        "property": "7321 Kennedale Pkwy",
+        "rentRoll": [
+          {
+            "bump": 0.04,
+            "name": "Ansco and Associates",
+            "rent": 660000,
+            "acres": 8.7,
+            "status": "Pipeline",
+            "include": [
+              1,
+              1,
+              1
+            ],
+            "newDealLC": 264000,
+            "newDealTI": 50000,
+            "renewalLC": 264000,
+            "renewalTI": 25000,
+            "retention": 0.7,
+            "rentPeriod": "Annual",
+            "startMonth": 0,
+            "newDealRent": 660000,
+            "renewalRent": 660000,
+            "leaseEndMonth": 60,
+            "freeRentMonths": 0,
+            "renewalProbOverride": 0.7,
+            "newDealDowntimeMonths": 9,
+            "newDealFreeRentMonths": 1,
+            "freeRentOnRenewalMonths": 0
+          }
+        ],
+        "scenario": "Base",
+        "CloseCost": 0.0251,
+        "ExpGrowth": 0.03,
+        "Insurance": 2175,
+        "OtherOpex": 0,
+        "SellerTax": 0,
+        "TaxSwitch": 1,
+        "PurchPrice": 7500000,
+        "RollMethod": 2,
+        "CompPerAcre": 1049989.124800638,
+        "NnnRecovered": false,
+        "ReservePerAcre": 276
+      },
+      "independent": {
+        "rent": [
+          660000.0,
+          686400.0,
+          713856.0000000001,
+          742410.24,
+          772106.6496000001
+        ],
+        "noi": [
+          457633.80000000005,
+          477610.902,
+          498437.24058,
+          520148.2897782,
+          542780.9877315781
+        ],
+        "unleveredCF": [
+          -7688249.999999999,
+          455232.60000000003,
+          475137.666,
+          495889.8075,
+          517524.4337058,
+          9079252.580008999
+        ],
+        "leveredCF": [
+          -3188249.999999999,
+          158997.60000000003,
+          178902.66600000003,
+          199654.8075,
+          221289.43370579998,
+          4283017.5800089985
+        ],
+        "unleveredIrr": 0.08293256580912078,
+        "leveredIrr": 0.104874218951022,
+        "minDscr": 1.5448336624639223,
+        "npvAtTarget": -518179.3967337196,
+        "solvedPrice": 7116707.201062271
+      }
+    },
+    {
+      "name": "Start month only",
+      "inputs": {
+        "Hold": 5,
+        "Acres": 8.7,
+        "IOYrs": 10,
+        "LevOn": 1,
+        "StepG": 0.01,
+        "capex": [],
+        "TgtLev": 0.15,
+        "levers": {
+          "ExitCap": [
+            0.065,
+            0.060000000000000005,
+            0.07250000000000001
+          ],
+          "Vacancy": [
+            0.034,
+            0.014000000000000002,
+            0.084
+          ],
+          "RenewProb": [
+            0.7,
+            0.8,
+            0.5
+          ],
+          "LeaseDelay": [
+            0,
+            0,
+            6
+          ],
+          "RentGrowth": [
+            0.035,
+            0.045000000000000005,
+            0.020000000000000004
+          ],
+          "CapexOverrun": [
+            0,
+            0,
+            0.15
+          ]
+        },
+        "ExitNoi": "stabilized",
+        "LoanFee": 0,
+        "LoanLTV": 0.6,
+        "MgmtPct": 0.02,
+        "MinDSCR": 1.25,
+        "StepCap": 0.005,
+        "TaxRate": 0.022,
+        "AmortYrs": 30,
+        "LoanRate": 0.06583,
+        "SaleCost": 0.02,
+        "TgtUnlev": 0.1,
+        "property": "7321 Kennedale Pkwy",
+        "rentRoll": [
+          {
+            "bump": 0.04,
+            "name": "Ansco and Associates",
+            "rent": 660000,
+            "acres": 8.7,
+            "status": "In-place",
+            "include": [
+              1,
+              1,
+              1
+            ],
+            "newDealLC": 264000,
+            "newDealTI": 50000,
+            "renewalLC": 264000,
+            "renewalTI": 25000,
+            "retention": 0.7,
+            "rentPeriod": "Annual",
+            "startMonth": 6,
+            "newDealRent": 660000,
+            "renewalRent": 660000,
+            "leaseEndMonth": 60,
+            "freeRentMonths": 0,
+            "renewalProbOverride": 0.7,
+            "newDealDowntimeMonths": 9,
+            "newDealFreeRentMonths": 1,
+            "freeRentOnRenewalMonths": 0
+          }
+        ],
+        "scenario": "Base",
+        "CloseCost": 0.0251,
+        "ExpGrowth": 0.03,
+        "Insurance": 2175,
+        "OtherOpex": 0,
+        "SellerTax": 0,
+        "TaxSwitch": 1,
+        "PurchPrice": 7500000,
+        "RollMethod": 2,
+        "CompPerAcre": 1049989.124800638,
+        "NnnRecovered": false,
+        "ReservePerAcre": 276
+      },
+      "independent": {
+        "rent": [
+          330000.0,
+          686400.0,
+          713856.0000000001,
+          742410.24,
+          772106.6496000001
+        ],
+        "noi": [
+          145229.40000000002,
+          477610.902,
+          498437.24058,
+          520148.2897782,
+          542780.9877315781
+        ],
+        "unleveredCF": [
+          -7688249.999999999,
+          142828.2,
+          475137.666,
+          495889.8075,
+          517524.4337058,
+          9079252.580008999
+        ],
+        "leveredCF": [
+          -3188249.999999999,
+          -153406.8,
+          178902.66600000003,
+          199654.8075,
+          221289.43370579998,
+          4283017.5800089985
+        ],
+        "unleveredIrr": 0.07398910326024832,
+        "leveredIrr": 0.0840734901047201,
+        "minDscr": 0.4902506456023091,
+        "npvAtTarget": -802183.3967337196,
+        "solvedPrice": 6906631.909077147
+      }
+    }
+  ]
+}

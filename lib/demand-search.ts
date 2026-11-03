@@ -34,9 +34,10 @@ export async function searchNearby({
   /** The IC map caps at 8 so its legend stays readable; scoring wants the real count. */
   perCategoryCap: number;
   apiKey: string;
-}): Promise<{ tenants: NearbyTenant[]; screened: number }> {
+}): Promise<{ tenants: NearbyTenant[]; screened: number; searchSummary: { queries: number; succeeded: number; failed: number; firstPageLimited: number } }> {
   const radiusMeters = Math.round(radiusMiles * 1609.34);
   let screened = 0;
+  const searchSummary = { queries: categories.reduce((n, c) => n + c.keywords.length, 0), succeeded: 0, failed: 0, firstPageLimited: 0 };
 
   const resultsByCategory = await Promise.all(
     categories.map(async (cat) => {
@@ -53,9 +54,12 @@ export async function searchNearby({
           const r = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(10000) });
           const data = await r.json();
           if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+            searchSummary.failed++;
             console.error(`Places error for "${cat.label}" / "${keyword}":`, data.status, data.error_message);
             return [] as NearbyTenant[];
           }
+          searchSummary.succeeded++;
+          if (data.next_page_token) searchSummary.firstPageLimited++;
           return (data.results || [])
             .filter((place: any) => {
               const reason = rejectReason(place, cat.label);
@@ -105,5 +109,5 @@ export async function searchNearby({
       return perCategoryCount[t.category] <= perCategoryCap;
     });
 
-  return { tenants, screened };
+  return { tenants, screened, searchSummary };
 }

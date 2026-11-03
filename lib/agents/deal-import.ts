@@ -21,6 +21,9 @@ export const DEAL_IMPORT_FIELDS = [
   "marketingStatus",
   "sellerBroker",
   "currentOwner",
+  "callForOffersOn",
+  "deadlineSourceDate",
+  "deadlineSourceQuote",
 ] as const;
 export type DealImportField = (typeof DEAL_IMPORT_FIELDS)[number];
 
@@ -41,6 +44,9 @@ export interface DealImport {
     marketingStatus: "marketed" | "off_market" | null;
     sellerBroker: string | null;
     currentOwner: string | null;
+    callForOffersOn?: string | null;
+    deadlineSourceDate?: string | null;
+    deadlineSourceQuote?: string | null;
   };
   /** Field -> short verbatim quote from the source supporting it. */
   evidence: Partial<Record<DealImportField, string>>;
@@ -51,10 +57,11 @@ export interface DealImport {
 export const DEAL_IMPORT_INSTRUCTIONS = `Read the supplied offering memorandum (OM) and/or broker email and extract ONE property for a new acquisition deal. The report field MUST be a serialized JSON object, nothing else, with exactly this shape:
 {"fields":{"address":string|null,"city":string|null,"state":string|null,"market":string|null,"acres":number|null,"buildingSf":number|null,"askingPrice":number|null,"occupancy":"vacant"|"occupied"|null,"waltYears":number|null,"tenancy":"single_tenant"|"multi_tenant"|null,"assetClass":"ios"|"industrial"|null,"acquisitionType":"standard"|"slb"|null,"marketingStatus":"marketed"|"off_market"|null,"sellerBroker":string|null,"currentOwner":string|null},"evidence":{"<fieldName>":"short verbatim quote"},"notes":[string]}
 Rules:
+- Include callForOffersOn, deadlineSourceDate, deadlineSourceQuote in fields. callForOffersOn must be an explicit YYYY-MM-DD offer deadline supported by a verbatim source quote. deadlineSourceDate is the original message/document date, not today's date. Do not infer a year or convert ambiguous relative dates; return null and explain ambiguity in notes. Proposed leases are not in-place occupancy.
 - address = street address only (no city/state/zip). state = 2-letter code. market = the metro (e.g. "Houston", "Dallas", "Fort Worth", "Austin", "San Antonio"; Dallas-Fort Worth is two markets), not the submarket.
 - acres = total land area in acres (convert from SF: divide by 43,560). buildingSf = total building square feet. Plain numbers, no units or commas.
 - askingPrice = the seller's stated asking/list price in dollars as a plain number. If the OM says "unpriced", "call for offers" or gives no price, use null. Never derive a price from cap rates or per-SF figures.
-- occupancy: "occupied" if there is a tenant or in-place lease, "vacant" if delivered vacant; waltYears = remaining lease term in years if stated.
+- occupancy: "occupied" only if current physical occupation is explicit (a commenced lease or owner occupation), "vacant" if delivered vacant. A named proposed tenant or signed future lease alone does not establish current occupation; otherwise null. waltYears = remaining lease term in years if stated.
 - assetClass: "ios" when the site is primarily an industrial outdoor storage yard (truck/trailer/equipment yard, large paved or stabilized yard with a small building), else "industrial" for warehouse/distribution/flex.
 - acquisitionType: "slb" only for an explicit sale-leaseback; otherwise "standard". marketingStatus: "marketed" when it is a broker-listed offering (an OM or listing flyer), "off_market" only when the source says so.
 - sellerBroker = the listing broker's name and firm, e.g. "Jane Smith, CBRE". currentOwner = the seller/owner entity if named.
@@ -92,6 +99,9 @@ export function parseDealImport(report: string): DealImport | null {
       marketingStatus: pick(f.marketingStatus, ["marketed", "off_market"] as const),
       sellerBroker: str(f.sellerBroker),
       currentOwner: str(f.currentOwner),
+      callForOffersOn: null,
+      deadlineSourceDate: null,
+      deadlineSourceQuote: str(f.deadlineSourceQuote,500),
     },
     evidence: {},
     notes: Array.isArray(raw.notes) ? raw.notes.filter((n: unknown) => typeof n === "string").slice(0, 10).map((n: string) => n.slice(0, 400)) : [],
@@ -102,6 +112,10 @@ export function parseDealImport(report: string): DealImport | null {
       if (q) out.evidence[k] = q;
     }
   }
+  const date=(v:unknown)=>typeof v==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+"T12:00:00Z").toISOString().slice(0,10)===v;
+  if(date(f.callForOffersOn)&&date(f.deadlineSourceDate)&&out.fields.deadlineSourceQuote) {
+    out.fields.callForOffersOn=f.callForOffersOn;out.fields.deadlineSourceDate=f.deadlineSourceDate;
+  } else if(f.callForOffersOn)out.notes.push("Offer deadline needs review: retain explicit date/year, original source date and verbatim supporting quote. No deadline applied.");
   // An import with no address is not a deal draft.
   return out.fields.address ? out : null;
 }

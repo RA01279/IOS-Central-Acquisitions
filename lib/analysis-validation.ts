@@ -11,6 +11,7 @@ export function validAnalysis(kind: string, payload: any): boolean {
   const d=payload.data;
   return kind==="demand" && !!d && typeof d.address==="string" && [3,5,7].includes(d.radiusMiles)
     && Number.isFinite(d.center?.lat) && Math.abs(d.center.lat)<=90 && Number.isFinite(d.center?.lng) && Math.abs(d.center.lng)<=180
+    && (d.fetchedAt == null || (typeof d.fetchedAt === "string" && Number.isFinite(Date.parse(d.fetchedAt))))
     && Number.isFinite(d.zoom) && d.zoom>=0 && d.zoom<=22 && ["satellite","hybrid",undefined].includes(d.maptype)
     && typeof d.imageBase64==="string" && /^data:image\/(png|jpeg);base64,/.test(d.imageBase64)
     && Array.isArray(d.tenants) && d.tenants.length<=200

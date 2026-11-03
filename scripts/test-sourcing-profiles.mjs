@@ -15,7 +15,9 @@ function load(file, deps = {}) {
 const yard = load('lib/sourcing/yard-users.ts');
 const profiles = load('lib/sourcing/profiles.ts', { './yard-users': yard });
 const parcels = load('lib/sourcing/parcels.ts');
-const sweep = load('lib/sourcing/sweep.ts', { '@/lib/comps/match': load('lib/comps/match.ts'), './yard-users': yard, './parcels': parcels });
+const identity = load('lib/sourcing/identity.ts');
+const discovery = load('lib/sourcing/discovery.ts', { './yard-users': yard });
+const sweep = load('lib/sourcing/sweep.ts', { '@/lib/comps/match': load('lib/comps/match.ts'), './yard-users': yard, './parcels': parcels , './identity': identity, './discovery': discovery });
 const exporter = load('lib/sourcing/export.ts');
 const E = require('exceljs');
 const center = { lat: 29.87, lng: -95.55 };
@@ -45,7 +47,7 @@ const fakeFetch = async (input) => {
   if (u.pathname.includes('details')) return { json: async () => u.searchParams.get('place_id') === 'adjacent' ? { status: 'REQUEST_DENIED' } : { status: 'OK', result: { formatted_phone_number: '713-555-0100', website: 'https://example.com', url: 'https://maps.google.com/?cid=123' } } };
   assert.equal(u.searchParams.get('location'), `${center.lat},${center.lng}`);
   assert.equal(u.searchParams.get('radius'), '1609');
-  return { json: async () => ({ status: 'OK', results: records[u.searchParams.get('keyword')], next_page_token: 'more-results-exist' }) };
+  return { json: async () => ({ status: 'OK', results: records[u.searchParams.get('keyword')] }) };
 };
 for (const [selection, expected] of [[A, ['a', 'branch', 'shared']], [B, ['adjacent', 'b', 'shared']], [AB, ['a', 'adjacent', 'b', 'branch', 'shared']]]) {
   fixtureRequests.length = 0;

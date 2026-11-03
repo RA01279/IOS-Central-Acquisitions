@@ -20,13 +20,14 @@ export interface Sourced { source: InputSource; note: string }
 export interface DealUwInputs extends UwInputs {
   /** Net leases: tenants reimburse taxes, insurance and other opex, so the landlord carries none of it. */
   NnnRecovered: boolean;
+  RecoveryStartMonth?: number;
 }
 
 /** The inputs a source label can attach to. Levers are labelled once for all three scenarios. */
 export const SOURCE_KEYS = [
   "PurchPrice", "Acres", "CloseCost", "SaleCost", "Hold", "TgtUnlev", "TgtLev", "MinDSCR",
   "ExitCap", "ExitNoi", "RentGrowth", "Vacancy", "CapexOverrun", "LeaseDelay", "RenewProb",
-  "NnnRecovered", "TaxSwitch", "TaxRate", "SellerTax", "Insurance", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
+  "NnnRecovered", "RecoveryStartMonth", "TaxSwitch", "TaxRate", "SellerTax", "Insurance", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
   "LevOn", "LoanLTV", "LoanRate", "AmortYrs", "IOYrs", "LoanFee", "rentRoll", "capex",
 ] as const;
 export type SourceKey = (typeof SOURCE_KEYS)[number];
@@ -50,6 +51,7 @@ export interface CompRange {
 
 /** What the screen knows from comps, small enough to send to the browser and to snapshot with a run. */
 export interface CompContext {
+  reviewVersion?: number;
   market: string | null;
   asOf: string;
   months: 24 | 36;
@@ -364,6 +366,7 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
     StepG: 0.01,
     StepCap: 0.005,
     NnnRecovered: set("NnnRecovered", false, "default", "Expense recovery is unverified. Confirm the leases before assuming full recovery of taxes, insurance and other expenses."),
+    RecoveryStartMonth:set("RecoveryStartMonth",0,"default","Full recovery from closing only if explicitly enabled. Enter the supported recovery commencement; no lease date inferred."),
     TaxSwitch: set("TaxSwitch", 1 as const, "default", "Reassessed at the purchase price"),
     TaxRate: taxRate ? set("TaxRate", taxRate, "default", `Typical effective rate, ${facts.state}`) : set("TaxRate", DEFAULTS.TaxRate, "default", "Typical effective rate"),
     SellerTax: set("SellerTax", 0, "default", "Seller's current tax unknown; used only if reassessment is off"),
@@ -388,9 +391,9 @@ export function buildDealInputs(facts: DealFacts, model: UwModelSnapshot | null,
   return { inputs, sources: src, rentRollSource, warnings };
 }
 
-/** What the engine runs: with NNN recovery, the landlord carries no taxes, insurance or other opex. */
+/** Recovery timing is explicit; owner costs continue before that month. */
 export function engineInputs(d: DealUwInputs): UwInputs {
-  return d.NnnRecovered ? { ...d, SellerTax: 0, Insurance: 0, OtherOpex: 0, TaxRate: 0 } : d;
+  return {...d,ExpenseRecoveryStartMonth:d.NnnRecovered?(d.RecoveryStartMonth??0):undefined};
 }
 
 // --- Checks against the comps ------------------------------------------------
@@ -481,7 +484,7 @@ export function compareWithModel(result: UwResult, inputs: UwInputs, model: UwMo
 
 // --- Saved runs ---------------------------------------------------------------
 
-export const SCREEN_VERSION = "uw-screen-audit-20261023";
+export const SCREEN_VERSION = "uw-screen-decision-controls-20261030";
 export const MAX_TENANTS = 40;
 export const MAX_CAPEX = 30;
 
@@ -520,6 +523,7 @@ export function sanitizeInputs(x: any): DealUwInputs | string {
     ["StepG", finite(x.StepG, 0, 0.1)],
     ["StepCap", finite(x.StepCap, 0, 0.05)],
     ["NnnRecovered", typeof x.NnnRecovered === "boolean"],
+    ["RecoveryStartMonth", x.RecoveryStartMonth===undefined||(Number.isInteger(x.RecoveryStartMonth)&&x.RecoveryStartMonth>=0&&x.RecoveryStartMonth<=120)],
     ["ExitNoi", x.ExitNoi === undefined || x.ExitNoi === "forward" || x.ExitNoi === "stabilized"],
     ["SellerTax", finite(x.SellerTax, 0, 1e8)],
     ["Insurance", finite(x.Insurance, 0, 1e8)],
@@ -571,7 +575,7 @@ export function sanitizeInputs(x: any): DealUwInputs | string {
   const pick = <K extends keyof DealUwInputs>(...keys: K[]) => Object.fromEntries(keys.map((k) => [k, x[k]])) as Pick<DealUwInputs, K>;
   return {
     ...pick("property", "scenario", "RollMethod", "Acres", "PurchPrice", "CompPerAcre", "CloseCost", "SaleCost", "Hold", "TgtUnlev", "TgtLev", "MinDSCR",
-      "StepG", "StepCap", "NnnRecovered", "ExitNoi", "SellerTax", "Insurance", "TaxSwitch", "TaxRate", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
+      "StepG", "StepCap", "NnnRecovered", "RecoveryStartMonth", "ExitNoi", "SellerTax", "Insurance", "TaxSwitch", "TaxRate", "MgmtPct", "ReservePerAcre", "OtherOpex", "ExpGrowth",
       "LevOn", "LoanLTV", "LoanRate", "AmortYrs", "IOYrs", "LoanFee"),
     levers: {
       RentGrowth: [...lv.RentGrowth] as unknown as ByScenario<number>,

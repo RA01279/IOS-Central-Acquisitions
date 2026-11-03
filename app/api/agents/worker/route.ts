@@ -1,6 +1,8 @@
 import { parseMemo, MEMO_VERSION } from "@/lib/agents/memo";
 import { parseNarrative } from "@/lib/agents/ic-narrative";
 import { parseSourcing } from "@/lib/agents/sourcing";
+import { reviewedSites } from "@/lib/sourcing/snapshot";
+import { assessSourcingFit } from "@/lib/sourcing/fit";
 import { parseDealImport } from "@/lib/agents/deal-import";
 import { parsePortfolioImport } from "@/lib/agents/portfolio-import";
 import { parseMarketReport } from "@/lib/agents/market-report";
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
   if (!body.error && (!r || typeof r.report !== "string" || !r.report.trim() || r.report.length > 100000 ||
     typeof r.model !== "string" || r.model.length > 200 || !Array.isArray(r.limitations) || r.limitations.length > 30 || r.limitations.some((v: unknown) => typeof v !== "string" || v.length > 1000))) return json({ error: "Malformed report." }, 400);
   const { db, helper } = ctx;
-  const job = await db.from("agent_runs").select("agent,prompt").eq("id", body.id).eq("helper_id", helper.id).eq("owner_email", helper.owner_email).eq("status", "processing").maybeSingle();
+  const job = await db.from("agent_runs").select("agent,prompt,sources").eq("id", body.id).eq("helper_id", helper.id).eq("owner_email", helper.owner_email).eq("status", "processing").maybeSingle();
   if (job.error) throw job.error;
   if (!job.data) return json({ error: "Run no longer active." }, 409);
   if (!body.error && job.data.agent === "investment-memo" && job.data.prompt?.includes(MEMO_VERSION) && !parseMemo(r.report)) {
@@ -46,8 +48,18 @@ export async function POST(req: NextRequest) {
   if (!body.error && job.data.agent === "ic-narrative" && !parseNarrative(r.report)) {
     body.error = "The narrative did not match the IC deck format (every bullet needs a source). Please run it again.";
   }
-  if (!body.error && job.data.agent === "off-market-sourcing" && !parseSourcing(r.report)) {
-    body.error = "The sourcing report did not match the expected format (owner and parcel facts need sources). Please run it again.";
+  if (!body.error && job.data.agent === "off-market-sourcing") {
+    const reviewed = reviewedSites(job.data.sources);
+    const parsed = parseSourcing(r.report, reviewed?.sites.map(s => s.ref), !!reviewed);
+    if (!parsed) body.error = "The sourcing report needs exactly the reviewed sites and a dated source URL for each factual field. Please run it again.";
+    else if (reviewed) {
+      parsed.sites = parsed.sites.map(s => {
+        const original = reviewed.sites.find(x => x.ref === s.ref)!;
+        const checked = original.parcel?.ownerClass === "public" ? { ...s, ownerType: "public" as const } : s;
+        return { ...checked, ...assessSourcingFit(checked, reviewed.buyBox) };
+      });
+      r.report = JSON.stringify(parsed);
+    }
   }
   if (!body.error && job.data.agent === "deal-import" && !parseDealImport(r.report)) {
     body.error = "Could not read a property address from that document. Check it is an OM or broker email, then try again.";
