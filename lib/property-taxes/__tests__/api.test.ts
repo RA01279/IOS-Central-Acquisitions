@@ -4,6 +4,7 @@ import {taxTestDb,taxTestClient,taxDealId} from "../../../tests/helpers/tax-test
 import {taxFixture} from "./fixtures";
 import {readFileSync} from 'node:fs';
 import {billAccountMatches} from '../bill-account';
+// PGlite (in-memory Postgres) can take longer than the default 10 s to start.
 const mocks=vi.hoisted(()=>({user:{email:"local-test@example.test"} as {email:string}|null,db:null as any,revalidate:vi.fn(),research:vi.fn()}));
 vi.mock("@/lib/auth",()=>({getCurrentUser:async()=>mocks.user}));
 vi.mock("@/lib/supabase",()=>({getServiceClient:()=>mocks.db}));
@@ -12,7 +13,7 @@ vi.mock("@/lib/property-taxes/research",()=>({researchTaxes:(...args:any[])=>moc
 import {GET,POST} from "../../../app/api/deals/[id]/property-taxes/route";
 let pg:Awaited<ReturnType<typeof taxTestDb>>;const props={params:Promise.resolve({id:taxDealId})};
 const request=(body:unknown,origin="http://localhost")=>new NextRequest(`http://localhost/api/deals/${taxDealId}/property-taxes`,{method:"POST",headers:{"Content-Type":"application/json",origin},body:JSON.stringify(body)});
-beforeAll(async()=>{pg=await taxTestDb();mocks.db=taxTestClient(pg);});afterAll(async()=>{await pg?.close();});beforeEach(()=>{mocks.user={email:"local-test@example.test"};mocks.revalidate.mockClear();});
+beforeAll(async()=>{pg=await taxTestDb();mocks.db=taxTestClient(pg);},60000);afterAll(async()=>{await pg?.close();});beforeEach(()=>{mocks.user={email:"local-test@example.test"};mocks.revalidate.mockClear();});
 it("authenticates all reads and mutations and checks origin, IDs and missing deals",async()=>{
   mocks.user=null;expect((await GET(new NextRequest("http://localhost"),props)).status).toBe(401);expect((await POST(request({action:"save"}),props)).status).toBe(401);
   mocks.user={email:"test"};expect((await POST(request({action:"save"},"https://evil.example"),props)).status).toBe(403);

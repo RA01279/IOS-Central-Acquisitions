@@ -4,8 +4,9 @@ import {loadTaxWorkspace,saveTaxWorkspace} from "../store";
 import {taxFixture} from "./fixtures";
 import {reviewFixture} from './fixtures';
 import {annualTotal,mergeResearch} from '../model';
+// PGlite (in-memory Postgres) can take longer than the default 10 s to start.
 let pg:Awaited<ReturnType<typeof taxTestDb>>,client:ReturnType<typeof taxTestClient>;
-beforeAll(async()=>{pg=await taxTestDb();client=taxTestClient(pg);});afterAll(async()=>{await pg?.close();});
+beforeAll(async()=>{pg=await taxTestDb();client=taxTestClient(pg);},60000);afterAll(async()=>{await pg?.close();});
 it("stores structured findings and append-only snapshots atomically with stale-write protection",async()=>{
   expect((await loadTaxWorkspace(client,taxDealId)).revision).toBe(0);
   const state=taxFixture();const saved=await saveTaxWorkspace(client,taxDealId,0,state,"local-test","research");expect(saved.revision).toBe(1);
