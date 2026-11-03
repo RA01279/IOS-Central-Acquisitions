@@ -18,7 +18,7 @@ const parcels = load('lib/sourcing/parcels.ts');
 const identity = load('lib/sourcing/identity.ts');
 const discovery = load('lib/sourcing/discovery.ts', { './yard-users': yard });
 const sweep = load('lib/sourcing/sweep.ts', { '@/lib/comps/match': load('lib/comps/match.ts'), './yard-users': yard, './parcels': parcels , './identity': identity, './discovery': discovery });
-const exporter = load('lib/sourcing/export.ts');
+const exporter = load('lib/sourcing/export.ts', { './usable-summary': load('lib/sourcing/usable-summary.ts') });
 const E = require('exceljs');
 const center = { lat: 29.87, lng: -95.55 };
 const pick = (ids) => profiles.selectedProfiles(ids);
