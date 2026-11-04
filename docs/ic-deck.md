@@ -10,7 +10,7 @@ On a deal page, **IC Deck — Executive Summary** builds the 23-slide executive 
 
 | Source | Slides |
 |---|---|
-| Model, cached values as Excel last calculated (ES Summary, Pro Forma, Deal Overview, Rent Roll, Memo Pro Forma) | Exec summary metrics and tables, Model, Market leasing assumptions, Cash flow, Sensitivities |
+| Model, cached values as Excel last calculated (visible tabs only: ES Summary, Pro Forma, Market Leasing Summary, Rent Roll, Memo Pro Forma) | Exec summary metrics and tables, Model, Market leasing assumptions, Cash flow, Sensitivities |
 | Hopper deal record and saved LOI terms | Deal status, Pursuit terms, DD budget deposit |
 | Hopper comps (confirmed, ranked like the deal page: 15 mi, 24 months, top 10) | Lease comps, Sale comps (+ maps) |
 | Hopper owned assets within 50 mi | Portfolio context and summary |
@@ -37,13 +37,12 @@ Every UW upload builds the deck from the saved workbook and files it in the deal
 The UW template carries hidden sheets and blocks from earlier deals, and Excel data tables that only refresh on a full recalc. The builder reports these instead of copying them:
 
 - Site SF on ES Summary not matching the acreage. The deck uses acreage.
-- Deal Overview's MLA name not matching the rent roll. The row is dropped.
 - Pro Forma's fixed "Base Case" exit-cap table not matching the base-case IRR (stale price).
 - Sensitivity tables inconsistent with the base case. Recalculate (F9) and save.
-- Deal Overview / Rent Roll titled for a different property.
+- Pro Forma / Rent Roll / Market Leasing Summary titled for a different property.
 - Model price differing from Hopper's contract price or latest offer (flagged on Pursuit Terms).
 
-Checks also appear in slide 2's speaker notes. Hidden sheets such as Memo Table are never read.
+Checks also appear in slide 2's speaker notes. Hidden tabs (Deal Overview, Summary Table, Memo Table) are never read: they can carry stale figures from an earlier version of the model. Debt terms use Pro Forma's pre-stabilization rate block; LTPP is the initial loan over the purchase price; the acquisition date is the cash flow's Year 1 start; "Model as of" is the date Excel last saved the file.
 
 ## Agent drafts
 
