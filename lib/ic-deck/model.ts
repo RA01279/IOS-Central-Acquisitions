@@ -117,8 +117,9 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
   const es = book.sheet("ES Summary");
   const pf = book.sheet("Pro Forma");
   // Visible tabs only. "Deal Overview", "Summary Table" and "Memo Table" are
-  // hidden in the template and can carry stale figures (Tanner Rd's showed
-  // $2.9M / 21.04% while Pro Forma had $3.0M / 19.77%), so they are never read.
+  // hidden in the template: they aren't what the team reviews, and leftover
+  // blocks there (e.g. another deal's MLA name) have misled the deck. Figures
+  // come straight from Pro Forma and the other visible tabs instead.
   const mls = book.sheet("Market Leasing Summary");
   const rr = book.sheet("Rent Roll");
   const mpf = book.sheet("Memo Pro Forma");
