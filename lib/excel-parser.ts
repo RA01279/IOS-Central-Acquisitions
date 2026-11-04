@@ -141,7 +141,6 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
       goingInYieldPct: read("Going-in Cap Rate (tax adj.)", C, "goingInYieldPct"),
       stabilizedReturnOnCostPct: read("Yield on Cost at Exit", C, "stabilizedReturnOnCostPct"),
       exitCapPct: read("Exit Cap", F, "exitCapPct"),
-      // "Market Rent" in the exit block is stated in $ PSF / Mo. (column E).
       marketRentPsfMo: read("Market Rent", E, "marketRentPsfMo"),
       holdPeriodYears: months != null ? months / 12 : null,
       irrPct: read("IRR", lev, "irrPct"),
@@ -149,13 +148,28 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
       // Average levered cash-on-cash over the hold, as in the industrial template.
       stabilizedCashOnCashPct: read("Avg. Cash-on-Cash", lev, "stabilizedCashOnCashPct"),
     };
+    // The rate is only usable with its period, which Pro Forma states in the
+    // column heading above it ("$ PSF / Mo."). Never assume monthly.
+    let rentBasis: string | null = null;
+    const rentRow = labelRows(sheet, "Market Rent")[0];
+    if (summary.marketRentPsfMo != null && rentRow) {
+      for (let r = rentRow - 1; r >= Math.max(1, rentRow - 12) && !rentBasis; r--) {
+        const t = textOf(sheet.getRow(r).getCell(E));
+        if (t && /psf|\/\s*sf/i.test(t) && /\b(mo|month|yr|year)\b/i.test(t)) rentBasis = t;
+      }
+      if (rentBasis && /\b(yr|year)\b/i.test(rentBasis)) summary.marketRentPsfMo /= 12;
+      else if (!rentBasis || !/\b(mo|month)\b/i.test(rentBasis)) {
+        summary.marketRentPsfMo = null;
+        warnings.push("Market rent units are unverified: the column heading above Pro Forma \"Market Rent\" must state $ PSF / Mo. or $ PSF / Yr.");
+      }
+    }
     if (missing.length) warnings.push(`Pro Forma rows not found or empty: ${missing.join(", ")}. Check the workbook follows the standard IOS template.`);
     const address = textOf(sheet.getRow(labelRows(sheet, "Address")[0] ?? 0).getCell(F)) ?? textOf(sheet.getRow(labelRows(sheet, "Property Name")[0] ?? 0).getCell(F));
     const city = textOf(sheet.getRow(labelRows(sheet, "City, State")[0] ?? 0).getCell(F));
     const lotRow = labelRows(sheet, "Lot Size (Acre / SF)")[0], bldgRow = labelRows(sheet, "Building SF")[0];
     const acres = lotRow ? readCellValue(sheet.getRow(lotRow).getCell(E), "Identity acres", warnings) : null;
     const buildingSf = bldgRow ? readCellValue(sheet.getRow(bldgRow).getCell(F), "Identity building SF", warnings) : null;
-    return { ...summary, sourceProperty: address, sourceIdentity: { address, city, acres, buildingSf }, marketRentSourceBasis: summary.marketRentPsfMo != null ? "Pro Forma Market Rent ($ PSF / Mo.)" : null, warnings };
+    return { ...summary, sourceProperty: address, sourceIdentity: { address, city, acres, buildingSf }, marketRentSourceBasis: summary.marketRentPsfMo != null ? `Pro Forma Market Rent (${rentBasis})` : null, warnings };
 }
 
 // ---------- Industrial template ("_Upload_") ----------

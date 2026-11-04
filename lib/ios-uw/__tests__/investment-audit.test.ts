@@ -51,18 +51,21 @@ describe('source-backed investment audit regressions',()=>{
   expect(conflictingEvidence({rent:null},saved)).toEqual([]);expect(saved.rent).toBe(1.13);
  });
  async function model(basis:string,property='1626 Central Park Dr'){
-  const wb=new ExcelJS.Workbook(),s=wb.addWorksheet('Summary Table'),m=wb.addWorksheet('Market Leasing Summary'),p=wb.addWorksheet('Pro Forma');
-  s.getCell('G18').value=12.6;m.getCell('D17').value=basis;p.getCell('F15').value=property;
+  // Pro Forma states the rate period in the column heading above "Market Rent"; a hidden Summary Table is never read.
+  const wb=new ExcelJS.Workbook(),stale=wb.addWorksheet('Summary Table',{state:'hidden'}),p=wb.addWorksheet('Pro Forma');
+  stale.getCell('G18').value=99;
+  p.getCell('B16').value='Address';p.getCell('F16').value=property;p.getCell('B33').value='Purchase Price';p.getCell('F33').value=4000000;
+  p.getCell('E153').value=basis;p.getCell('B162').value='Market Rent';p.getCell('E162').value=12.6;
   return Buffer.from(await wb.xlsx.writeBuffer());
  }
- it('reads original MLA annual basis instead of the misleading monthly summary caption',async()=>{
-  const r=await parseReturnsSummary(await model('$ / SF / Year'),'1626 Central Park Dr');
-  expect(r.marketRentPsfMo).toBeCloseTo(1.05,10);expect(r.marketRentSourceBasis).toBe('$ / SF / Year');
-  expect((await parseReturnsSummary(await model('$ / SF / Month'))).marketRentPsfMo).toBe(12.6);
+ it('reads the stated Pro Forma rent period instead of assuming monthly',async()=>{
+  const r=await parseReturnsSummary(await model('$ PSF / Yr.'),'1626 Central Park Dr');
+  expect(r.marketRentPsfMo).toBeCloseTo(1.05,10);expect(r.marketRentSourceBasis).toBe('Pro Forma Market Rent ($ PSF / Yr.)');
+  expect((await parseReturnsSummary(await model('$ PSF / Mo.'))).marketRentPsfMo).toBe(12.6);
   expect((await parseReturnsSummary(await model('unknown'))).marketRentPsfMo).toBeNull();
  });
  it('retains the documented Amwiler/Lathrop discrepancy for explicit source review',async()=>{
-  const conflicted=await parseReturnsSummary(await model('$ / SF / Year','1301-1347 Lathrop'),'3000 Amwiler Rd');
+  const conflicted=await parseReturnsSummary(await model('$ PSF / Yr.','1301-1347 Lathrop'),'3000 Amwiler Rd');
   expect(conflicted.warnings.join(' ')).toMatch(/Detected identity discrepancy/);
  });
  // Independently calculated from original Inputs/RentRoll/Capex, monthly

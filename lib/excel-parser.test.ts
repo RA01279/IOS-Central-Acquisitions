@@ -22,7 +22,7 @@ function proForma(workbook: ExcelJS.Workbook, opts: { address?: string; goingIn?
   s.getCell("B77").value = "Going-in Cap Rate (tax adj.)"; s.getCell("C77").value = opts.goingIn ?? 0.05;
   s.getCell("B81").value = "Yield on Cost at Exit"; s.getCell("C81").value = 0.0894;
   s.getCell("B151").value = "Month of Sale"; s.getCell("D151").value = 48;
-  s.getCell("B162").value = "Market Rent"; s.getCell("E162").value = 3.68;
+  s.getCell("E153").value = "$ PSF / Mo."; s.getCell("B162").value = "Market Rent"; s.getCell("E162").value = 3.68;
   s.getCell("B165").value = "Exit Cap"; // section heading, no value
   s.getCell("B168").value = "Exit Cap"; s.getCell("F168").value = 0.0675;
   return s;

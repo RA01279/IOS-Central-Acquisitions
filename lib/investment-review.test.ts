@@ -42,7 +42,7 @@ describe("source authority and current income",()=>{
  });
  it("retains detected upload conflicts from the Pro Forma identity without approving source",async()=>{
   const w=new ExcelJS.Workbook(),p=w.addWorksheet("Pro Forma");
-  for(const [label,col,value] of [["Address","F","1301-1347 Lathrop"],["City, State","F","Houston"],["Lot Size (Acre / SF)","E",1.92],["Building SF","F",9460],["Purchase Price","F",4000000],["Market Rent","E",1.33]] as const){const r=p.rowCount+2;p.getCell(`B${r}`).value=label;p.getCell(`${col}${r}`).value=value;}
+  for(const [label,col,value] of [["Address","F","1301-1347 Lathrop"],["City, State","F","Houston"],["Lot Size (Acre / SF)","E",1.92],["Building SF","F",9460],["Purchase Price","F",4000000],["Rent heading","E","$ PSF / Mo."],["Market Rent","E",1.33]] as const){const r=p.rowCount+2;p.getCell(`B${r}`).value=label;p.getCell(`${col}${r}`).value=value;}
   const r=await parseReturnsSummary(Buffer.from(await w.xlsx.writeBuffer()),"3000 Amwiler Rd");expect(r.marketRentPsfMo).toBe(1.33);expect(r.marketRentSourceBasis).toMatch(/PSF \/ Mo/);expect(r.warnings.join(" ")).toMatch(/discrepancy/);const d:any=deal();d.uw_versions[0].returns_summary=r;expect(modelIdentity(d).authoritative).toBe(false);
  });
 });
