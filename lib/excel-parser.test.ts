@@ -18,6 +18,7 @@ function proForma(workbook: ExcelJS.Workbook, opts: { address?: string; goingIn?
   s.getCell("B20").value = "Building SF"; s.getCell("F20").value = 7500;
   s.getCell("B33").value = "Purchase Price"; s.getCell("F33").value = 3000000;
   s.getCell("B52").value = "Total All-in Cost"; s.getCell("F52").value = 3365356;
+  s.getCell("B54").value = "Total Uses"; s.getCell("F54").value = 3539850;
   s.getCell("B77").value = "Going-in Cap Rate (tax adj.)"; s.getCell("C77").value = opts.goingIn ?? 0.05;
   s.getCell("B81").value = "Yield on Cost at Exit"; s.getCell("C81").value = 0.0894;
   s.getCell("B151").value = "Month of Sale"; s.getCell("D151").value = 48;
@@ -73,7 +74,7 @@ describe("workbook upload messages", () => {
   });
   it("reads every return from the visible Pro Forma by row label", async () => {
     const result = await ios(0.05);
-    expect(result).toMatchObject({ purchasePrice: 3000000, allInCost: 3365356, goingInYieldPct: 0.05, stabilizedReturnOnCostPct: 0.0894, exitCapPct: 0.0675,
+    expect(result).toMatchObject({ purchasePrice: 3000000, allInCost: 3539850, goingInYieldPct: 0.05, stabilizedReturnOnCostPct: 0.0894, exitCapPct: 0.0675,
       marketRentPsfMo: 3.68, holdPeriodYears: 4, irrPct: 0.1977, equityMultiple: 2.01, stabilizedCashOnCashPct: 0.0723,
       sourceIdentity: { address: "100 Test Road", city: "Houston, TX", acres: 3.97, buildingSf: 7500 } });
     expect(result.warnings).toEqual([]);

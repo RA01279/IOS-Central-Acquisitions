@@ -135,7 +135,9 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
     const months = read("Month of Sale", D, "holdPeriodYears");
     const summary: Pick<ReturnsSummary, FieldKey> = {
       purchasePrice: read("Purchase Price", F, "purchasePrice"),
-      allInCost: read("Total All-in Cost", F, "allInCost"),
+      // "Total Uses" (purchase, fees and vacant carry) is the basis Pro Forma itself
+      // divides by for yield on cost and cap rate vs. all-in cost.
+      allInCost: read("Total Uses", F, "allInCost"),
       goingInYieldPct: read("Going-in Cap Rate (tax adj.)", C, "goingInYieldPct"),
       stabilizedReturnOnCostPct: read("Yield on Cost at Exit", C, "stabilizedReturnOnCostPct"),
       exitCapPct: read("Exit Cap", F, "exitCapPct"),
