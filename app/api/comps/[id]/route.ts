@@ -183,6 +183,7 @@ async function handlePATCH(req: NextRequest, props: { params: Promise<{ id: stri
   // has to stick: marked 'manual', and the re-geocode below is skipped
   // entirely, or correcting the address would immediately throw the pin away.
   const pinned = "latitude" in body || "longitude" in body;
+  if(existing.is_portfolio && pinned)return NextResponse.json({error:'Locate constituent properties individually; a portfolio has no single property pin.'},{status:400});
   if (pinned) {
     if (!("latitude" in body) || !("longitude" in body) || !validCoordinates(body)) {
       return NextResponse.json({ error: "Enter both valid coordinates: latitude -90 to 90 and longitude -180 to 180. Blank values and 0, 0 cannot locate a comp." }, { status: 400 });
@@ -242,7 +243,7 @@ async function handlePATCH(req: NextRequest, props: { params: Promise<{ id: stri
     // the lookup or the coordinates stay where they were.
     ("state" in body && update.state !== existing.state) ||
     ("market" in body && update.market !== existing.market);
-  if (addressChanged && !pinned && merged.address) {
+  if (addressChanged && !pinned && merged.address && !existing.is_portfolio) {
     const g = await geocodeAddress(
       [merged.address as string, merged.city as string, merged.market as string],
       { state: merged.state as string | null, requirePrecise: true }

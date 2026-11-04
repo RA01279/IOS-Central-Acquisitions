@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { asPropertyReport, assessSheet, parseCompInput } from "@/lib/comps/parse";
 import { workbookToDelimitedText } from "@/lib/comps/fromWorkbook";
+import { pdfSaleTables } from "@/lib/comps/fromPdf";
+import { groupPortfolioSales, applyPortfolioHints } from "@/lib/comps/portfolios";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +56,22 @@ export async function POST(req: NextRequest) {
     if (body.fileBase64) {
       const buffer = Buffer.from(String(body.fileBase64), "base64");
       const fileName = String(body.fileName ?? "");
+      if (/\.pdf$/i.test(fileName)) {
+        if(buffer.length>20*1024*1024) return NextResponse.json({error:'PDF exceeds 20 MB.'},{status:400});
+        const pdf=await pdfSaleTables(buffer);
+        if(!pdf.rows.length)return NextResponse.json({requiresHelper:true,comps:[],warnings:['No supported sale grid found. Use the OM/helper reader for this layout.']});
+        const parsed=parseCompInput({text:pdf.text},{...context,defaultCompType:'sale'});
+        if(parsed.comps.length!==pdf.rows.length)throw Error('PDF row reconciliation failed. Review the original before importing.');
+        const sourceRows=parsed.comps.map((c,i)=>{
+          const row=pdf.rows[i],metrics=row.sourceMetrics,warnings=[...c.warnings];
+          const quotedCap=metrics['Going In Cap Rate'].match(/^([\d.]+)%\*?$/);
+          if(metrics['Going In Cap Rate'].includes('*'))warnings.push('Going-in cap rate has a source footnote. Return-on-cost and mark-to-market figures remain separate quoted evidence.');
+          for(const match of (c.notes??'').matchAll(/([\d.]+)%\s*(?:FAR|coverage)/gi))if(c.coveragePct!=null&&Math.abs(Number(match[1])/100-c.coveragePct)>.0001)warnings.push(`Table coverage (${(c.coveragePct*100).toFixed(2)}%) differs from narrative (${match[1]}%). Both are retained for review.`);
+          return {...c,capRate:quotedCap?Number(quotedCap[1])/100:c.capRate,warnings,sourcePage:row.page,sourceRow:row.sourceRow,originalAddress:row.originalAddress,sourceMetrics:metrics,sourceRef:body.sourceRef||fileName,assetClass:body.assetClass||(/\bIOS\b/i.test(`${c.projectName} ${c.notes}`)?'ios':'industrial'),notes:[c.notes,`Source page ${row.page}, row ${row.sourceRow}.`,...Object.entries(metrics).map(([k,v])=>`${k}: ${v}`)].filter(Boolean).join('\n')};
+        });
+        const comps=groupPortfolioSales(sourceRows);
+        return NextResponse.json({comps,source:'import',sourceRows:pdf.rows.length,warnings:[`Read ${pdf.rows.length} source rows as ${comps.length} transactions. Component rows are linked properties, not additional transactions.`,...parsed.warnings]});
+      }
       if (!/\.(xlsx|xlsm|csv)$/i.test(fileName)) {
         return NextResponse.json(
           { error: `Can't read "${fileName}". Drop an .xlsx, .xlsm or .csv, or paste the table instead.` },
@@ -107,7 +125,7 @@ export async function POST(req: NextRequest) {
           perSheet.push({ name: sheet.name, count: 0, warnings: [], propertyReport: true });
           continue;
         }
-        for (const c of parsed.comps) comps.push({ ...c, sheet: sheet.name });
+        for (const c of groupPortfolioSales(parsed.comps)) comps.push({ ...c, sheet: sheet.name });
         perSheet.push({ name: sheet.name, count: parsed.comps.length, warnings: parsed.warnings });
       }
 
@@ -159,7 +177,8 @@ export async function POST(req: NextRequest) {
 
     // A table from the comp-import agent arrives as leases or sales already.
     const hint = body.defaultCompType === "lease" || body.defaultCompType === "sale" ? body.defaultCompType : undefined;
-    const result = parseCompInput({ html: body.html, text: body.text }, { ...context, defaultCompType: hint });
+    const parsedResult = parseCompInput({ html: body.html, text: body.text }, { ...context, defaultCompType: hint });
+    const result = {...parsedResult,comps:groupPortfolioSales(applyPortfolioHints(parsedResult.comps,body.portfolioHints))};
     if (body.source === "email") {
       const sourceRef = typeof body.sourceRef === "string" ? body.sourceRef.slice(0, 12000) : null;
       for (const comp of result.comps) comp.sourceRef = sourceRef || comp.sourceRef;

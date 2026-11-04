@@ -12,6 +12,7 @@
     "outlook:helper": "node scripts/outlook-helper/run.mjs"
   },
   "dependencies": {
+    "@napi-rs/canvas": "0.1.100",
     "@supabase/ssr": "^0.5.1",
     "@supabase/supabase-js": "^2.45.0",
     "docxtemplater": "^3.69.3",

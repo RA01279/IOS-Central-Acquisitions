@@ -4,6 +4,9 @@ import { getServiceClient } from "@/lib/supabase";
 import { ASSET_CLASS_LABELS } from "@/lib/deals";
 import { isUsableForDistance } from "@/lib/geocode";
 import { fmtTotalMonthly, rateLines, rateViews } from "@/lib/comps/rates";
+import PortfolioSaleDetails from '@/components/PortfolioSaleDetails';
+import CompsMap from '@/components/CompsMap';
+import {portfolioMapRows} from '@/lib/comps/portfolios';
 import Nav from "@/components/Nav";
 import BackButton from "@/components/BackButton";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
@@ -85,6 +88,8 @@ export default async function CompDetailPage(props: { params: Promise<{ id: stri
   const isSale = comp.comp_type === "sale";
   const acres = comp.lot_sf ? Number(comp.lot_sf) / SQFT_PER_ACRE : null;
   const date = isSale ? comp.closed_on : comp.date_commenced;
+  const {data:constituents,error:constituentError}=comp.is_portfolio?await supabase.from('comp_sale_properties').select('*').eq('sale_comp_id',comp.id).order('source_row'):{data:[],error:null};
+  if(constituentError)throw Error(`Could not load constituent properties: ${constituentError.message}`);
 
   // Nearby comps of the same type, nearest first -- the immediate "what else
   // traded around here" question, answered without leaving the page.
@@ -93,6 +98,7 @@ export default async function CompDetailPage(props: { params: Promise<{ id: stri
     .select("id, address, project_name, comp_type, latitude, longitude, sale_price, rent, rent_basis, building_sf, closed_on, date_commenced")
     .eq("comp_type", comp.comp_type)
     .eq("status", "confirmed")
+    .eq('is_portfolio',false).is('portfolio_transaction_id',null)
     .neq("id", comp.id)
     .not("latitude", "is", null);
 
@@ -166,6 +172,8 @@ export default async function CompDetailPage(props: { params: Promise<{ id: stri
           </div>
         )}
 
+        {comp.portfolio_transaction_id&&<p className="hint">Source-reported component of a portfolio transaction. <Link href={`/comps/${comp.portfolio_transaction_id}`}>View the parent transaction</Link>. This observation is not counted again in property comparisons.</p>}
+        {comp.is_portfolio&&<><PortfolioSaleDetails transaction={comp} properties={constituents??[]}/><CompsMap comps={portfolioMapRows([comp],constituents??[])}/></>}
         <section className="panel">
           <h2>{isSale ? "Sale" : "Lease"}</h2>
           <div className="metrics-grid">

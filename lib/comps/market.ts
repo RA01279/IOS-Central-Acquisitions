@@ -65,6 +65,7 @@ export interface CompRate {
 
 /** A comp's rate in its class's market unit, or null when it can't be derived. */
 export function compRate(c: MarketComp, cls: MarketClass, opts: { lotAcres?: boolean } = {}): CompRate | null {
+  if(c.is_portfolio || c.portfolio_transaction_id)return null;
   if (c.comp_type === "sale") {
     const price = num(c.sale_price);
     if (!price || price <= 0) return null;

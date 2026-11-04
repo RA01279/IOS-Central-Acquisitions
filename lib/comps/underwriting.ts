@@ -260,6 +260,7 @@ export function compUnderwriting(
   subject: Subject,
   opts: { today?: Date; holds?: number[]; /** Fraction, e.g. 0.065. */ exitCap?: number | null; ios?: boolean } = {}
 ): CompUnderwriting {
+  comps=comps.filter(c=>!c.is_portfolio&&!c.portfolio_transaction_id);
   const today = opts.today ?? new Date();
   const acres = subject.lotSf ? subject.lotSf / SQFT_PER_ACRE : null;
   const sf = subject.buildingSf;

@@ -19,6 +19,8 @@ export type ValueBasis = "building" | "land";
 const SQFT_PER_ACRE = 43560;
 
 export interface CompRecord {
+  is_portfolio?: boolean;
+  portfolio_transaction_id?: string | null;
   id: string;
   comp_type: CompType;
   address: string;
@@ -224,6 +226,7 @@ function acresOf(comp: CompRecord): number | null {
  * than invented.
  */
 export function unitValue(comp: CompRecord, basis: ValueBasis): number | null {
+  if(comp.is_portfolio || comp.portfolio_transaction_id)return null;
   const bldg = comp.building_sf ? Number(comp.building_sf) : null;
   const land = comp.lot_sf ? Number(comp.lot_sf) : null;
   const denom = basis === "building" ? bldg : land;
@@ -315,6 +318,7 @@ export function scoreComps(
 
   const scored: ScoredComp[] = comps
     .filter((c) => c.comp_type === compType)
+    .filter(c=>!c.is_portfolio&&!c.portfolio_transaction_id)
     .map((c) => {
       // A CENTROID IS NOT A LOCATION.
       //

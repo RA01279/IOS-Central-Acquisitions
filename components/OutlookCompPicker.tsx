@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { pdfText } from "@/lib/pdf-text";
-import { aiReadComps, readableText, type CompSourcePart } from "@/lib/comps/ai-read";
+import { aiReadComps, readableText, directPdfComps, type CompSourcePart } from "@/lib/comps/ai-read";
 
 export type { CompSourcePart };
 type Attachment = { path: string; name: string; size: number };
@@ -94,6 +94,8 @@ export default function OutlookCompPicker({ onSelect, disabled, hasDrafts }: {
         if (!signed.ok) throw new Error(urlError || "Attachment expired.");
         const buf = await (await fetch(url)).arrayBuffer();
         if (/\.pdf$/i.test(f.path)) {
+          const direct=await directPdfComps(buf,f.name,`${ref} | ${f.name}`);
+          if(direct){parts.push(direct);continue;}
           const pdf = await pdfText(buf, 90000);
           if (pdf.scanned) { parts.push({ label: f.name, payload: null, warnings: ["A scanned PDF with no text layer, so it can't be read. Enter its comps by hand."] }); continue; }
           setStep(`Reading ${f.name} with the Hopper helper… (usually under a minute)`);
