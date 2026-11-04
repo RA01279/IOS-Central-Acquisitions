@@ -75,7 +75,7 @@ describe("workbook upload messages", () => {
   it("reads every return from the visible Pro Forma by row label", async () => {
     const result = await ios(0.05);
     expect(result).toMatchObject({ purchasePrice: 3000000, allInCost: 3539850, goingInYieldPct: 0.05, stabilizedReturnOnCostPct: 0.0894, exitCapPct: 0.0675,
-      marketRentPsfMo: 3.68, holdPeriodYears: 4, irrPct: 0.1977, equityMultiple: 2.01, stabilizedCashOnCashPct: 0.0723,
+      marketRentPsfMo: 3.68, holdPeriodYears: 4, irrPct: 0.1977, equityMultiple: 2.01, stabilizedCashOnCashPct: 0.0723, cashOnCashBasis: "average",
       sourceIdentity: { address: "100 Test Road", city: "Houston, TX", acres: 3.97, buildingSf: 7500 } });
     expect(result.warnings).toEqual([]);
   });

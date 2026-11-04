@@ -35,11 +35,13 @@ export interface ReturnsSummary {
     /** Internal workbook identity and the unit evidence behind normalized rent. */
     sourceProperty?: string | null;
     marketRentSourceBasis?: string | null;
+    /** What stabilizedCashOnCashPct holds: the levered average over the hold (Pro Forma, industrial) or, in versions saved before Nov 4 2026, the stabilized year. */
+    cashOnCashBasis?: "average" | "stabilized";
     sourceIdentity?: { address: string | null; city: string | null; acres: number | null; buildingSf: number | null };
     identityResolution?: { fingerprint: string; outcome: "accepted" | "wrong_upload"; reason: string; actor: string; at: string };
 }
 
-type FieldKey = keyof Omit<ReturnsSummary, "warnings" | "sourceProperty" | "marketRentSourceBasis" | "sourceIdentity" | "identityResolution">;
+type FieldKey = keyof Omit<ReturnsSummary, "warnings" | "sourceProperty" | "marketRentSourceBasis" | "cashOnCashBasis" | "sourceIdentity" | "identityResolution">;
 
 // ---------- shared cell-reading helper ----------
 
@@ -169,7 +171,7 @@ function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
     const lotRow = labelRows(sheet, "Lot Size (Acre / SF)")[0], bldgRow = labelRows(sheet, "Building SF")[0];
     const acres = lotRow ? readCellValue(sheet.getRow(lotRow).getCell(E), "Identity acres", warnings) : null;
     const buildingSf = bldgRow ? readCellValue(sheet.getRow(bldgRow).getCell(F), "Identity building SF", warnings) : null;
-    return { ...summary, sourceProperty: address, sourceIdentity: { address, city, acres, buildingSf }, marketRentSourceBasis: summary.marketRentPsfMo != null ? `Pro Forma Market Rent (${rentBasis})` : null, warnings };
+    return { ...summary, sourceProperty: address, sourceIdentity: { address, city, acres, buildingSf }, marketRentSourceBasis: summary.marketRentPsfMo != null ? `Pro Forma Market Rent (${rentBasis})` : null, cashOnCashBasis: "average", warnings };
 }
 
 // ---------- Industrial template ("_Upload_") ----------
@@ -227,7 +229,7 @@ function parseIndustrialTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
         result.holdPeriodYears = result.holdPeriodYears / 12;
   }
 
-  return { ...(result as Omit<ReturnsSummary, "warnings">), warnings };
+  return { ...(result as Omit<ReturnsSummary, "warnings">), cashOnCashBasis: "average", warnings };
 }
 
 // ---------- entry point ----------

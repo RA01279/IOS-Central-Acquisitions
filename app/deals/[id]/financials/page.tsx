@@ -136,7 +136,8 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
             <Stat label="Going-in yield" value={fmtPct(returns.goingInYieldPct)} />
             <Stat label="Exit cap" value={fmtPct(returns.exitCapPct)} />
             <Stat label="Hold" value={returns.holdPeriodYears != null ? `${returns.holdPeriodYears} yrs` : "—"} />
-            <Stat label="Avg. cash-on-cash" value={fmtPct(returns.stabilizedCashOnCashPct)} />
+            {/* Versions saved before Nov 4 2026 (IOS) hold the stabilized year, not the average. */}
+            <Stat label={returns.cashOnCashBasis === "average" ? "Avg. cash-on-cash" : "Stab. cash-on-cash"} value={fmtPct(returns.stabilizedCashOnCashPct)} />
           </div>
         ) : sourceVersion ? (
           // An upload exists but was marked a wrong upload. Never read as "nothing uploaded".
