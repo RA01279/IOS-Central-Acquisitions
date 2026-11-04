@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelSummary } from "./model";
 import type { NarrativeKey, NarrativeSection } from "../agents/ic-narrative";
+import { projectToView, type MarketCanvas, type CanvasRow, type MapView } from "./canvas";
 import { MUTED, NAVY, R_NS, REL_NS, SlideBuilder, type Picture, type Para } from "./pptx-kit";
 import { REFERENCE_EXHIBIT_SLIDES, validateReference, referenceBudget } from "./reference";
 
@@ -67,8 +68,10 @@ export interface IcDeckInput {
   site?: {
     parcel: { acres: number; parcelCount: number; dealAcres: number | null; matchesDeal: boolean | null; owner: string | null; source: string } | null;
     highway: { caption: string; source: string } | null;
+    /** IOS inventory around the site (slides 12-15), with each map's legend colors. */
+    canvas?: (MarketCanvas & { view: MapView; legends: Record<"occupancy" | "tenantUse" | "owner", Record<string, string>> }) | null;
   };
-  maps: Partial<Record<"coverPhoto" | "coverAerial" | "location" | "aerial" | "aerialClose" | "leaseComps" | "saleComps" | "portfolio", Picture>>;
+  maps: Partial<Record<"coverPhoto" | "coverAerial" | "location" | "aerial" | "aerialClose" | "leaseComps" | "saleComps" | "portfolio" | "canvasOccupancy" | "canvasTenancy" | "canvasOwnership", Picture>>;
   preparedOn: Date;
   reference?: { bytes: Uint8Array; name: string };
 }
@@ -343,7 +346,72 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   }
 
   // 12-15. Market canvas -------------------------------------------------
-  {
+  const cv = input.site?.canvas;
+  if (cv) {
+    const where = deal.submarket || cv.submarket || deal.market || cityState;
+    const mk = drafted("market");
+    const ac2 = (v: number | null) => (v == null ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const stale = Date.now() - Date.parse(cv.source.updated) > 365 * 86400000;
+    const sourceLine = `Dalfen IOS inventory (ArcGIS: ${cv.source.title}, updated ${cv.source.updated}) — ${cv.total.count} properties within ${cv.radiusMiles} miles of the site. Vacancy is by acreage.`;
+    const sourceRuns = [{ text: sourceLine, color: MUTED }, ...(stale ? [{ text: " Inventory is over a year old — confirm it is current.", color: "B4541A", bold: true }] : [])];
+
+    // 12. Tables: tenant usage and owner profile, as in the Golden Spike canvas.
+    const s = slide(`${where} IOS Market Canvas`);
+    const cols = ["", "Properties", "Gross AC", "% of Total", "Occupied AC", "Vacancy %", "Mean AC", "Std. Dev. AC"];
+    const row = (r: CanvasRow, label = r.label) => [label, n0(r.count), ac2(r.acres), pct(r.share), ac2(r.occupiedAcres), pct(r.vacancy), ac2(r.mean), ac2(r.stdev)];
+    const opts = (n: number) => ({ size: 8, headerSize: 8, widths: [2.5, 0.95, 1.0, 0.95, 1.05, 0.9, 0.85, 0.95], align: ["l", "r", "r", "r", "r", "r", "r", "r"] as Array<"l" | "r">, emphasis: [n], rowHeight: 0.235 });
+    const tenantRows = cv.tenantUse.slice(0, 12);
+    s.text([{ runs: [{ text: "Tenant Usage", bold: true, color: NAVY }] }], { x: 0.3, y: 1.4, w: 9.4, h: 0.27 }, { size: 10 });
+    let y = s.table(cols, [...tenantRows.map((r) => row(r)), row(cv.total, "Total")], { x: 0.3, y: 1.67, w: 9.4, h: 3.2 }, opts(tenantRows.length));
+    s.text([{ runs: [{ text: "Owner Profile", bold: true, color: NAVY }] }], { x: 0.3, y: y + 0.1, w: 9.4, h: 0.27 }, { size: 10 });
+    y = s.table(cols, [...cv.ownerType.map((r) => row(r)), row(cv.total, "Total")], { x: 0.3, y: y + 0.37, w: 9.4, h: 1.3 }, opts(cv.ownerType.length));
+    s.text([{ runs: sourceRuns }], { x: 0.3, y: Math.min(y + 0.08, 6.5), w: 9.4, h: 0.4 }, { size: 7.5 });
+    s.notes.push(`Market canvas source: ${sourceLine}`, "Occupied acreage, verified occupancy, tenant use and owner type are as recorded in the inventory; categories left blank there are counted as Other.");
+
+    // 13-15. Maps colored by occupancy / tenant use / owner type, legend on the right.
+    const mapSlide = (sub: string, key: "canvasOccupancy" | "canvasTenancy" | "canvasOwnership", legend: Record<string, string>, rows: CanvasRow[], withMarket: boolean, by: "occupancy" | "tenantUse" | "owner") => {
+      const m = slide(`${where} IOS Market Canvas – ${sub}`);
+      const pic = input.maps[key];
+      if (pic) {
+        // Native dots over the fixed map view: crisp, editable, any number of colors.
+        const at = m.picture(pic, { x: 0.3, y: 1.42, w: 7.1, h: 5.0 });
+        const d = 0.085;
+        const known = by === "occupancy" ? new Set(["Leased", "Vacant", "Partially Leased"]) : null;
+        let off = 0;
+        for (const p of cv.points) {
+          const [fx, fy] = projectToView(cv.view, p.lat, p.lng);
+          if (fx < 0.01 || fx > 0.99 || fy < 0.01 || fy > 0.99) { off++; continue; }
+          const cat = known && !known.has(p.occupancy) ? "Other" : p[by];
+          m.rect({ x: at.x + fx * at.w - d / 2, y: at.y + fy * at.h - d / 2, w: d, h: d }, legend[cat] ?? "A0A0A0", "FFFFFF", "ellipse");
+        }
+        const [sx, sy] = projectToView(cv.view, cv.view.lat, cv.view.lng);
+        m.rect({ x: at.x + sx * at.w - 0.09, y: at.y + sy * at.h - 0.09, w: 0.18, h: 0.18 }, NAVY, "FFFFFF", "ellipse");
+        m.text([{ runs: [{ text: "S", bold: true, color: "FFFFFF" }], align: "ctr" }], { x: at.x + sx * at.w - 0.12, y: at.y + sy * at.h - 0.11, w: 0.24, h: 0.22 }, { size: 7, anchor: "ctr", autofit: false });
+        if (off) m.notes.push(`${off} inventory properties fall outside the map frame and are counted in the tables but not plotted.`);
+      } else m.placeholder(`${where} IOS market canvas map — ${sub.toLowerCase()}.`, { x: 0.3, y: 1.42, w: 7.1, h: 5.0 });
+      let ly = 1.45;
+      const shown = rows.slice(0, 12);
+      for (const r of shown) {
+        m.rect({ x: 7.55, y: ly + 0.06, w: 0.13, h: 0.13 }, legend[r.label] ?? "A0A0A0", undefined, "ellipse");
+        m.text([{ runs: [{ text: r.label }, { text: `  ${r.count}`, color: MUTED }] }], { x: 7.73, y: ly, w: 2.05, h: 0.25 }, { size: 8, autofit: false });
+        ly += 0.25;
+      }
+      m.rect({ x: 7.55, y: ly + 0.04, w: 0.17, h: 0.17 }, NAVY, "FFFFFF", "ellipse");
+      m.text([{ runs: [{ text: "S", bold: true }, { text: `  Subject site; ring = ${cv.radiusMiles} mi`, color: MUTED }] }], { x: 7.73, y: ly, w: 2.05, h: 0.25 }, { size: 8, autofit: false });
+      ly += 0.4;
+      if (withMarket && mk) {
+        m.text([{ runs: [{ text: "Market", bold: true, color: NAVY }, DRAFT_TAG] }, ...mk.bullets.slice(0, 4).map((b): Para => ({ runs: [{ text: b }], bullet: true }))], { x: 7.5, y: ly, w: 2.3, h: 6.75 - ly }, { size: 7.5 });
+        noteDraft(m, "market", "Market");
+      }
+      m.text([{ runs: sourceRuns }], { x: 0.3, y: 6.47, w: 7.1, h: 0.45 }, { size: 7 });
+    };
+    // Occupancy categories in a fixed order, counted from the plotted points.
+    const occCount = (k: string) => cv.points.filter((p) => (k === "Other" ? !["Leased", "Vacant", "Partially Leased"].includes(p.occupancy) : p.occupancy === k)).length;
+    const occRows = ["Leased", "Vacant", "Partially Leased", "Other"].map((k) => ({ label: k, count: occCount(k) } as CanvasRow)).filter((r) => r.count > 0);
+    mapSlide("Occupancy Breakdown", "canvasOccupancy", cv.legends.occupancy, occRows, true, "occupancy");
+    mapSlide("Tenancy Breakdown", "canvasTenancy", cv.legends.tenantUse, cv.tenantUse, false, "tenantUse");
+    mapSlide("Ownership Breakdown", "canvasOwnership", cv.legends.owner, cv.ownerType, false, "owner");
+  } else {
     const where = deal.submarket || deal.market || cityState;
     const mk = drafted("market");
     for (const sub of ["", " – Occupancy Breakdown", " – Tenancy Breakdown", " – Ownership Breakdown"]) {

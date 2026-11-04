@@ -50,8 +50,8 @@ export class SlideBuilder {
 
   constructor(readonly number: number) {}
 
-  rect(b: Box, fill: string, line?: string) {
-    this.shapes += `<p:sp><p:nvSpPr><p:cNvPr id="${this.id++}" name="Panel"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${emu(b.x)}" y="${emu(b.y)}"/><a:ext cx="${emu(b.w)}" cy="${emu(b.h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>${line ? `<a:ln w="9525"><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln>` : "<a:ln><a:noFill/></a:ln>"}</p:spPr></p:sp>`;
+  rect(b: Box, fill: string, line?: string, shape: "rect" | "ellipse" = "rect") {
+    this.shapes += `<p:sp><p:nvSpPr><p:cNvPr id="${this.id++}" name="${shape === "rect" ? "Panel" : "Dot"}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${emu(b.x)}" y="${emu(b.y)}"/><a:ext cx="${emu(b.w)}" cy="${emu(b.h)}"/></a:xfrm><a:prstGeom prst="${shape}"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>${line ? `<a:ln w="9525"><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln>` : "<a:ln><a:noFill/></a:ln>"}</p:spPr></p:sp>`;
   }
 
   text(input: TextInput, b: Box, o: { size?: number; color?: string; bold?: boolean; fill?: string; anchor?: "t" | "ctr" | "b"; align?: "l" | "ctr" | "r"; autofit?: boolean; name?: string } = {}) {
@@ -97,15 +97,17 @@ export class SlideBuilder {
     return b.y + rowH * (rows.length + 1);
   }
 
-  /** Picture scaled to fit inside the box, centred. */
-  picture(pic: Picture, b: Box) {
+  /** Picture scaled to fit inside the box, centred. Returns where it landed. */
+  picture(pic: Picture, b: Box): Box {
     const [iw, ih] = imageSize(pic.bytes, pic.ext);
     const scale = Math.min(b.w / iw, b.h / ih);
     const w = iw * scale, h = ih * scale;
+    const placed = { x: b.x + (b.w - w) / 2, y: b.y + (b.h - h) / 2, w, h };
     const rid = `rIdImg${this.pictures.length + 1}`;
     this.pictures.push({ rid, bytes: pic.bytes, ext: pic.ext });
     this.notes.push(`Exhibit source: ${pic.source}`);
     this.shapes += `<p:pic><p:nvPicPr><p:cNvPr id="${this.id++}" name="Exhibit" descr="${esc(pic.source)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${emu(b.x + (b.w - w) / 2)}" y="${emu(b.y + (b.h - h) / 2)}"/><a:ext cx="${emu(w)}" cy="${emu(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+    return placed;
   }
 
   /** Grey box saying exactly what exhibit belongs here. */

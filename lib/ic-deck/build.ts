@@ -19,6 +19,7 @@ import { compReview } from "@/lib/comps/reviewed-evidence";
 import { loadSavedDeckModel } from "@/lib/ic-deck/saved-model";
 import { validateReference, referenceNarrative, referenceBudget } from "@/lib/ic-deck/reference";
 import { bindModelSubject } from "@/lib/ic-deck/model-subject";
+import { marketCanvas, canvasMapView, ringPath, tenantColors, OCCUPANCY_COLORS, OWNER_COLORS, type MarketCanvas, type MapView } from "@/lib/ic-deck/canvas";
 import { parcelFootprint, highwayAccess, highwayCaption, parcelPaths, type ParcelFootprint, type HighwayAccess } from "@/lib/ic-deck/site-geo";
 
 /** Resolve within ms or give up with null -- these exhibits never hold up the deck. */
@@ -189,10 +190,10 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
 
   // ---- maps (in parallel; each falls back to a placeholder) -----------------
   const maps: Record<string, Picture | undefined> = {};
-  let parcel: ParcelFootprint | null = null, highway: HighwayAccess | null = null;
+  let parcel: ParcelFootprint | null = null, highway: HighwayAccess | null = null, canvas: MarketCanvas | null = null, canvasView: MapView | null = null;
   if (lat !== null && lng !== null) {
     const dealAcres = model.property.acres ?? (prop?.lot_sf ? Number(prop.lot_sf) / 43560 : null);
-    [parcel, highway] = await Promise.all([within(parcelFootprint(lat, lng, dealAcres), 20000), within(highwayAccess(lat, lng), 40000)]);
+    [parcel, highway, canvas] = await Promise.all([within(parcelFootprint(lat, lng, dealAcres), 20000), within(highwayAccess(lat, lng), 40000), within(marketCanvas(lat, lng), 45000)]);
   }
   if (lat !== null && lng !== null) {
     const at = `${lat},${lng}`, pin = `color:red|${at}`;
@@ -217,6 +218,15 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
     ];
     if (leaseComps.length) jobs.push(["leaseComps", staticMap({ size: sized(9.4, 5.45), markers: [pin, ...markers(leaseComps as any, "blue")] }, "png", src("road map with Hopper lease comps"))]);
     if (saleComps.length) jobs.push(["saleComps", staticMap({ size: sized(9.4, 5.45), markers: [pin, ...markers(saleComps as any, "green")] }, "png", src("road map with Hopper sale comps"))]);
+    if (canvas) {
+      // One shared view; the deck plots the inventory dots over it (see canvasMapView).
+      const [w, h] = sized(7.1, 5.0).split("x").map(Number);
+      canvasView = canvasMapView({ lat, lng }, canvas.radiusMiles, w, h);
+      const view = canvasView;
+      const shot = staticMap({ center: `${view.lat},${view.lng}`, zoom: String(view.zoom), size: `${w}x${h}`, maptype: "hybrid", style: ["feature:poi|visibility:off", "feature:transit|visibility:off"], path: ringPath({ lat, lng }, canvas.radiusMiles) }, "jpeg",
+        `Google satellite imagery (${canvas.radiusMiles}-mile ring around the pin) with Dalfen ArcGIS inventory points: ${canvas.source.title}, updated ${canvas.source.updated}.`);
+      jobs.push(["canvasOccupancy", shot], ["canvasTenancy", shot], ["canvasOwnership", shot]);
+    }
     if (assets.length) jobs.push(["portfolio", staticMap({ size: sized(9.4, 5.45), markers: [pin, ...markers(assets, "blue")] }, "png", src("road map with Dalfen owned assets"))]);
     for (const [k, v] of await Promise.all(jobs.map(async ([k, p]) => [k, await p] as const))) maps[k] = v;
   }
@@ -234,7 +244,8 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
     leaseComps, saleComps, compRadiusMiles: COMP_POLICY.radiusMiles, compRadii, assets, maps, narrative, reference, preparedOn: new Date(),
     site: {
       parcel: parcel ? { acres: parcel.acres, parcelCount: parcel.parcelCount, dealAcres: parcel.dealAcres, matchesDeal: parcel.matchesDeal, owner: parcel.owner, source: parcel.source } : null,
-      highway: highway ? { caption: highwayCaption(highway), source: "Nearest numbered highway from OpenStreetMap; drive distance and time from Google Routes (no traffic), from the Hopper-recorded pin." } : null,
+      canvas: canvas && canvasView ? { ...canvas, view: canvasView, legends: { occupancy: OCCUPANCY_COLORS, tenantUse: tenantColors(canvas.tenantUse.map((r) => r.label)), owner: OWNER_COLORS } } : null,
+      highway: highway ? { caption: highwayCaption(highway), source: "Nearest numbered highway from Census TIGERweb; drive distance and time from Google Routes (no traffic), from the Hopper-recorded pin." } : null,
     },
   });
   const name = `${(prop?.address ?? "Deal").replace(/[^\w .-]+/g, "").trim()} - IC Exec Summary (draft).pptx`;

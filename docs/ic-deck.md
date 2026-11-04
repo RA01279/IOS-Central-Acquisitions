@@ -16,7 +16,8 @@ On a deal page, **IC Deck — Executive Summary** builds the 23-slide executive 
 | Hopper owned assets within 50 mi | Portfolio context and summary |
 | Google Static Maps of the recorded pin | Cover, location, aerials, comp and portfolio maps |
 | IC deck narrative agent (optional, below) | Location highlights, zoning, tenant overview, market — tagged "Agent draft — verify", sources in notes |
-| Not available to Hopper: left as orange `[Analyst: …]` text or grey "Exhibit needed" boxes | Anything the agent could not source, tenant credit, photos, market canvas exhibits, DD costs |
+| Dalfen ArcGIS IOS inventory (below) | Market canvas tables and maps |
+| Not available to Hopper: left as orange `[Analyst: …]` text or grey "Exhibit needed" boxes | Anything the agent could not source, photos, DD costs |
 
 Values are found by row label, not cell address, so they survive inserted rows. Nothing is recalculated except labelled display arithmetic (PSF, coverage).
 
@@ -28,6 +29,7 @@ Every UW upload builds the deck from the saved workbook and files it in the deal
 
 - **Slide 5 parcel outline:** the parcel under the pin plus touching parcels with the same owner of record (TxGIO in Texas; county layers in Georgia). Acreage is the assessor's recorded legal area, compared with the underwritten acreage; a difference over 5% is shown in orange.
 - **Slide 4 highway access:** nearest numbered highway from Census TIGERweb, with Google Routes (no traffic) drive distance and time to the closest point of the highway and to that highway's nearest on-ramp (H and R on the map).
+- **Slides 12-15 market canvas:** every IOS property in the team's ArcGIS inventory within 5 miles of the pin. Slide 12 has the Tenant Usage and Owner Profile tables (properties, gross acres, share, occupied acres, vacancy by acreage, mean and sample std. dev. of site acres); slides 13-15 plot the properties over satellite imagery, colored by verified occupancy, tenant use and owner type (dots are native shapes). Inventories are tried newest first (`CANVAS_SOURCES` in `lib/ic-deck/canvas.ts`: South Central/Houston, Central, Southeast, West, Northeast) and the first with 10+ properties in range is used; one over a year old is flagged. Needs `ARCGIS_API_KEY` or `ARCGIS_USERNAME`/`ARCGIS_PASSWORD`; without them, or outside every inventory, the slides keep their placeholders.
 - **Slide 7 tenant credit:** the research agent's `tenantCredit` section — public information only, sourced, never a credit conclusion.
 
 ## Model checks
