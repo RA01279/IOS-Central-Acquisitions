@@ -21,7 +21,8 @@ export const SALE_COLUMNS = [
 ] as const;
 
 export const COMP_IMPORT_INSTRUCTIONS = `Read the supplied broker comp material -- a PDF comp sheet, an email body, or a table pasted from Outlook, Excel or a website -- and extract every EXECUTED lease and CLOSED sale it reports. The text may be messy: table cells separated by tabs or pipes, cells wrapped onto several lines, a column header row far above its data, merged cells, a comp described in a sentence ("Acme signed 5 yrs on 4.2 ac at 123 Main at $7,500/ac/mo NNN starting March"), or one property block per comp ("Address: ... / Rate: ... / Size: ..."). Work out which value belongs to which comp from the layout as a whole, not line by line. The report field MUST be a serialized JSON object, nothing else, with exactly this shape:
-{"leases":[[cell,...],...],"sales":[[cell,...],...],"notes":[string]}
+{"leases":[[cell,...],...],"sales":[[cell,...],...],"portfolios":[{"saleRow":0,"name":"portfolio name","originalAddress":"original list","sourcePage":1,"sourceRow":1,"reportedPropertyCount":null,"properties":[{"address":"explicit address or range","buildingIdentifier":null,"originalAddress":"original wording","sourcePage":1,"sourceRow":1,"allocationStatus":"unknown","allocatedPrice":null,"buildingSf":null,"acres":null,"capRate":null,"sourceMetrics":{}}],"sourceMetrics":{},"warnings":[]}],"notes":[string]}
+portfolios is optional and empty for ordinary sales. saleRow is the zero-based index in sales. A portfolio is ONE sales row; its aggregate price, areas, date and buyer/seller stay there. Enumerate each explicitly identified address/building in properties. Preserve address ranges as ranges; expand only explicitly enumerated building identifiers (e.g. B, C and F at one street address). Never invent missing addresses to reach a narrative property count. Use null for unallocated property prices/areas/cap rates; never copy or divide portfolio totals onto properties. When individual component rows accompany a portfolio, put their explicitly stated prices/metrics in the corresponding properties with allocationStatus source_reported, retaining their source page/row and quoted text in sourceMetrics. Do not emit those components as additional sales rows. Portfolio-wide cap rates and price-per-unit figures are NOT property observations. Keep source footnotes, return-on-cost and mark-to-market figures distinct in sourceMetrics/warnings.
 Each lease row has these cells, in this order: ${LEASE_COLUMNS.join(" | ")}
 Each sale row has these cells, in this order: ${SALE_COLUMNS.join(" | ")}
 Rules:
@@ -53,6 +54,7 @@ function table(columns: readonly string[], rows: unknown): string | null {
 }
 
 export interface CompImport {
+  portfolios: any[];
   /** Tab-separated, header row first; null when there were none. */
   leases: string | null;
   sales: string | null;
@@ -69,6 +71,7 @@ export function parseCompImport(report: string): CompImport | null {
   }
   if (!raw || typeof raw !== "object" || (!Array.isArray(raw.leases) && !Array.isArray(raw.sales))) return null;
   return {
+    portfolios:Array.isArray(raw.portfolios)?raw.portfolios.slice(0,100):[],
     leases: table(LEASE_COLUMNS, raw.leases),
     sales: table(SALE_COLUMNS, raw.sales),
     notes: Array.isArray(raw.notes) ? raw.notes.filter((n: unknown) => typeof n === "string").slice(0, 10).map((n: string) => n.slice(0, 400)) : [],

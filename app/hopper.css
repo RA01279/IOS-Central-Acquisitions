@@ -2421,3 +2421,27 @@ main.bleed {
 .fin .fin-link-sm {
   font-size: 13px;
 }
+
+/* Portfolio sale review card (comp intake): labels above full-width fields. */
+.portfolio-review .grid-2 label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.portfolio-review .grid-2 :is(input, select) {
+  width: 100%;
+  box-sizing: border-box;
+  font-weight: 400;
+}
+.portfolio-review > h3 {
+  margin: 8px 0 4px;
+}
+.portfolio-review details > summary {
+  cursor: pointer;
+  margin: 8px 0;
+  font-weight: 600;
+}

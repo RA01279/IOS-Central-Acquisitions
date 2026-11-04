@@ -20,6 +20,7 @@ import { parseMoney } from "@/lib/money";
 import { canonicalMarket, escalationFraction } from "@/lib/markets";
 import { invalidateComps } from "@/lib/comps/cache";
 import { conflictingEvidence, sameStoredTransaction } from "@/lib/comps/conflicts";
+import { savePortfolioBatch } from "@/lib/comps/save-portfolio";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
 // POST /api/comps  { comps: [...], source?, sourceRef? }
 // Each comp is the reviewed shape from the UI -- already corrected by a human,
 // so it saves as 'confirmed'.
-async function handlePOST(req: NextRequest) {
+async function handlePOST(req: NextRequest):Promise<NextResponse> {
   const user = await getCurrentUser(req);
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -82,6 +83,16 @@ async function handlePOST(req: NextRequest) {
       { error: `Too many comps in one save (${incoming.length}; max 600). Split the file.` },
       { status: 400 }
     );
+  }
+
+  const portfolios=incoming.filter((c:any)=>c?.portfolio);
+  if(portfolios.length) {
+    const portfolioResult=await savePortfolioBatch(getServiceClient(),portfolios,user.email,body.source||'import',body.sourceRef||null);
+    const ordinary=incoming.filter((c:any)=>!c?.portfolio);
+    if(!ordinary.length)return NextResponse.json(portfolioResult,{status:portfolioResult.saved||portfolioResult.duplicates?200:400});
+    const normal=await handlePOST({json:async()=>({...body,comps:ordinary})} as NextRequest);
+    const n=await normal.json();
+    return NextResponse.json({...n,saved:(n.saved||0)+portfolioResult.saved,duplicates:(n.duplicates||0)+portfolioResult.duplicates,held:n.held||0,savedComps:[...(n.savedComps||[]),...portfolioResult.savedComps],completedKeys:[...(n.completedKeys||[]),...portfolioResult.completedKeys],rejected:[...(n.rejected||[]),...portfolioResult.rejected],failed:[...(n.failed||[]),...portfolioResult.failed]});
   }
 
   // Validate before spending money on geocoding. These mirror the DB's

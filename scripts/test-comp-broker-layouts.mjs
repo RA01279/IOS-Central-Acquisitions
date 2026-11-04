@@ -50,7 +50,7 @@ assert.deepEqual([old.comps[0].acres,old.comps[0].yardAcres,old.comps[0].leaseTe
 assert.equal(old.comps[0].tiPsf,null);assert.ok(old.comps[0].notes.includes('25k'));
 assert.deepEqual([old.comps[1].acres,old.comps[1].yardAcres],[16,10]);
 assert.equal(old.comps[2].rent,null);assert.ok(old.comps[2].warnings.some(w=>w.includes('No rent')));
-assert.ok(readFileSync('components/CompIntakeForm.tsx','utf8').includes('accept=".xlsx,.xlsm,.xls,.csv"'));
+assert.ok(readFileSync('components/CompIntakeForm.tsx','utf8').includes('accept=".xlsx,.xlsm,.xls,.csv,.pdf"'));
 // Optional private workbook verification: pass their folder explicitly, never bundle them.
 if(process.argv[2]) {
   const cases=[['Norfolk IOS Comps (1).xlsx',12,'lease'],['IOS Sale Comps.xlsx',7,'sale'],['IOS NE Sale Comps.xlsx',15,'sale'],['IOS Comps.xls',33,'lease']];

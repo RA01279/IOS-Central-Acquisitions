@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 type Params = { type?: string; class?: string; market?: string; basis?: string };
 
 const MARKET_COLUMNS =
-  "id, comp_type, status, address, market, submarket, asset_class, building_sf, lot_sf, yard_acres, rent, rent_basis, sale_price, date_commenced, closed_on, lease_term_months, free_rent_months, ti_psf, created_at";
+  "id, comp_type, status, address, market, submarket, asset_class, building_sf, lot_sf, yard_acres, rent, rent_basis, sale_price, date_commenced, closed_on, lease_term_months, free_rent_months, ti_psf, created_at, is_portfolio, portfolio_transaction_id";
 
 function fmtRate(v: number | null, unit: string): string {
   if (v === null) return "—";
@@ -104,6 +104,7 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
 
   const today = new Date().toISOString().slice(0, 10);
   const view = marketView(comps, compType, assetClass, { today, face, market });
+  const portfolioCount=comps.filter(c=>c.is_portfolio).length;
   const unit = view.unit;
 
   // Is the repository still being fed? A market read is only as current as the
@@ -142,6 +143,7 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
     <>
       <Nav active="market" />
       <main className="wide">
+        <p className="hint">Property comparisons exclude {portfolioCount} portfolio transactions and their linked component observations. Aggregate consideration and portfolio cap rates are available on the transaction detail pages.</p>
         <div className="page-header">
           <div>
             <h1>Market{market ? `: ${market}` : ""}</h1>
@@ -237,7 +239,7 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
         <section className="panel">
           <h2>{market ? `Submarkets of ${market}` : "By market"} · {unit}{compType === "lease" ? (face ? ", face" : ", effective") : ""}</h2>
           {view.rows.length === 0 ? (
-            <p className="muted">No confirmed {assetClass === "ios" ? "IOS" : "industrial"} {compType} comps with a rate.</p>
+            <p className="muted">No confirmed {assetClass === "ios" ? "IOS" : "industrial"} {compType} property comps with a rate. {portfolioCount} portfolio transactions are kept separately and excluded from property statistics.</p>
           ) : (
             <div className="table-scroll">
               <table className="summary-table">

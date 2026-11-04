@@ -22,6 +22,8 @@ import LocationPreview from "./LocationPreview";
 import CompIntakeCard from "./CompIntakeCard";
 import CompDecimalInput from "./CompDecimalInput";
 import CompDateInput from "./CompDateInput";
+import PortfolioSaleReview from './PortfolioSaleReview';
+import {isAddressRange, type SalePortfolioDraft} from '@/lib/comps/portfolios';
 import { validCoordinates } from "@/lib/location";
 import { isExplicitCompTable } from "@/lib/comps/parse";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
@@ -41,6 +43,7 @@ function locationMessage(r: any): string {
 type CompType = "lease" | "sale";
 
 interface DraftComp {
+  portfolio?: SalePortfolioDraft;
   _key: string;
   state?: string | null;
   assetClass?: string | null;
@@ -187,17 +190,17 @@ export default function CompIntakeForm({
       let lastSeen = null;
       let lastSource = "manual";
       const failures: string[] = [];
-      for (const { label, payload, warnings: partNotes } of parts) {
+      for (const { label, payload, parsed, warnings: partNotes } of parts) {
         const tag = (w: string) => (label && parts.length > 1 ? `${label}: ${w}` : w);
         for (const w of partNotes ?? []) notes.push(tag(w));
-        if (!payload) continue;
-        const res = await fetch("/api/comps/parse", {
+        if (!payload && !parsed) continue;
+        const res = parsed?null:await fetch("/api/comps/parse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...payload, ...context() }),
         });
-        const body = await res.json();
-        if (!res.ok) {
+        const body = parsed??await res!.json();
+        if (res && !res.ok) {
           failures.push(tag(body.error ?? "Could not read that"));
           continue;
         }
@@ -219,6 +222,7 @@ export default function CompIntakeForm({
           assetClass: assetClass || c.assetClass || (/\bIOS\b/i.test(String(c.sheet ?? "")) ? "ios" : null),
         }))
       );
+      if(comps.some(c=>c.portfolio))setView('cards');
       setProperties(props);
       setWarnings([...failures, ...notes]);
       setSeen(lastSeen);
@@ -269,7 +273,7 @@ export default function CompIntakeForm({
   }
 
   async function handleFile(file: File) {
-    if (!/\.(xlsx|xlsm|xls|csv)$/i.test(file.name)) {
+    if (!/\.(xlsx|xlsm|xls|csv|pdf)$/i.test(file.name)) {
       setError(
         `"${file.name}" isn't a spreadsheet. Drop an .xlsx/.xls/.csv attachment, or paste the table from the email body instead.`
       );
@@ -325,7 +329,7 @@ export default function CompIntakeForm({
     const text = dt.getData("text/plain");
 
     void (async () => {
-      const spreadsheet = files.find((f) => /\.(xlsx|xlsm|xls|csv)$/i.test(f.name));
+      const spreadsheet = files.find((f) => /\.(xlsx|xlsm|xls|csv|pdf)$/i.test(f.name));
       if (spreadsheet) {
         handleFile(spreadsheet);
         return;
@@ -335,7 +339,7 @@ export default function CompIntakeForm({
       for (const entry of virtualEntries) {
         try {
           const file = await entryToFile(entry);
-          if (/\.(xlsx|xlsm|xls|csv)$/i.test(file.name)) {
+          if (/\.(xlsx|xlsm|xls|csv|pdf)$/i.test(file.name)) {
             handleFile(file);
             return;
           }
@@ -373,13 +377,18 @@ export default function CompIntakeForm({
     })();
   }
 
-  function update(i: number, patch: Partial<DraftComp>) {
+  function update(i: number, change: Partial<DraftComp>|((draft:DraftComp)=>Partial<DraftComp>)) {
+    setDrafts(prev=>prev?prev.map((d,idx)=>{
+    if(idx!==i)return d;
+    let patch=typeof change==='function'?change(d):change;
     if ("dateCommenced" in patch) patch = { ...patch, dateEstimated: false };
     if ("acres" in patch) patch = { ...patch, lotSf: patch.acres == null ? null : Math.round(patch.acres * 43560) };
     if (["address", "city", "state", "market"].some(key => key in patch)) {
       patch = { ...patch, latitude: null, longitude: null, geocodePrecision: null, _locationMessage: "Address changed; verify the location again." };
     }
-    setDrafts((prev) => (prev ? prev.map((d, idx) => (idx === i ? { ...d, ...patch } : d)) : prev));
+    if(d.portfolio&&['city','state','market'].some(key=>key in patch))patch={...patch,portfolio:{...d.portfolio,...patch.portfolio,properties:d.portfolio.properties.map(p=>({...p,latitude:null,longitude:null,geocodePrecision:null,locationWarning:'Shared geography changed; verify this property location again.'}))}};
+    return {...d,...patch};
+    }):prev);
   }
 
   function addManual(compType: CompType) {
@@ -390,7 +399,7 @@ export default function CompIntakeForm({
 
   async function checkLocations() {
     setBusy(true); setError(null);
-    const rows = (drafts ?? []).filter(d => d._include && !validCoordinates(d));
+    const rows:any[] = (drafts ?? []).filter(d=>d._include).flatMap<any>(d=>d.portfolio ? d.portfolio.properties.map((p,i)=>({...p,city:d.city,state:d.state,market:d.market,_key:d._key,_propertyIndex:i})).filter(p=>!validCoordinates(p)&&!isAddressRange(p.address)) : !validCoordinates(d)?[d]:[]);
     try {
       const cache = new Map<string, any>();
       for (const d of rows) {
@@ -403,7 +412,12 @@ export default function CompIntakeForm({
           if (!res.ok && res.status !== 400) throw new Error(result.error ?? "Location lookup failed");
           cache.set(addressKey, result);
         }
-        setDrafts(prev => prev?.map(row => row._key === d._key ? { ...row, latitude: result.location?.latitude ?? null, longitude: result.location?.longitude ?? null, geocodePrecision: result.location?.geocode_precision ?? null, _locationMessage: locationMessage(result) } : row) ?? null);
+        const patch={latitude:result.location?.latitude??null,longitude:result.location?.longitude??null,geocodePrecision:result.location?.geocode_precision??null,_locationMessage:locationMessage(result)};
+        setDrafts(prev=>prev?.map(row=>{
+          if(row._key!==d._key||row.city!==d.city||row.state!==d.state||row.market!==d.market)return row;
+          if(d._propertyIndex!=null&&row.portfolio)return {...row,portfolio:{...row.portfolio,properties:row.portfolio.properties.map((p,i)=>i===d._propertyIndex&&p.address===d.address?{...p,...patch,locationWarning:!result.location||result.location.geocode_precision==='approximate'?locationMessage(result):null}:p)}};
+          return row.address===d.address?{...row,...patch}:row;
+        })??null);
       }
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
@@ -412,7 +426,7 @@ export default function CompIntakeForm({
   // Mirrors the server's validation so a row that can't save is obvious before
   // clicking, not after.
   function blockingIssue(d: DraftComp): string | null {
-    return compIssue(d) ?? (!validCoordinates(d) ? "Verify location or place a pin" : null);
+    return compIssue(d) ?? (!d.portfolio && !validCoordinates(d) ? "Verify location or place a pin" : null);
   }
 
   const included = (drafts ?? []).filter((d) => d._include);
@@ -508,7 +522,7 @@ export default function CompIntakeForm({
         <button type="button" className={entryMode === "outlook" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("outlook")}>Select from Outlook</button>
         <button type="button" className={entryMode === "om" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("om")}>From an OM</button>
         <button type="button" className={entryMode === "paste" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("paste")}>Paste email or table</button>
-        <button type="button" className={entryMode === "file" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("file")}>Upload spreadsheet</button>
+        <button type="button" className={entryMode === "file" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("file")}>Upload spreadsheet or PDF</button>
         <button type="button" className={entryMode === "single" ? "comp-entry-active" : "secondary"} onClick={() => setEntryMode("single")}>Enter one comp</button>
       </div>
       {entryMode === "outlook" && <OutlookCompPicker disabled={busy} hasDrafts={Boolean(drafts?.length)} onSelect={sendParts} />}
@@ -642,7 +656,7 @@ export default function CompIntakeForm({
         role="textbox"
         aria-label="Paste comp table or drop a spreadsheet"
       >
-        <strong>{entryMode === "file" ? "Drop a spreadsheet here" : "Paste a formatted broker table here"}</strong>
+        <strong>{entryMode === "file" ? "Drop a spreadsheet or sale-comp PDF here" : "Paste a formatted broker table here"}</strong>
         <span className="muted">
           Select the table in the email body, Ctrl+C, then Ctrl+V here — the copied HTML keeps the
           real columns.
@@ -652,12 +666,12 @@ export default function CompIntakeForm({
           often hands the browser nothing it can read.
         </span>
         <button type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
-          Choose a spreadsheet
+          Choose a spreadsheet or sale PDF
         </button>
         <input
           ref={fileInput}
           type="file"
-          accept=".xlsx,.xlsm,.xls,.csv"
+          accept=".xlsx,.xlsm,.xls,.csv,.pdf"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -815,7 +829,7 @@ export default function CompIntakeForm({
               {result.savedComps.slice(0, 20).map((c: any) => (
                 <li key={c.id}>
                   <Link href={`/comps/${c.id}`}>{c.address}</Link>{" — "}
-                  {c.latitude == null || c.longitude == null
+                  {c.comparison_scope==='portfolio'?'Saved portfolio transaction; open to review constituent allocations and locations.':c.latitude == null || c.longitude == null
                     ? "Saved; needs a map location. Open to place a pin."
                     : c.geocode_precision === "approximate"
                       ? "Saved; approximate location. Open to correct the pin."
@@ -904,7 +918,7 @@ export default function CompIntakeForm({
               </div>
             );
           })()}
-          {view === "cards" ? reviewRows.map(({draft:d,index:i})=><CompIntakeCard key={d._key} draft={d} update={patch=>update(i,patch)} issue={blockingIssue(d)} />) : <div className="table-scroll">
+          {view === "cards" ? reviewRows.map(({draft:d,index:i})=>d.portfolio?<PortfolioSaleReview key={d._key} draft={d} update={patch=>update(i,patch)} issue={blockingIssue(d)}/>:<CompIntakeCard key={d._key} draft={d} update={patch=>update(i,patch)} issue={blockingIssue(d)} />) : <div className="table-scroll">
             <table className="summary-table log-table">
               <thead>
                 <tr>
@@ -928,6 +942,7 @@ export default function CompIntakeForm({
               <tbody>
                 {reviewRows.map(({ draft: d, index: i }) => {
                   const issue = blockingIssue(d);
+                  if(d.portfolio)return <tr key={d._key}><td colSpan={15}><PortfolioSaleReview draft={d} update={patch=>update(i,patch)} issue={issue}/></td></tr>;
                   return (
                     <tr key={d._key} style={{ opacity: d._include ? 1 : 0.45 }}>
                       <td>

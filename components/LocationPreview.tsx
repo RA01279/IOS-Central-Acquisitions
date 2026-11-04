@@ -5,9 +5,11 @@ import { parseCoordinatePair, validCoordinates } from "@/lib/location";
 
 export interface LocationPoint { latitude: number; longitude: number; geocode_precision: string }
 
-export default function LocationPreview({ address, city, market, state, value, onChange }: {
+export default function LocationPreview({ address, city, market, state, value, onChange,allowLookup=true,locationRequired=true }: {
   address: string; city?: string | null; market?: string | null; state?: string | null;
   value: LocationPoint | null; onChange: (point: LocationPoint | null) => void;
+  allowLookup?:boolean;
+  locationRequired?:boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const active = useRef(true);
@@ -16,6 +18,7 @@ export default function LocationPreview({ address, city, market, state, value, o
   const [typed, setTyped] = useState("");
   const [showMap, setShowMap] = useState(false);
   async function lookup() {
+    if(!allowLookup)return;
     setBusy(true); setMessage("");
     try {
       // retries: directions abbreviated, the road alone, a Places search (lib/locate-site).
@@ -35,8 +38,8 @@ export default function LocationPreview({ address, city, market, state, value, o
   }
   return <div style={{ minWidth: 230 }}>
     <fieldset disabled={busy} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-    <p className="hint" role="status">{value && validCoordinates(value) ? `Map ready (${["rooftop","geometric_center"].includes(value.geocode_precision) ? "Google address match" : value.geocode_precision === "range_interpolated" ? "Google street-number match" : value.geocode_precision === "approximate" ? "approximate, road-level: check the pin" : value.geocode_precision}) · ${value.latitude.toFixed(6)}, ${value.longitude.toFixed(6)}` : "Needs a verified location before saving"}</p>
-    <button type="button" disabled={busy || !address.trim()} onClick={lookup}>{busy ? "Checking Google…" : "Check Google location"}</button>{" "}
+    <p className="hint" role="status">{value && validCoordinates(value) ? `Map ready (${["rooftop","geometric_center"].includes(value.geocode_precision) ? "Google address match" : value.geocode_precision === "range_interpolated" ? "Google street-number match" : value.geocode_precision === "approximate" ? "approximate, road-level: check the pin" : value.geocode_precision}) · ${value.latitude.toFixed(6)}, ${value.longitude.toFixed(6)}` : locationRequired ? "Needs a verified location before saving" : "Location unresolved — entry will be retained without a map pin"}</p>
+    <button type="button" disabled={busy || !address.trim() || !allowLookup} onClick={lookup}>{busy ? "Checking Google…" : "Check Google location"}</button>{" "}
     <button type="button" className="secondary" onClick={() => setShowMap(!showMap)}>{showMap ? "Hide map" : "Review / place pin"}</button>
     {message && <p className="hint" role="status">{message}</p>}
     {showMap && <>

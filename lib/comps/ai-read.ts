@@ -11,7 +11,16 @@ import { runAgent } from "../agent-client";
 import { parseCompImport } from "../agents/comp-import";
 import { htmlToDelimitedText } from "./parse";
 
-export type CompSourcePart = { label: string | null; payload: Record<string, unknown> | null; warnings?: string[] };
+export type CompSourcePart = { label: string | null; payload: Record<string, unknown> | null; warnings?: string[]; parsed?: any };
+
+/** Recognized PDF sale grids retain original columns/pages without helper rewriting. */
+export async function directPdfComps(buffer:ArrayBuffer,name:string,sourceRef:string):Promise<CompSourcePart|null> {
+ if(buffer.byteLength>3*1024*1024)return null; // Large OMs retain client text/helper extraction, below Vercel's body limit.
+ let binary='';const bytes=new Uint8Array(buffer);for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+ const response=await fetch('/api/comps/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileBase64:btoa(binary),fileName:name,sourceRef})});
+ const parsed=await response.json();if(!response.ok)throw Error(parsed.error||'PDF parsing failed');
+ return parsed.requiresHelper?null:{label:name,payload:null,parsed};
+}
 
 /** Plain text for the agent: HTML tables keep their cell boundaries as tabs. */
 export function readableText(html: string | null | undefined, text: string | null | undefined): string {
@@ -33,6 +42,6 @@ export async function aiReadComps(
   const base = { ...(opts.source ? { source: opts.source } : {}), ...(opts.sourceRef ? { sourceRef: opts.sourceRef } : {}) };
   const parts: CompSourcePart[] = [];
   if (tables.leases) parts.push({ label: opts.label, payload: { text: tables.leases, defaultCompType: "lease", ...base }, warnings: warn });
-  if (tables.sales) parts.push({ label: opts.label, payload: { text: tables.sales, defaultCompType: "sale", ...base }, warnings: tables.leases ? [] : warn });
+  if (tables.sales) parts.push({ label: opts.label, payload: { text: tables.sales, portfolioHints:tables.portfolios, defaultCompType: "sale", ...base }, warnings: tables.leases ? [] : warn });
   return { parts, notes: tables.notes };
 }

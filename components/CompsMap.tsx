@@ -25,6 +25,9 @@ function hasMapCoordinates(value: { latitude: unknown; longitude: unknown; geoco
 }
 
 export interface CompMapRow {
+  transaction_id?:string;
+  portfolio_name?:string;
+  comparison_scope?:string;
   geocode_precision?: string | null;
   id: string;
   comp_type: "lease" | "sale";
@@ -147,12 +150,13 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
           lng: Number(c.longitude),
           color: c.comp_type === "sale" ? SALE_COLOR : LEASE_COLOR,
           title: c.project_name ? `${c.address} — ${c.project_name}` : c.address,
-          href: `/comps/${c.id}`,
+          href: `/comps/${c.transaction_id||c.id}${c.transaction_id&&c.transaction_id!==c.id?`#property-${c.id}`:''}`,
           lines: [
             [
               c.comp_type === "sale" ? "Sale" : "Lease",
               date ?? null,
               c.comp_type === "sale" ? usd(c.sale_price) : null,
+              c.comparison_scope==='portfolio_property'?(c.sale_price?'source-reported property allocation':'property allocation unknown'):null,
               rate(c),
             ]
               .filter(Boolean)
@@ -164,20 +168,33 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
             ]
               .filter(Boolean)
               .join(" · "),
-            [who, c.submarket ?? c.city].filter(Boolean).join(" · "),
+            [c.portfolio_name, who, c.submarket ?? c.city].filter(Boolean).join(" · "),
           ].filter((l) => l.length > 0),
         };
       }),
     [filtered]
   );
 
-  const saleCount = filtered.filter((c) => c.comp_type === "sale").length;
+  const saleCount = new Set(filtered.filter((c)=>c.comp_type==='sale').map(c=>c.transaction_id||c.id)).size;
+  // Several explicitly identified buildings may share one verified location.
+  // Keep the real coordinates and expose every building in the shared popup.
+  const displayPoints=useMemo(()=>{
+    const groups=new Map<string,MapPoint & {entries?:number}>();
+    points.forEach((point,index)=>{
+      const c=filtered[index];const key=c.portfolio_name?`${c.transaction_id}:${point.lat}:${point.lng}`:point.id;
+      const existing=groups.get(key);
+      if(!existing){groups.set(key,{...point,lines:[point.title,...(point.lines??[])],entries:1});return;}
+      existing.entries=(existing.entries??1)+1;
+      existing.title=`${c.portfolio_name} · ${existing.entries} buildings at this location`;
+      existing.lines=[...(existing.lines??[]),point.title,...(point.lines??[])];
+    });return [...groups.values()];
+  },[points,filtered]);
   const leaseCount = filtered.filter((c) => c.comp_type === "lease").length;
 
   return (
     <section className="panel">
       <h2>
-        Comps map <span className="count">{filtered.length}</span>
+        Comps map <span className="count">{filtered.length} property entries · {saleCount} sale transactions</span>
       </h2>
 
       <form onSubmit={searchAddress} style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 12 }}>
@@ -243,7 +260,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
       </div>
 
       <MapView
-        points={subject ? [...points, { id: "subject", lat: subject.latitude, lng: subject.longitude, title: subject.address, color: "C07824", emphasis: true }] : points}
+        points={subject ? [...displayPoints, { id: "subject", lat: subject.latitude, lng: subject.longitude, title: subject.address, color: "C07824", emphasis: true }] : displayPoints}
         radiusBand={radiusBand}
         legend={[
           { label: "Sale", color: SALE_COLOR, count: saleCount },
@@ -261,7 +278,7 @@ export default function CompsMap({ comps }: { comps: CompMapRow[] }) {
         <thead><tr><th>Distance</th><th>Type</th><th>Address</th><th>Date</th><th>Price / Rent</th><th>Rate</th><th>Bldg SF</th><th>Acres</th></tr></thead>
         <tbody>{filtered.map(c => <tr key={c.id}>
           <td>{haversineMiles(subject.latitude, subject.longitude, Number(c.latitude), Number(c.longitude)).toFixed(2)} mi</td>
-          <td>{c.comp_type === "sale" ? "Sale" : "Lease"}</td><td><Link href={`/comps/${c.id}`}>{c.address}</Link>{c.city ? `, ${c.city}` : ""}</td>
+          <td>{c.comp_type === "sale" ? "Sale" : "Lease"}{c.portfolio_name&&<div className="hint">Portfolio property · {c.sale_price?'source allocation':'allocation unknown'}</div>}</td><td><Link href={`/comps/${c.transaction_id||c.id}`}>{c.address}{c.project_name?` · ${c.project_name}`:''}</Link>{c.city ? `, ${c.city}` : ""}</td>
           <td>{(c.comp_type === "sale" ? c.closed_on : c.date_commenced) || "—"}</td><td>{usd(c.comp_type === "sale" ? c.sale_price : c.rent) || "—"}</td><td>{rate(c) || "—"}</td>
           <td>{c.building_sf ? Number(c.building_sf).toLocaleString() : "—"}</td><td>{c.lot_sf ? (c.lot_sf / SQFT_PER_ACRE).toFixed(2) : "—"}</td>
         </tr>)}</tbody>

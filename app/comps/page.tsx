@@ -9,6 +9,7 @@ import CompEditor, { type CompRow } from "@/components/CompEditor";
 import CompsMap, { type CompMapRow } from "@/components/CompsMap";
 import CompReviewQueue, { type ReviewRow } from "@/components/CompReviewQueue";
 import { hasMapCoordinates, readAllCompPages } from "@/lib/comps/mapData";
+import {portfolioMapRows} from '@/lib/comps/portfolios';
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -67,9 +68,10 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
         // One string literal, deliberately: the Supabase client parses this at
         // the TYPE level to shape the result, and a concatenated string defeats
         // that -- the rows come back typed as GenericStringError[].
-        .select("id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, rent, rent_basis, sale_price, closed_on, date_commenced, tenant_name, buyer, geocode_precision")
+        .select("id, comp_type, address, project_name, suite, city, state, market, submarket, asset_class, latitude, longitude, building_sf, lot_sf, yard_acres, coverage_pct, rent, rent_basis, sale_price, closed_on, date_commenced, tenant_name, buyer, geocode_precision, is_portfolio, portfolio_transaction_id")
         // A rejected comp is kept for the record, not shown as evidence.
         .eq("status", "confirmed")
+        .is('portfolio_transaction_id',null)
         .order("id")
         .range(from, to)),
       // The full-detail list stays capped -- it renders forty fields per row
@@ -77,6 +79,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
       supabase
         .from("comps")
         .select("*", { count: "exact" })
+        .is('portfolio_transaction_id',null)
         .order("created_at", { ascending: false })
         .limit(300),
       // Markets already in use, so intake can offer them rather than inviting a
@@ -96,6 +99,8 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
   if (listError) throw new Error(`Could not load comp details: ${listError.message}`);
   const rows = comps ?? [];
   const mapRows = mapComps ?? [];
+  const constituentRows=await readAllCompPages<any>((from,to)=>supabase.from('comp_sale_properties').select('*').order('id').range(from,to));
+  const mapProperties=portfolioMapRows(mapRows,constituentRows);
   const total = totalComps ?? rows.length;
   // Market suggestions come from the comps themselves as well as properties --
   // "Savannah" exists as a comp market before it exists as a property one.
@@ -109,7 +114,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
   // Counted over the whole repository, not just the page of detail rows.
   const sales = mapRows.filter((c: any) => c.comp_type === "sale");
   const leases = mapRows.filter((c: any) => c.comp_type === "lease");
-  const unmatched = mapRows.filter((c: any) => !hasMapCoordinates(c) || !isUsableForDistance(c.geocode_precision));
+  const unmatched = mapProperties.filter((c: any) => !hasMapCoordinates(c) || !isUsableForDistance(c.geocode_precision));
 
   return (
     <>
@@ -127,7 +132,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
         <div className="stat-grid stat-grid-3">
           <div className="stat-tile">
             <span className="stat-value">{sales.length}</span>
-            <span className="stat-label">Sale comps</span>
+            <span className="stat-label">Sale transactions</span>
           </div>
           <div className="stat-tile">
             <span className="stat-value">{leases.length}</span>
@@ -160,7 +165,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
             <ul style={{ marginBottom: 0 }}>
               {unmatched.slice(0, 12).map((c: any) => (
                 <li key={c.id}>
-                  <Link href={`/comps/${c.id}`}>{c.address}</Link>
+                  <Link href={`/comps/${c.transaction_id||c.id}`}>{c.address}</Link>
                   {c.city ? <span className="muted"> · {c.city}</span> : null}
                   {c.market ? <span className="muted">, {c.market}</span> : null}
                 </li>
@@ -174,7 +179,8 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
 
         <CompReviewQueue rows={reviewRows} originals={originals} />
 
-        <CompsMap comps={mapRows as CompMapRow[]} />
+        <p className="hint">{sales.filter((c:any)=>c.is_portfolio).length} portfolio transactions. Each transaction is counted once; constituent pins show only property-level allocations. Portfolio aggregates and linked component rows are excluded from single-property underwriting statistics.</p>
+        <CompsMap comps={mapProperties as CompMapRow[]} />
 
         <div id="add-comps" />
         <CompIntakeForm markets={markets} omDoc={omDoc} />
@@ -235,7 +241,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
                         <td>
                           <span className="doc-type">{c.comp_type === "sale" ? "SALE" : "LEASE"}</span>
                         </td>
-                        <td>{c.address}</td>
+                        <td><Link href={`/comps/${c.id}`}>{c.address}</Link>{c.is_portfolio&&<div className="hint">Portfolio transaction · aggregate metrics</div>}</td>
                         <td>{c.city ?? "—"}</td>
                         <td>{c.market ?? "—"}</td>
                         <td>
@@ -245,7 +251,7 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
                           )}
                         </td>
                         <td>{c.comp_type === "sale" ? fmtUsd(c.sale_price) : fmtUsd(c.rent)}</td>
-                        <td>{unitRate(c)}</td>
+                        <td>{unitRate(c)}{c.is_portfolio&&<small> · portfolio-wide</small>}</td>
                         <td>{c.building_sf ? Math.round(c.building_sf).toLocaleString() : "—"}</td>
                         <td>{acres ?? "—"}</td>
                         <td>{c.yard_acres ?? "—"}</td>

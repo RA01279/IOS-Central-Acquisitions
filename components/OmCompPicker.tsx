@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { pdfText } from "@/lib/pdf-text";
+import {directPdfComps} from '@/lib/comps/ai-read';
 import { parseCompImport } from "@/lib/agents/comp-import";
 import { compPages, omCompSource } from "@/lib/om-comps";
 import type { CompSourcePart } from "./OutlookCompPicker";
@@ -64,6 +65,8 @@ export default function OmCompPicker({
     setError(null);
     try {
       setStep(`Reading ${name}…`);
+      const direct=await directPdfComps(buf,name,ref);
+      if(direct){onSelect([direct]);return;}
       const pdf = await pdfText(buf, 900000, 400);
       if (pdf.scanned) throw new Error("This PDF is scanned images with no text layer, so its comps can't be read. Enter them by hand.");
       const pages = compPages(pdf.text);
@@ -83,7 +86,7 @@ export default function OmCompPicker({
       }
       const parts: CompSourcePart[] = [];
       if (tables.leases) parts.push({ label: name, payload: { text: tables.leases, defaultCompType: "lease", source: "import", sourceRef: ref }, warnings: warn });
-      if (tables.sales) parts.push({ label: name, payload: { text: tables.sales, defaultCompType: "sale", source: "import", sourceRef: ref }, warnings: tables.leases ? [] : warn });
+      if (tables.sales) parts.push({ label: name, payload: { text: tables.sales, portfolioHints:tables.portfolios, defaultCompType: "sale", source: "import", sourceRef: ref }, warnings: tables.leases ? [] : warn });
       onSelect(parts);
     } catch (e: any) {
       setError(e?.message ?? "Could not read that OM.");

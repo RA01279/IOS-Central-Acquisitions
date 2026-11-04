@@ -12,7 +12,7 @@ export default async function LocationsPage() {
   const db = getServiceClient();
   const [deals, comps] = await Promise.all([
     readAllCompPages<any>((from,to) => db.from("deals").select("id,stage,properties(address,city,market,latitude,longitude,geocode_precision)").order("id").range(from,to)),
-    readAllCompPages<any>((from,to) => db.from("comps").select("id,comp_type,address,city,state,market,latitude,longitude,geocode_precision").order("id").range(from,to)),
+    readAllCompPages<any>((from,to) => db.from("comps").select("id,comp_type,address,city,state,market,latitude,longitude,geocode_precision").eq('is_portfolio',false).is('portfolio_transaction_id',null).order("id").range(from,to)),
   ]);
   const records = [
     ...deals.filter(d => d.properties && !locationReady(d.properties)).map(d => ({ ...d.properties, id: d.id, kind: "deal" as const, stage: d.stage })),
