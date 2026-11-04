@@ -46,6 +46,19 @@ export class OutlookConnection {
       if (!tool || tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true)
         throw new Error("Connect Outlook Email in Codex before starting this helper.");
     }
+    // Newer Codex builds (0.163+) dropped link_owner_profile from tool metadata;
+    // ask the connector's read-only get_profile tool instead (no mail is read).
+    if (!this.mailbox) {
+      const profile = this.tools["microsoft_outlook_email.get_profile"];
+      if (profile && profile.annotations?.readOnlyHint === true && profile.annotations?.destructiveHint !== true) {
+        try {
+          const result = await this.rpc("mcpServer/tool/call", { threadId: this.threadId, server: "codex_apps",
+            tool: "microsoft_outlook_email.get_profile", arguments: {} });
+          const email = !result?.isError ? result?.structuredContent?.email : null;
+          if (typeof email === "string" && /^[^\s@]+@[^\s@]+$/.test(email)) this.mailbox = email.toLowerCase();
+        } catch {}
+      }
+    }
     if (!this.mailbox) throw new Error("Could not verify the owner of your Outlook connection.");
     return this;
   }
