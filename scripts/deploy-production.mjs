@@ -19,6 +19,15 @@ const REPO = "RA01279/IOS-Central-Acquisitions";
 const dryRun = process.argv.includes("--dry-run");
 const git = (args) => execSync(`git ${args}`, { encoding: "utf8" }).trim();
 
+// The token from git's credential helper for github.com, or null. Interactive
+// prompts are disabled so a missing login fails instead of hanging.
+function gitHubLogin() {
+  try {
+    const out = execSync("git credential fill", { input: "protocol=https\nhost=github.com\n\n", encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" }, stdio: ["pipe", "pipe", "ignore"] });
+    return out.match(/^password=(.+)$/m)?.[1] ?? null;
+  } catch { return null; }
+}
+
 // Returns a refusal reason, or null once production has been (or would be) deployed.
 async function deploy() {
   const branch = git("rev-parse --abbrev-ref HEAD");
@@ -35,10 +44,12 @@ async function deploy() {
   try { linked = JSON.parse(readFileSync(".vercel/project.json", "utf8")).projectId; } catch {}
   if (linked !== PROJECT_ID) return "this folder is not linked to the ios-central-acquisitions Vercel project (.vercel/project.json).";
 
-  // CI status for this exact commit. A private repository needs GITHUB_TOKEN set.
-  const headers = { Accept: "application/vnd.github+json", ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) };
+  // CI status for this exact commit. The repository is private: use GITHUB_TOKEN
+  // if set, else the GitHub login git itself pushes with (never printed).
+  const token = process.env.GITHUB_TOKEN || gitHubLogin();
+  const headers = { Accept: "application/vnd.github+json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   const res = await fetch(`https://api.github.com/repos/${REPO}/actions/runs?head_sha=${head}&per_page=5`, { headers });
-  if (!res.ok) return `could not read CI status from GitHub (${res.status}).${res.status === 404 ? " If the repository is private, set GITHUB_TOKEN to a token that can read Actions." : ""}`;
+  if (!res.ok) return `could not read CI status from GitHub (${res.status}).${res.status === 404 ? " Sign in to GitHub with git (any git push will prompt), or set GITHUB_TOKEN to a token that can read Actions." : ""}`;
   const run = ((await res.json()).workflow_runs ?? []).find((r) => r.name === "CI");
   if (!run) return `no CI run found for ${head.slice(0, 7)} yet. Wait for GitHub Actions to start, then retry.`;
   if (run.status !== "completed") return `CI for ${head.slice(0, 7)} is still ${run.status}: ${run.html_url}`;
