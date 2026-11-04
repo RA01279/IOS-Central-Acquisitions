@@ -110,9 +110,12 @@ export function dealKpis(deal: any, snapshot: DemandSnapshot | null, radius = 3,
   const ac = acres(p.lot_sf);
   const bsf = p.building_sf ? Number(p.building_sf) : null;
   const ask = deal.asking_price != null ? Number(deal.asking_price) : null;
-  const shown = value.amount ?? ask;
-  const basis = shown ? (ios ? (ac ? shown / ac : null) : bsf ? shown / bsf : null) : null;
   const r = latestReturns(deal);
+  // With no traded price or ask, the underwriting model's purchase price is the
+  // best figure to show, labelled as the model's. Pipeline totals (dealValue) stay unchanged.
+  const modelPrice = r?.purchasePrice != null && Number(r.purchasePrice) > 0 ? Number(r.purchasePrice) : null;
+  const shown = value.amount ?? ask ?? modelPrice;
+  const basis = shown ? (ios ? (ac ? shown / ac : null) : bsf ? shown / bsf : null) : null;
   radius = snapshot?.radiusMiles ?? 5;
   const demand = demandBreakdown(snapshot, radius);
   return {
@@ -123,7 +126,7 @@ export function dealKpis(deal: any, snapshot: DemandSnapshot | null, radius = 3,
       value.amount == null && ask
         ? "Asking price"
         : value.basis === "none"
-          ? "No price yet"
+          ? modelPrice != null ? "Underwriting model price" : "No price yet"
           : VALUE_BASIS_LABELS[value.basis].replace(/^./, (c) => c.toUpperCase()) + (ask ? ` · ask ${fmtMoney(ask)}` : ""),
     basis,
     basisLabel: basis == null ? "—" : ios ? fmtMoney(basis) : `$${Math.round(basis)}`,
