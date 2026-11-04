@@ -42,7 +42,7 @@ The UW template carries hidden sheets and blocks from earlier deals, and Excel d
 - Pro Forma / Rent Roll / Market Leasing Summary titled for a different property.
 - Model price differing from Hopper's contract price or latest offer (flagged on Pursuit Terms).
 
-Checks also appear in slide 2's speaker notes. Hidden tabs (Deal Overview, Summary Table, Memo Table) are never read: they can carry stale figures from an earlier version of the model. Debt terms use Pro Forma's pre-stabilization rate block; LTPP is the initial loan over the purchase price; the acquisition date is the cash flow's Year 1 start; "Model as of" is the date Excel last saved the file.
+Checks also appear in slide 2's speaker notes. Hidden tabs (Deal Overview, Summary Table, Memo Table) are never read: figures come from the visible tabs the team reviews. Debt terms use Pro Forma's pre-stabilization rate block; LTPP is the initial loan over the purchase price; the acquisition date is the cash flow's Year 1 start; "Model as of" is the date Excel last saved the file.
 
 ## Agent drafts
 
