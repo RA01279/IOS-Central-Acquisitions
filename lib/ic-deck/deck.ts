@@ -15,6 +15,7 @@ import { join } from "node:path";
 import type { ModelSummary } from "./model";
 import type { NarrativeKey, NarrativeSection } from "../agents/ic-narrative";
 import { projectToView, type MarketCanvas, type CanvasRow, type MapView } from "./canvas";
+import type { TaxSummary } from "../property-taxes/summary";
 import { MUTED, NAVY, R_NS, REL_NS, SlideBuilder, type Picture, type Para } from "./pptx-kit";
 import { REFERENCE_EXHIBIT_SLIDES, validateReference, referenceBudget } from "./reference";
 
@@ -71,6 +72,8 @@ export interface IcDeckInput {
     /** IOS inventory around the site (slides 12-15), with each map's legend colors. */
     canvas?: (MarketCanvas & { view: MapView; legends: Record<"occupancy" | "tenantUse" | "owner", Record<string, string>> }) | null;
   };
+  /** Researched property tax bills (Property Taxes workspace), latest year. */
+  taxes?: TaxSummary | null;
   maps: Partial<Record<"coverPhoto" | "coverAerial" | "location" | "aerial" | "aerialClose" | "leaseComps" | "saleComps" | "portfolio" | "canvasOccupancy" | "canvasTenancy" | "canvasOwnership", Picture>>;
   preparedOn: Date;
   reference?: { bytes: Uint8Array; name: string };
@@ -104,7 +107,11 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
   const sourceBudget = input.reference ? referenceBudget(zip) : null;
   const cityState = m.property.cityState ?? [deal.city, deal.state].filter(Boolean).join(", ");
   const tenants = m.rentRoll.rows.map((r) => r.tenant);
-  const occupied = m.rentRoll.totalSf && m.property.buildingSf ? m.rentRoll.rows.reduce((s, r) => s + (r.sf ?? 0), 0) / m.property.buildingSf : null;
+  // Leased share of the rent roll's own total: IOS rent rolls are often in land SF
+  // (the model basis), so dividing by building SF overstated occupancy (e.g. 1,023%).
+  const leasedSf = m.rentRoll.rows.filter((r) => !/vacan/i.test(r.tenant)).reduce((s, r) => s + (r.sf ?? 0), 0);
+  const occupiedRaw = m.rentRoll.totalSf ? leasedSf / m.rentRoll.totalSf : m.property.buildingSf ? leasedSf / m.property.buildingSf : null;
+  const occupied = occupiedRaw != null && occupiedRaw <= 1.0005 ? Math.min(occupiedRaw, 1) : null;
   const price = m.capitalization.find((c) => /price/i.test(c.label))?.amount ?? null;
   const pricePsf = m.capitalization.find(c => /price/i.test(c.label))?.psf;
   const denominator = price && pricePsf && m.property.siteSf && Math.abs(price / m.property.siteSf - pricePsf) / pricePsf < .02 ? "land" : price && pricePsf && m.property.buildingSf && Math.abs(price / m.property.buildingSf - pricePsf) / pricePsf < .02 ? "building" : "model basis";
@@ -156,6 +163,18 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     s.notes.push("Draft for IC review. " + source, "Cover images are Google satellite imagery of the recorded pin; replace with drone/site photos.");
   }
 
+  // Property taxes: the model's Year 1 line vs. the latest researched bill.
+  // A partial bill (e.g. county collector only) is a floor: a model below it is understated.
+  const tax = input.taxes ?? null, modelTax = m.realEstateTaxes ?? null;
+  const taxGap = tax && modelTax != null && tax.amount > 0 ? modelTax / tax.amount - 1 : null;
+  const taxFlag = taxGap == null ? null
+    : tax!.status === "partial" ? (taxGap < 0 ? `Model Year 1 taxes are ${pct(-taxGap, 0)} below a partial ${tax!.year} bill, so they are understated.` : null)
+    : Math.abs(taxGap) > 0.1 ? `Model Year 1 taxes are ${pct(Math.abs(taxGap), 0)} ${taxGap < 0 ? "below" : "above"} the ${tax!.year} bill.` : null;
+  const taxScope = !tax ? "" : tax.status === "complete" ? "all taxing authorities, reconciled" : `partial: ${(tax.caveats[0] ?? "coverage unverified").replace(/\.$/, "").replace(/^[\w-]+: /, "")}`;
+  const taxPara = (): Para[] => tax
+    ? [{ runs: [{ text: `Property taxes: ${modelTax != null ? `${usd(modelTax)} Year 1 in the model vs. ` : ""}${usd(tax.amount)} ${tax.year} bill (${taxScope}).` }, ...(taxFlag ? [{ text: " " + taxFlag, bold: true, color: "B4541A" }] : [])], bullet: true }]
+    : modelTax != null ? [{ runs: [{ text: `Property taxes: ${usd(modelTax)} Year 1 in the model. ` }, ...OPEN("no researched tax bill yet; run research on the Property Taxes page").runs], bullet: true }] : [];
+
   // 2. Executive Summary --------------------------------------------------
   {
     const s = slide("Executive Summary");
@@ -194,6 +213,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       head("Underwriting Assumptions"),
       body(`${hold ?? "—"}-year hold; ${pct(m.yields.exitCap, 2)} exit cap on a ${pct(m.yields.returnOnCostAtExit, 2)} yield-to-cost; ${usd(fees)} of acquisition, financing and other costs capitalized into the ${usd(m.totalCost.psf, 2)}/SF ${denominator} all-in basis.`),
       body(`Debt: ${pct(m.debt.ltc, 2)} LTC (${usd(m.debt.loan)}), ${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)} spread, ${m.debt.interestOnlyMonths ?? "—"} months interest-only.`),
+      ...taxPara(),
     ], { x: 0.2, y: 2.2, w: 5.45, h: 4.72 }, { size: 9 });
     const right = 5.8, w = 3.98;
     s.table(["Site", ""], [
@@ -271,17 +291,35 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ["Deal level, unlevered (GUIRR)", pct(m.returns.unlevered.irr), mult(m.returns.unlevered.multiple)],
       ["LP, levered", pct(m.returns.lp.irr), mult(m.returns.lp.multiple)],
     ], { x: 5.15, y: 1.45, w: 4.55, h: 1.1 }, { size: 9, widths: [2.4, 0.9, 0.9], align: ["l", "r", "r"], rowHeight: 0.26 });
-    s.table(["Key Assumptions", "Base Case"], [
+    const keyBottom = s.table(["Key Assumptions", "Base Case"], [
       ["Acquisition date", date(m.dates.acquisition)], ["Sale date", date(m.dates.sale)], ["Hold", `${hold ?? "—"} years`],
       ["Going-in cap", pct(m.yields.goingIn, 2)], ["Return on cost at exit", pct(m.yields.returnOnCostAtExit, 2)], ["Exit cap", pct(m.yields.exitCap, 2)],
       ["Profit", usd(m.returns.profit)],
     ], { x: 5.15, y: returnsBottom + 0.25, w: 4.55, h: 2.1 }, { size: 9, widths: [2.4, 1.8], align: ["l", "r"], rowHeight: 0.26 });
-    s.table(["Debt", "Terms"], [
+    const debtBottom = s.table(["Debt", "Terms"], [
       ["Loan to purchase price", pct(m.debt.ltpp, 2)], ["Loan to cost", pct(m.debt.ltc, 2)],
       ["Rate", `${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)}`],
       ["Interest-only / amortization", `${m.debt.interestOnlyMonths ?? "—"} / ${m.debt.amortizationMonths ?? "—"} months`],
     ], { x: 0.3, y: leftBottom + 0.25, w: 4.55, h: 1.3 }, { size: 9, widths: [2, 2.1], align: ["l", "r"], rowHeight: 0.26 });
     s.notes.push(source + ": ES Summary, Pro Forma returns block, Deal Overview.");
+    if (tax || modelTax != null) {
+      // Property taxes: model vs. the latest researched bill, with exactly what the bill covers.
+      const y = debtBottom + 0.3;
+      const rows = [
+        ["Model, Year 1 real estate taxes", modelTax != null ? usd(modelTax) : "—"],
+        [tax ? `${tax.year} bill${tax.status === "partial" ? " (partial)" : ""}` : "Latest bill", tax ? usd(tax.amount) : "Not researched"],
+        ...(tax && modelTax != null ? [["Model vs. bill", `${modelTax - tax.amount < 0 ? "(" : ""}${usd(Math.abs(modelTax - tax.amount))}${modelTax - tax.amount < 0 ? ")" : ""} (${pct(taxGap, 0)})`]] : []),
+      ];
+      // Compact rows when the tables above leave little room before the footer (6.9").
+      const rh = y + 0.26 * (rows.length + 1) <= 6.9 ? 0.26 : Math.max(0.17, (6.9 - y) / (rows.length + 1));
+      s.table(["Property Taxes", "$ / year"], rows, { x: 0.3, y, w: 4.55, h: rh * (rows.length + 1) }, { size: rh < 0.24 ? 7.5 : 9, headerSize: rh < 0.24 ? 7.5 : 9, widths: [2.6, 1.5], align: ["l", "r"], rowHeight: rh });
+      const lines: Para[] = tax
+        ? [{ runs: [{ text: tax.coverage, color: MUTED }] }, ...tax.caveats.slice(0, 3).map((c): Para => ({ runs: [{ text: c, color: "B4541A" }] })), ...(taxFlag ? [{ runs: [{ text: taxFlag, bold: true, color: "B4541A" }] } as Para] : [])]
+        : [OPEN("run research on the Property Taxes page or attach the latest bill")];
+      const ty = keyBottom + 0.25;
+      s.text(lines, { x: 5.15, y: ty, w: 4.55, h: Math.max(0.6, 6.9 - ty) }, { size: 7.5 });
+      if (tax) s.notes.push(`Property taxes: Hopper Property Taxes workspace, accounts ${tax.accounts.join(", ")}; history ${tax.history.map((h) => `${h.year} ${h.amount == null ? "incomplete" : usd(h.amount)}`).join(", ")}.`);
+    }
   }
 
   // 9. Market leasing assumptions ---------------------------------------

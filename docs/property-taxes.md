@@ -44,6 +44,21 @@ Pending migration: `supabase/migrations/20261021193133_deal_property_taxes.sql`.
 
 The migration is **unapplied**. Apply it through the normal release process before using persistence. Tests use in-memory PGlite only; no production data is modified.
 
+## Automatic review (`lib/property-taxes/auto-review.ts`)
+
+After every research run (background job and the deal page's Research button), Hopper approves the clear-cut cases so people only review the doubtful ones. It only acts on parcels still pending, records without an annual review, and a missing or Hopper-written parcel-set review; a person's decisions are never changed. Everything it does is labeled "Auto-reviewed by Hopper" with the date and reason, and can be reopened.
+
+- **Parcel:** included when the county parcel contains the pin and the situs address matches, or the address differs but the parcel is in Hopper's outlined site (same-owner touching parcels, `lib/ic-deck/site-geo.ts`) whose recorded acreage matches the deal within 5%. Texas/Georgia real-property accounts are marked land + building ("combined").
+- **Parcel set:** verified when the included accounts are exactly the outlined site's accounts and the acreage matches.
+- **Amounts:** an official retained bill for the right account and year is accepted (the same test as bill-history coverage).
+- **Year reconciled:** the record's taxing authorities add up to the bill to the cent and include a school district. Harris County collector history leaves school districts out, so it stays partial.
+
+Agreed with acquisitions on 2026-11-04. Anything short of these stays in review with the reason.
+
+## Tax figure in underwriting and the exec summary (`lib/property-taxes/summary.ts`)
+
+`taxSummary()` gives the latest tax year with a bill for every account, its total, and what it covers: "complete" only when the workspace would report the full property levy, otherwise "partial" with plain reasons (e.g. "Harris County tax office only — school district not included"). The Financials tab and the exec summary (slide 2 bullet, slide 8 table) compare it with the model's Year 1 "Real Estate Taxes" (Memo Pro Forma). A partial bill is a floor, so a model below it is flagged as understated; against a complete bill a gap over 10% is flagged. Underwriting inputs are never changed.
+
 ## Verification
 
 `npx vitest run lib/property-taxes/__tests__ lib/uw lib/comps/__tests__` covers identity normalization, ambiguous matches, independent parcels, overlapping accounts, missing years, proposed figures, exemptions, rate conversions, caps/expiry, reassessment timing, manual override/identity retention, official-record parsing, access failures, SQL history/stale writes/privileges, authenticated API behavior, bill signatures and scoped links, and underwriting gross/recovery/expense/exit/price-solve treatment. The local production build and TypeScript checks also run. Browser verification uses the actual components against synthetic records and in-memory PostgreSQL, with environment-file loading disabled.

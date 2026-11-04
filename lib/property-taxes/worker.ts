@@ -4,6 +4,7 @@ import {mergeResearch} from './model';
 import {loadTaxWorkspace,saveTaxWorkspace,validateTaxState} from './store';
 import {emptyTaxState} from './types';
 import {historyCoverage} from './coverage';
+import {siteFootprint,reviewed} from './auto-review-site';
 // Server/cron and audited CLI share this worker. All writes use revision checks;
 // refresh never deletes evidence, replaces corrections or applies underwriting.
 export async function runTaxJob(db:any,fetcher:typeof fetch=fetch){
@@ -20,7 +21,9 @@ export async function runTaxJob(db:any,fetcher:typeof fetch=fetch){
   });
   // Abort stale writes when intake changed the property while research ran.
   const active=await db.from('property_tax_jobs').select('lease').eq('subject_kind',kind).eq('subject_id',id).maybeSingle();if(active.error||active.data?.lease!==lease)return {subject:id,status:'superseded'};
-  const state=validateTaxState(mergeResearch(existing,findings)),save=await db.rpc('save_property_tax_subject',{p_kind:kind,p_id:id,p_expected:saved.data?.revision??0,p_state:state});if(save.error)throw save.error;
+  const site=await siteFootprint(p);
+  // Clear-cut matches, bills and reconciliations are approved by Hopper (labeled; people review the rest).
+  const state=validateTaxState(reviewed(mergeResearch(existing,findings),site)),save=await db.rpc('save_property_tax_subject',{p_kind:kind,p_id:id,p_expected:saved.data?.revision??0,p_state:state});if(save.error)throw save.error;
   if(kind==='property'){
    const deals=await db.from('deals').select('id').eq('property_id',id).neq('stage','archived');if(deals.error)throw deals.error;
    for(const deal of deals.data??[]){const current=await loadTaxWorkspace(db,deal.id),merged=mergeResearch(current.state,structuredClone(findings));
@@ -32,7 +35,7 @@ export async function runTaxJob(db:any,fetcher:typeof fetch=fetch){
      if(source.storagePath!==path){const copied=await db.storage.from('documents').copy(source.storagePath,path);if(copied.error){const [a,b]=await Promise.all([db.storage.from('documents').download(source.storagePath),db.storage.from('documents').download(path)]);if(a.error||b.error||createHash('sha256').update(new Uint8Array(await a.data.arrayBuffer())).digest('hex')!==createHash('sha256').update(new Uint8Array(await b.data.arrayBuffer())).digest('hex'))throw Error('Could not retain verified deal evidence copy.');}}
      const target=merged.sources.find(s=>s.id===source.id);if(target)target.storagePath=path;
     }
-    await saveTaxWorkspace(db,deal.id,current.revision,merged,'tax-ingestion','research');
+    await saveTaxWorkspace(db,deal.id,current.revision,reviewed(merged,site),'tax-ingestion','research');
    }
   }
   for(const d of findings.research?.discovery??[]){const prior=await db.from('property_tax_jurisdictions').select('jurisdiction').eq('jurisdiction',d.jurisdiction).maybeSingle();if(prior.error)throw prior.error;

@@ -19,6 +19,8 @@ import { compReview } from "@/lib/comps/reviewed-evidence";
 import { loadSavedDeckModel } from "@/lib/ic-deck/saved-model";
 import { validateReference, referenceNarrative, referenceBudget } from "@/lib/ic-deck/reference";
 import { bindModelSubject } from "@/lib/ic-deck/model-subject";
+import { loadTaxWorkspace } from "@/lib/property-taxes/store";
+import { taxSummary, type TaxSummary } from "@/lib/property-taxes/summary";
 import { marketCanvas, canvasMapView, ringPath, tenantColors, OCCUPANCY_COLORS, OWNER_COLORS, type MarketCanvas, type MapView } from "@/lib/ic-deck/canvas";
 import { parcelFootprint, highwayAccess, highwayCaption, parcelPaths, type ParcelFootprint, type HighwayAccess } from "@/lib/ic-deck/site-geo";
 
@@ -231,6 +233,10 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
     for (const [k, v] of await Promise.all(jobs.map(async ([k, p]) => [k, await p] as const))) maps[k] = v;
   }
 
+  // Researched property tax bills (labeled complete/partial); never blocks the deck.
+  let taxes: TaxSummary | null = null;
+  try { taxes = taxSummary((await loadTaxWorkspace(db, input.dealId)).state); } catch { taxes = null; }
+
   const buffer = renderIcDeck({
     model,
     deal: {
@@ -241,7 +247,7 @@ export async function buildExecSummary(input: BuildInput): Promise<{ buffer: Buf
       lastOffer: offers[0] ? { price: Number(offers[0].price), date: String(offers[0].offered_at).slice(0, 10) } : null,
       ddEndOn: deal.dd_end_on ?? null, closingOn: deal.closing_on ?? null, loi,
     },
-    leaseComps, saleComps, compRadiusMiles: COMP_POLICY.radiusMiles, compRadii, assets, maps, narrative, reference, preparedOn: new Date(),
+    leaseComps, saleComps, compRadiusMiles: COMP_POLICY.radiusMiles, compRadii, assets, maps, narrative, reference, preparedOn: new Date(), taxes,
     site: {
       parcel: parcel ? { acres: parcel.acres, parcelCount: parcel.parcelCount, dealAcres: parcel.dealAcres, matchesDeal: parcel.matchesDeal, owner: parcel.owner, source: parcel.source } : null,
       canvas: canvas && canvasView ? { ...canvas, view: canvasView, legends: { occupancy: OCCUPANCY_COLORS, tenantUse: tenantColors(canvas.tenantUse.map((r) => r.label)), owner: OWNER_COLORS } } : null,

@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { loadTaxWorkspace, saveTaxWorkspace, TaxError } from "@/lib/property-taxes/store";
 import { mergeResearch } from "@/lib/property-taxes/model";
+import { siteFootprint, reviewed } from "@/lib/property-taxes/auto-review-site";
 import { researchTaxes } from "@/lib/property-taxes/research";
 import {importGwinnettHistory} from '@/lib/property-taxes/gwinnett-history-import';
 import {importAssistedBills} from '@/lib/property-taxes/assisted';
@@ -119,7 +120,8 @@ export async function POST(req:NextRequest,props:{params:Promise<{id:string}>}) 
           if(error)throw new Error('County evidence retrieved but original document could not be retained. Retry; saved history is preserved.');
           source.storagePath=path;
         });
-        const state=mergeResearch(current.state,findings);
+        // Clear-cut matches, bills and reconciliations are approved by Hopper (labeled; people review the rest).
+        const state=reviewed(mergeResearch(current.state,findings),await siteFootprint(p));
         const saved=await saveTaxWorkspace(db,id,current.revision,state,user.email,"research");
         revalidatePath(`/deals/${id}/property-taxes`);
         send({type:"complete",workspace:saved});

@@ -137,6 +137,8 @@ export function modelDetailOf(m: ModelSummary): Record<string, unknown> {
       : {}),
     warnings: m.warnings,
     sourceProperty: m.property.address,
+    // Year 1 real estate taxes, compared with researched bills on the Financials tab.
+    realEstateTaxes: m.realEstateTaxes ?? null,
     uw: modelSnapshot(m),
   };
 }

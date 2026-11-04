@@ -70,6 +70,8 @@ export interface ModelSummary {
   leasing: Array<{ label: string; value: string }>;
   rentRoll: { rows: RentRollRow[]; totalSf: number | null; waltYears: number | null };
   cashFlow: { years: string[]; rows: CashFlowRow[] };
+  /** Year 1 real estate taxes (positive), from Memo Pro Forma; absent in older summaries. */
+  realEstateTaxes?: number | null;
   sensitivities: { deal: Grid | null; lp: Grid | null };
   warnings: string[];
 }
@@ -240,6 +242,7 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
 
   // ---- Annual cash flow ---------------------------------------------------
   const cashFlow = readCashFlow(mpf!, returns.holdYears, warnings);
+  const realEstateTaxes = readYear1(mpf!, /^Real Estate Taxes\s*$/i);
 
   // ---- Sensitivities ------------------------------------------------------
   const deal = readGrid(pf, /^SUPPORT TABLE - DEAL LEVEL RETURNS/i, "Deal-level returns (IRR / multiple)");
@@ -295,7 +298,7 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
   return {
     version: MODEL_VERSION,
     source: { fileName, modelDate: excelDate(dov!.get("B3")) },
-    property, capitalization, totalCost, yields, returns, dates, debt, leasing, rentRoll, cashFlow,
+    property, capitalization, totalCost, yields, returns, dates, debt, leasing, rentRoll, cashFlow, realEstateTaxes,
     sensitivities: { deal, lp },
     warnings,
   };
@@ -376,6 +379,14 @@ const CF_ROWS: Array<{ label: string; section?: RegExp; emphasis?: boolean; form
   { label: "LEVERED CASH FLOW", emphasis: true, show: "Levered Cash Flow" },
   { label: "Levered Cash-on-Cash", format: "pct" },
 ];
+
+/** A Memo Pro Forma row's Year 1 value, as a positive amount (expenses are negative there). */
+function readYear1(mpf: Sheet, label: RegExp): number | null {
+  const yearRow = find(mpf, /^Year$/i, { col: 2 }), hit = find(mpf, label, { col: 2 });
+  if (!yearRow || !hit) return null;
+  for (let c = 5; c < 30; c++) if (num(mpf.at(yearRow.row, c)) === 1) { const v = num(mpf.at(hit.row, c)); return v === null ? null : Math.abs(v); }
+  return null;
+}
 
 function readCashFlow(mpf: Sheet, holdYears: number | null, warnings: string[]): ModelSummary["cashFlow"] {
   const yearRow = find(mpf, /^Year$/i, { col: 2 });

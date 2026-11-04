@@ -28,6 +28,14 @@ import { incomePosition, latestVersion as selectedVersion, modelIdentity } from 
 import { compReview } from "@/lib/comps/reviewed-evidence";
 import { compUnderwriting, type UwComp } from "@/lib/comps/underwriting";
 import { workbookWarnings } from "@/lib/workbook-messages";
+import { getServiceClient } from "@/lib/supabase";
+import { loadTaxWorkspace } from "@/lib/property-taxes/store";
+import { taxSummary, type TaxSummary } from "@/lib/property-taxes/summary";
+
+/** Researched property tax bills for the deal; never breaks the page. */
+async function dealTaxes(dealId: string): Promise<TaxSummary | null> {
+  try { return taxSummary((await loadTaxWorkspace(getServiceClient(), dealId)).state); } catch { return null; }
+}
 
 export const metadata = { title: "Financials" };
 
@@ -60,7 +68,7 @@ const MLA_FIELDS = ["market_base_rent", "term_years", "term_months", "renewal_pr
 
 export default async function FinancialsPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
-  const [deal, site, evidence, dealContacts] = await Promise.all([getDeal(id), getSiteView(id), getEvidence(), getDealContacts(id)]);
+  const [deal, site, evidence, dealContacts, taxes] = await Promise.all([getDeal(id), getSiteView(id), getEvidence(), getDealContacts(id), dealTaxes(id)]);
   const k = dealKpis(deal, site.snapshot);
   const returns = latestReturns(deal);
   const ios = deal.asset_class !== "industrial";
@@ -157,6 +165,7 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
             <ul>{latestVersion.model_detail.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}</ul>
           </div>
         )}
+        <TaxCheck taxes={taxes} modelTax={typeof latestVersion?.model_detail?.realEstateTaxes === "number" ? latestVersion.model_detail.realEstateTaxes : null} hasModel={!!latestVersion} dealId={deal.id} />
         <ExcelUploadForm dealId={deal.id} hasModel={!!sourceVersion} />
         <p className="hint fin-note">
           Uploaded returns are the workbook&apos;s saved calculation results. Hopper does not recalculate Excel formulas. Confirm the source
@@ -275,6 +284,35 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
       <h2 className="fin-group">Decision and evidence</h2>
       <DecisionContext deal={deal} />
       <InvestmentReview deal={deal} />
+    </div>
+  );
+}
+
+/**
+ * The model's Year 1 real estate taxes against the latest researched bill. A
+ * partial bill (e.g. county collector only) is a floor, so a model below it is
+ * understated; against a complete bill, a gap over 10% is flagged.
+ */
+function TaxCheck({ taxes, modelTax, hasModel, dealId }: { taxes: TaxSummary | null; modelTax: number | null; hasModel: boolean; dealId: string }) {
+  const link = <a href={`/deals/${dealId}/property-taxes`}>Property Taxes</a>;
+  if (!taxes) {
+    return <p className="hint fin-note">Property taxes: no researched bill yet. Run research on the {link} tab to check the model&apos;s tax line.</p>;
+  }
+  const gap = modelTax != null && taxes.amount > 0 ? modelTax / taxes.amount - 1 : null;
+  const flag = gap == null ? null
+    : taxes.status === "partial" ? (gap < 0 ? `The model's Year 1 taxes are ${Math.round(-gap * 100)}% below a partial ${taxes.year} bill, so they are understated.` : null)
+    : Math.abs(gap) > 0.1 ? `The model's Year 1 taxes are ${Math.round(Math.abs(gap) * 100)}% ${gap < 0 ? "below" : "above"} the ${taxes.year} bill.` : null;
+  return (
+    <div className={flag ? "warning" : undefined} style={flag ? undefined : { margin: "12px 0" }}>
+      <p style={{ margin: 0 }}>
+        <strong>Property taxes:</strong> {taxes.year} bill {fmtUsd(taxes.amount)}{" "}
+        <Badge tone={taxes.status === "complete" ? "success" : "warning"}>{taxes.status === "complete" ? "All authorities" : "Partial"}</Badge>
+        {modelTax != null ? <> · model Year 1 {fmtUsd(modelTax)}</> : hasModel ? <> · model tax line not read (re-upload the model to compare)</> : null}
+        {flag && <><br /><strong>{flag}</strong></>}
+      </p>
+      <p className="hint" style={{ margin: "4px 0 0" }}>
+        {taxes.coverage}.{taxes.caveats.length > 0 && <> {taxes.caveats.join(" ")}</>} Details and sources on the {link} tab.
+      </p>
     </div>
   );
 }

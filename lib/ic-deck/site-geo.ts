@@ -28,6 +28,8 @@ export interface ParcelFootprint {
   /** Within 5% of the deal's acreage (null when the deal has none). */
   matchesDeal: boolean | null;
   source: string;
+  /** Appraisal account IDs of the parcels (Texas only; empty where the layer has none). */
+  accountIds: string[];
 }
 
 export interface HighwayAccess {
@@ -88,7 +90,7 @@ const haversine = ([a, b]: LL, [c, d]: LL) => {
 // ---------- parcels ----------------------------------------------------------
 
 /** legalAcres: the assessor's recorded area -- what deals are underwritten on. */
-type Found = { owner: string | null; rings: LL[][]; legalAcres: number | null };
+type Found = { owner: string | null; rings: LL[][]; legalAcres: number | null; accountId?: string | null };
 const positive = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
 
 async function texasParcels(lat: number, lng: number, d: number, point: boolean): Promise<Found[]> {
@@ -104,7 +106,8 @@ async function texasParcels(lat: number, lng: number, d: number, point: boolean)
     const conv = (p: number[]): LL => (wkid === 4326 ? [p[1], p[0]] : mercToLL(p));
     // LEGAL_AREA is acres unless the district marks it as square feet.
     const legal = positive(r.attributes?.LEGAL_AREA), sqft = /SF|SQ/i.test(String(r.attributes?.LGL_AREA_UNIT ?? ""));
-    return { owner: r.attributes?.OWNER_NAME ?? null, legalAcres: legal == null ? null : sqft ? legal / 43560 : legal, rings: (r.geometry?.rings ?? []).map((ring: number[][]) => ring.map(conv)) };
+    const attr = Object.fromEntries(Object.entries(r.attributes ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+    return { owner: r.attributes?.OWNER_NAME ?? null, accountId: attr.prop_id == null || attr.prop_id === "" || attr.prop_id === "Null" ? null : String(attr.prop_id).trim(), legalAcres: legal == null ? null : sqft ? legal / 43560 : legal, rings: (r.geometry?.rings ?? []).map((ring: number[][]) => ring.map(conv)) };
   }).filter((f: Found) => f.rings.length);
 }
 
@@ -161,6 +164,7 @@ export async function parcelFootprint(lat: number, lng: number, dealAcres: numbe
     return {
       rings, acres, owner: main.owner, parcelCount: cluster.length, dealAcres,
       matchesDeal: dealAcres ? Math.abs(acres / dealAcres - 1) <= 0.05 : null,
+      accountIds: cluster.every(c => c.accountId) ? [...new Set(cluster.map(c => c.accountId!))] : [],
       source: `${source}; acreage ${legal ? "as recorded by the assessor" : "measured from the drawn boundary"}`,
     };
   } catch { return null; }
