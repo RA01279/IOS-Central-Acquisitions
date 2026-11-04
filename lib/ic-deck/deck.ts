@@ -227,7 +227,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     s.table(["Yields", "% Cap Rate"], [
       ["Going-in", pct(m.yields.goingIn, 2)], ["Return on Cost at Exit", pct(m.yields.returnOnCostAtExit, 2)], ["Exit Cap", pct(m.yields.exitCap, 2)],
     ], { x: right, y: 5.65 + 0.2 * Math.max(0, m.capitalization.length - 4), w, h: 0.8 }, { size: 8, widths: [2.2, 1], align: ["l", "r"], rowHeight: 0.2 });
-    s.notes.push(source + ": ES Summary, Pro Forma returns block, Deal Overview debt terms.", `Hopper deal record: stage ${deal.stageLabel}; LOI terms as last saved.`);
+    s.notes.push(source + ": ES Summary, Pro Forma returns block and debt terms.", `Hopper deal record: stage ${deal.stageLabel}; LOI terms as last saved.`);
     noteDraft(s, "locationHighlights", "Location Highlights");
     noteDraft(s, "zoning", "Zoning");
     if (m.warnings.length) s.notes.push("MODEL CHECKS — resolve before circulating:", ...m.warnings.map((x) => "• " + x));
@@ -301,7 +301,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
       ["Rate", `${pct(m.debt.index, 2)} index + ${pct(m.debt.spread, 2)}`],
       ["Interest-only / amortization", `${m.debt.interestOnlyMonths ?? "—"} / ${m.debt.amortizationMonths ?? "—"} months`],
     ], { x: 0.3, y: leftBottom + 0.25, w: 4.55, h: 1.3 }, { size: 9, widths: [2, 2.1], align: ["l", "r"], rowHeight: 0.26 });
-    s.notes.push(source + ": ES Summary, Pro Forma returns block, Deal Overview.");
+    s.notes.push(source + ": ES Summary and Pro Forma (returns, sources and debt).");
     if (tax || modelTax != null) {
       // Property taxes: model vs. the latest researched bill, with exactly what the bill covers.
       const y = debtBottom + 0.3;
@@ -337,7 +337,7 @@ export function renderIcDeck(input: IcDeckInput): Buffer {
     const y3 = y2 + 0.24 * (m.rentRoll.rows.length + 1) + 0.3;
     s.table(["Leasing Assumption", "Base Case"], m.leasing.slice(0, half).map((l) => [l.label, l.value]), { x: 0.3, y: y3, w: 4.55, h: 1.6 }, { size: 8, widths: [2.4, 1.6], align: ["l", "r"], rowHeight: 0.22 });
     if (m.leasing.length > half) s.table(["Leasing Assumption", "Base Case"], m.leasing.slice(half).map((l) => [l.label, l.value]), { x: 5.15, y: y3, w: 4.55, h: 1.6 }, { size: 8, widths: [2.4, 1.6], align: ["l", "r"], rowHeight: 0.22 });
-    s.notes.push(source + ": Rent Roll and Deal Overview leasing assumptions. Rent PSF is per building SF; the model's MLA is quoted per month.");
+    s.notes.push(source + ": Rent Roll and Market Leasing Summary. Rent PSF is per building SF; the model's MLA is quoted per month.");
   }
 
   // 10. Cash flow --------------------------------------------------------

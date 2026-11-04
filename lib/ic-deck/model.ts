@@ -116,10 +116,13 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
   const warnings: string[] = [];
   const es = book.sheet("ES Summary");
   const pf = book.sheet("Pro Forma");
-  const dov = book.sheet("Deal Overview");
+  // Visible tabs only. "Deal Overview", "Summary Table" and "Memo Table" are
+  // hidden in the template and can carry stale figures (Tanner Rd's showed
+  // $2.9M / 21.04% while Pro Forma had $3.0M / 19.77%), so they are never read.
+  const mls = book.sheet("Market Leasing Summary");
   const rr = book.sheet("Rent Roll");
   const mpf = book.sheet("Memo Pro Forma");
-  const missing = [["ES Summary", es], ["Pro Forma", pf], ["Deal Overview", dov], ["Rent Roll", rr], ["Memo Pro Forma", mpf]]
+  const missing = [["ES Summary", es], ["Pro Forma", pf], ["Rent Roll", rr], ["Memo Pro Forma", mpf]]
     .filter(([, s]) => !s).map(([n]) => n);
   if (missing.length) {
     throw new Error(`This doesn't look like a Dalfen acquisition model: missing the ${missing.join(", ")} sheet${missing.length > 1 ? "s" : ""}.`);
@@ -150,8 +153,9 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
   // hidden tabs from earlier deals, so check rather than assume.
   if (address) {
     const key = norm(address).split(" ").slice(0, 2).join(" ");
-    for (const [name, sheet] of [["Deal Overview", dov], ["Rent Roll", rr]] as const) {
-      const title = str(sheet!.get("B2"));
+    for (const [name, sheet] of [["Pro Forma", pf], ["Rent Roll", rr], ["Market Leasing Summary", mls]] as const) {
+      if (!sheet) continue;
+      const title = str(sheet.get("B2"));
       if (title && !norm(title).includes(key)) warnings.push(`The ${name} sheet is titled "${title}", not ${address}. It may be left over from another deal.`);
     }
   }
@@ -184,61 +188,74 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
     const multRow = find(pf, /^Multiple$/i, { col: 2, after: head.row - 1, before: head.row + 8 });
     return { irr: irrRow ? num(pf.at(irrRow.row, head.col + offset)) : null, multiple: multRow ? num(pf.at(multRow.row, head.col + offset)) : null };
   };
-  const months = num(right(pf, /^Month of Sale$/i, 2)) ?? num(right(dov, /^Hold Period$/i, 3));
+  // Pro Forma labels are in column B; amounts and dates in column F (offset 4),
+  // percentages in D (offset 2).
+  const months = num(right(pf, /^Month of Sale$/i, 2));
+  const profitRow = head && pf ? find(pf, /^Profit$/i, { col: 2, after: head.row - 1, before: head.row + 8 }) : null;
   const returns = {
     holdYears: months ? Math.round((months / 12) * 10) / 10 : null,
     lp: block(0),
     unlevered: block(1),
     levered: block(2),
-    profit: num(right(dov, /^Profit$/i, 3)),
+    profit: profitRow && head && pf ? num(pf.at(profitRow.row, head.col + 2)) : null,
   };
   if (!head) warnings.push("Couldn't find the Pro Forma returns block (Levered LP / Unlevered / Levered).");
 
+  // Acquisition = the annual cash flow's Year 1 "Date Start" (column H label).
+  // Not "Closing Date" under Additional Terms: that is the loan's closing.
+  const dateStart = find(pf, /^Date Start$/i, { col: 8 });
+  let acquisition: string | null = null;
+  for (let c = 9; dateStart && pf && c < 30 && !acquisition; c++) acquisition = excelDate(num(pf.at(dateStart.row, c)));
   const dates = {
-    acquisition: excelDate(right(dov, /^Acquisition Date$/i, 3)),
-    sale: excelDate(right(dov, /^Sale Date$/i, 3)),
+    acquisition,
+    sale: excelDate(right(pf, /^Month of Sale$/i, 4)),
   };
+  // Loan sizing block: "Initial Loan Amount" then "Total Loan Amount" (D = LTC).
+  const initialLoanRow = find(pf, /^Initial Loan Amount$/i, { col: 2 });
+  const totalLoanSized = find(pf, /^Total Loan Amount$/i, { col: 2, after: initialLoanRow?.row });
+  const initialLoan = initialLoanRow && pf ? num(pf.at(initialLoanRow.row, 6)) : null;
+  const loan = num(right(pf, /^Total Loan Amount$/i, 4));
+  // Rate terms before stabilization are the loan's terms at closing.
+  const rateHead = find(pf, /^Rate - Prior to Stabili[sz]ation$/i, { col: 2 });
   const debt = {
-    loan: num(right(dov, /^Total Loan$/i, 2)),
-    equity: num(right(dov, /^Total Equity$/i, 2)),
-    ltpp: num(right(dov, /^LTPP$/i, 2)),
-    ltc: num(right(dov, /^LTC$/i, 2)),
-    index: num(right(dov, /^Index/i, 2)),
-    spread: num(right(dov, /^Spread/i, 2)),
-    interestOnlyMonths: num(right(dov, /^Interest Only$/i, 2)),
-    amortizationMonths: num(right(dov, /^Amort/i, 2)),
+    loan,
+    equity: num(right(pf, /^Total Equity$/i, 4)),
+    ltpp: initialLoan !== null && price ? initialLoan / price : null,
+    ltc: (totalLoanSized && pf ? num(pf.at(totalLoanSized.row, 4)) : null) ?? (loan !== null && totalCost.amount ? loan / totalCost.amount : null),
+    index: num(right(pf, /^Index/i, 4, { after: rateHead?.row })),
+    spread: num(right(pf, /^Spread$/i, 4, { after: rateHead?.row })),
+    interestOnlyMonths: num(right(pf, /^Interest Only$/i, 4)),
+    amortizationMonths: num(right(pf, /^Amort\.?$/i, 4)),
   };
 
-  // ---- Leasing assumptions (Deal Overview block) --------------------------
+  // ---- Leasing assumptions (visible Market Leasing Summary, column D) -----
   const leasing: ModelSummary["leasing"] = [];
-  const leasingHead = find(dov, /^Leasing Assumptions$/i, { col: 2 });
-  const debtHead = find(dov, /^Debt Assumptions$/i, { col: 2 });
-  if (leasingHead && dov) {
-    for (let r = leasingHead.row + 1; r < (debtHead?.row ?? leasingHead.row + 20); r++) {
-      const label = str(dov.at(r, 2));
-      const v = dov.at(r, 4);
-      if (!label || v === null) continue;
-      let value: string;
-      if (typeof v === "number") {
-        if (/renewal|commission/i.test(label)) value = pct(v, 0);
-        else if (/market rent/i.test(label)) value = `$${v.toFixed(2)} / SF / mo`;
-        else if (/improvements/i.test(label)) value = `$${Math.round(v).toLocaleString("en-US")}`;
-        else value = String(Math.round(v * 10) / 10);
-      } else value = String(v).trim();
-      leasing.push({ label, value });
+  const mlsValue = (label: RegExp) => (mls ? right(mls, label, 2) : null);
+  const money = (v: CellValue) => (typeof v === "number" ? `$${Math.round(v).toLocaleString("en-US")}` : str(v));
+  const term = str(mlsValue(/^Term Length/i))?.match(/^(\d+)\s*\/\s*(\d+)$/);
+  const unit = str(mlsValue(/^Market Base Rent \(UOM\)$/i)) ?? "$ / SF / Month";
+  const rent = mlsValue(/^Market Base Rent \(Blended\)$/i) ?? mlsValue(/^Market Base Rent \(New\)$/i);
+  const add = (label: string, value: string | null | undefined) => { if (value) leasing.push({ label, value }); };
+  if (mls) {
+    add("Market Rent", typeof rent === "number" ? `$${rent.toFixed(2)} ${/month/i.test(unit) ? "/ SF / mo" : unit.replace(/^\$\s*/, "")}` : str(rent));
+    add("Term Length", term ? `${term[1]} years${term[2] !== "0" ? ` ${term[2]} months` : ""}` : str(mlsValue(/^Term Length/i)));
+    add("Renewal Probability", typeof mlsValue(/^Renewal Probability$/i) === "number" ? pct(mlsValue(/^Renewal Probability$/i) as number, 0) : null);
+    add("Months Vacant", typeof mlsValue(/^Months Vacant$/i) === "number" ? String(mlsValue(/^Months Vacant$/i)) : null);
+    add("Months Vacant (Blended)", typeof mlsValue(/^Months Vacant \(Blended\)$/i) === "number" ? String(Math.round((mlsValue(/^Months Vacant \(Blended\)$/i) as number) * 10) / 10) : null);
+    add("Free Rent (New, months)", typeof mlsValue(/^New Free Rent/i) === "number" ? String(mlsValue(/^New Free Rent/i)) : null);
+    add("Free Rent (Renewal, months)", typeof mlsValue(/^Renewal Free Rent/i) === "number" ? String(mlsValue(/^Renewal Free Rent/i)) : null);
+    add("Rent Increases", str(mlsValue(/^Fixed Steps$/i)));
+    add("Recovery Type", str(mlsValue(/^Recovery Type$/i)));
+    add("Tenant Improvements (New)", money(mlsValue(/^Tenant Improvements \(New\)$/i)));
+    add("Tenant Improvements (Renew)", money(mlsValue(/^Tenant Improvements \(Renew\)$/i)));
+    for (const k of ["New", "Renew"]) {
+      const v = mlsValue(new RegExp(`^Leasing Commissions \\(${k}\\)$`, "i"));
+      add(`Leasing Commissions (${k})`, typeof v === "number" ? pct(v, Math.abs(Math.round(v * 1000) / 10 % 1) > 1e-9 ? 1 : 0) : str(v));
     }
-  }
+  } else warnings.push("No Market Leasing Summary tab; leasing assumptions are left out.");
 
   // ---- Rent roll ----------------------------------------------------------
   const rentRoll = readRentRoll(rr!, warnings);
-  // Deal Overview's leasing block isn't always refreshed when the template is
-  // reused; its MLA name has been seen carrying another deal's ("$3.85 FSG").
-  const mlaIdx = leasing.findIndex((l) => /^MLA Name$/i.test(l.label));
-  const rentRollMlas = new Set(rentRoll.rows.map((r) => r.mla).filter(Boolean));
-  if (mlaIdx >= 0 && rentRollMlas.size && !rentRollMlas.has(leasing[mlaIdx].value)) {
-    warnings.push(`Deal Overview's leasing block names the MLA "${leasing[mlaIdx].value}", but the rent roll uses ${[...rentRollMlas].map((x) => `"${x}"`).join(", ")}. The deck shows the rent roll's; update Deal Overview.`);
-    leasing.splice(mlaIdx, 1);
-  }
 
   // ---- Annual cash flow ---------------------------------------------------
   const cashFlow = readCashFlow(mpf!, returns.holdYears, warnings);
@@ -297,7 +314,7 @@ export function extractModel(book: Workbook, fileName: string): ModelSummary {
 
   return {
     version: MODEL_VERSION,
-    source: { fileName, modelDate: excelDate(dov!.get("B3")) },
+    source: { fileName, modelDate: book.savedAt ?? null },
     property, capitalization, totalCost, yields, returns, dates, debt, leasing, rentRoll, cashFlow, realEstateTaxes,
     sensitivities: { deal, lp },
     warnings,

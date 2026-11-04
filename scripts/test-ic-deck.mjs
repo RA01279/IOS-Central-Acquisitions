@@ -34,8 +34,13 @@ put(es, { B4: "Address", D4: "100 Example Yard Rd", B5: "City", D5: "Testville, 
   B14: "Price", C14: 5000000, D14: 250, B15: "Acquisition / Financing Costs", C15: 100000, D15: 5, B16: "Capex", C16: 0, D16: 0, B17: "Total", C17: 5100000, D17: 255,
   B19: "Yields", B20: "Going-in", C20: 0.07, B21: "Return on Cost at Exit", C21: 0.08, B22: "Exit Cap", C22: 0.065 });
 const pf = wb.addWorksheet("Pro Forma");
-put(pf, { B7: "Base Case", D7: "Levered LP Returns", E7: "Unlevered", F7: "Levered", B8: "IRR", D8: 0.15, E8: 0.11, F8: 0.18, B10: "Multiple", D10: 1.9, E10: 1.6, F10: 2.1,
-  B150: "Month of Sale", D150: 60,
+put(pf, { B2: "100 Example Yard Rd: Proforma", B7: "Base Case", D7: "Levered LP Returns", E7: "Unlevered", F7: "Levered", B8: "IRR", D8: 0.15, E8: 0.11, F8: 0.18,
+  B9: "Profit", D9: 1500000, E9: 1800000, F9: 2000000, H9: "Date Start", L9: 46357, M9: 46722, B10: "Multiple", D10: 1.9, E10: 1.6, F10: 2.1,
+  B70: "Total Equity", F70: 2100000, B87: "Initial Loan Amount", D87: 0.6, F87: 3000000, B99: "Total Loan Amount", D99: 0.59, F99: 3000000,
+  B101: "Rate - Prior to Stabilization", B102: "Index (assumes 12/1/26 closing)", F102: 0.04, B104: "Spread", F104: 0.02,
+  B107: "Rate - Upon to Stabilization", B108: "Index (assumes 12/1/26 closing)", F108: 0.045, B110: "Spread", F110: 0.03,
+  B116: "Closing Date", E116: 2, F116: 46388, B117: "Interest Only", F117: 60, B118: "Amort.", F118: 360,
+  B150: "Month of Sale", D150: 60, F150: 48182,
   B192: "Deal Level Returns", B194: "Exit Cap", C194: 0.0625, D194: 0.065, B195: "IRR / Equity Multiple", C195: "19.0% / 2.2x", D195: "16.0% / 1.9x",
   B202: "SUPPORT TABLE - DEAL LEVEL RETURNS", B204: "18.0% / 2.1x", C204: 0.0625, D204: 0.065, E204: 0.0675,
   B205: 4800000, C205: "20.0% / 2.3x", D205: "19.0% / 2.2x", E205: "18.0% / 2.1x",
@@ -43,10 +48,17 @@ put(pf, { B7: "Base Case", D7: "Levered LP Returns", E7: "Unlevered", F7: "Lever
   B214: "SUPPORT TABLE - LP RETURNS", B216: "15.0% / 1.9x", C216: 0.0625, D216: 0.065, E216: 0.0675,
   B217: 4800000, C217: "17.0% / 2.0x", D217: "16.0% / 2.0x", E217: "15.5% / 1.9x",
   B218: 5000000, C218: "16.0% / 2.0x", D218: "15.0% / 1.9x", E218: "14.0% / 1.8x" });
-const dov = wb.addWorksheet("Deal Overview");
-put(dov, { B2: "100 Example Yard Rd: Deal Overview", B3: 46293, B26: "Acquisition Date", E26: 46357, B27: "Sale Date", E27: 48182, B38: "Profit", E38: 2000000,
-  B54: "Total Loan", D54: 3000000, B55: "Total Equity", D55: 2100000, B74: "Leasing Assumptions", B76: "MLA Name", D76: "$9.99 FSG", B78: "Renewal Probability", D78: 0.7,
-  B81: "Market Rent", D81: 1.5, B91: "Debt Assumptions", B93: "LTPP", D93: 0.6, B96: "LTC", D96: 0.59, B97: "Index", D97: 0.04, B98: "Spread over SOFR", D98: 0.02, B99: "Interest Only", D99: 60, B100: "Amort.", D100: 360 });
+const mls = wb.addWorksheet("Market Leasing Summary");
+put(mls, { B2: "100 Example Yard Rd: Market Leasing Summary", B8: "Base Case", B11: "Term Length (Years/Months)", D11: " 5/0", B12: "Renewal Probability", D12: 0.7,
+  B14: "Months Vacant", D14: 9, B15: "Months Vacant (Blended)", D15: 2.7, B17: "Market Base Rent (UOM)", D17: "$ / SF / Month", B20: "Market Base Rent (Blended)", D20: 1.5,
+  B31: "New Free Rent (Months)", D31: 2, B32: "Renewal Free Rent (Months)", D32: 1, B35: "Recovery Type", D35: "Net",
+  B40: "Tenant Improvements (New)", D40: 50000, B41: "Tenant Improvements (Renew)", D41: 25000, B45: "Leasing Commissions (New)", D45: 0.06, B47: "Leasing Commissions (Renew)", D47: 0.035 });
+// Hidden and stale in the real template: every figure here is wrong on purpose and must never be read.
+const dov = wb.addWorksheet("Deal Overview", { state: "hidden" });
+put(dov, { B2: "100 Example Yard Rd: Deal Overview", B3: 40000, B26: "Acquisition Date", E26: 40000, B27: "Sale Date", E27: 40001, B38: "Profit", E38: 9999999,
+  B54: "Total Loan", D54: 9999999, B55: "Total Equity", D55: 9999999, B74: "Leasing Assumptions", B76: "MLA Name", D76: "$9.99 FSG", B78: "Renewal Probability", D78: 0.11,
+  B81: "Market Rent", D81: 9.99, B91: "Debt Assumptions", B93: "LTPP", D93: 0.99, B96: "LTC", D96: 0.99, B97: "Index", D97: 0.99, B98: "Spread over SOFR", D98: 0.99, B99: "Interest Only", D99: 1, B100: "Amort.", D100: 1 });
+wb.modified = new Date("2026-09-28T15:00:00Z");
 const rr = wb.addWorksheet("Rent Roll");
 put(rr, { B2: "100 Example Yard Rd: Rent Roll", AB10: "Scheduled Base Rent at Closing", AE10: "Market Rent at Closing", AI10: "SBR at New Lease Start",
   B11: "Tenant", C11: "Suite / Bldg.", D11: "SF", E11: "% of SF", F11: "Lease Start", G11: "Lease Expiration", K11: "Remaining Term (mo.)", L11: "MLA Name", M11: "Renewal %", N11: "Downtime",
@@ -74,8 +86,16 @@ same(m.capitalization.map((c) => c.label), ["Price", "Acquisition / Financing Co
 assert.equal(m.totalCost.amount, 5100000);
 same([m.returns.levered.irr, m.returns.unlevered.irr, m.returns.lp.irr], [0.18, 0.11, 0.15]);
 assert.equal(m.returns.holdYears, 5);
-assert.equal(m.dates.acquisition, "2026-12-01");
-assert.equal(m.source.modelDate, "2026-09-28");
+assert.equal(m.dates.acquisition, "2026-12-01", "acquisition is the cash flow's Year 1 start, not the loan's Closing Date");
+assert.equal(m.dates.sale, "2031-11-30");
+assert.equal(m.source.modelDate, "2026-09-28", "model date is the file's saved date");
+assert.equal(m.returns.profit, 2000000, "profit from Pro Forma's Levered column");
+same([m.debt.loan, m.debt.equity, m.debt.ltpp, m.debt.ltc, m.debt.index, m.debt.spread, m.debt.interestOnlyMonths, m.debt.amortizationMonths],
+  [3000000, 2100000, 0.6, 0.59, 0.04, 0.02, 60, 360], "debt from Pro Forma (pre-stabilization rate terms)");
+same(m.leasing.map((l) => `${l.label}=${l.value}`), ["Market Rent=$1.50 / SF / mo", "Term Length=5 years", "Renewal Probability=70%", "Months Vacant=9",
+  "Months Vacant (Blended)=2.7", "Free Rent (New, months)=2", "Free Rent (Renewal, months)=1", "Recovery Type=Net", "Tenant Improvements (New)=$50,000",
+  "Tenant Improvements (Renew)=$25,000", "Leasing Commissions (New)=6%", "Leasing Commissions (Renew)=3.5%"], "leasing from the visible Market Leasing Summary");
+assert(!/9999999|0\.99|9\.99/.test(JSON.stringify({ r: m.returns, d: m.debt, l: m.leasing, dt: m.dates })), "hidden Deal Overview is never read");
 assert.equal(m.rentRoll.rows.length, 1);
 assert.equal(m.rentRoll.rows[0].tenant, "Example Tenant & Co.");
 assert.equal(m.rentRoll.rows[0].start, "2026-01-01", "typed m/d/yyyy dates are read");
@@ -90,8 +110,7 @@ same(m.sensitivities.deal.cols, [0.0625, 0.065, 0.0675]);
 // Model checks
 const w = m.warnings.join("\n");
 assert.match(w, /Site SF \(20,000\) doesn't match 4 acres/);
-assert.match(w, /MLA "\$9\.99 FSG", but the rent roll uses "\$1\.50\/Building SF\/mo"/);
-assert(!m.leasing.some((l) => l.label === "MLA Name"), "stale MLA name is dropped");
+assert(!/Deal Overview/.test(w), "no warnings about the hidden Deal Overview tab");
 assert.match(w, /"Base Case" exit-cap table \(D195\) shows 16\.0% \/ 1\.9x, but the base case is 18\.00% \/ 2\.1x/);
 assert(!/deal-level sensitivity shows/.test(w), "a matching support table raises no warning");
 assert(!/Memo Table|San Jose/.test(JSON.stringify(m)), "hidden leftover sheets are never read");

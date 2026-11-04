@@ -25,6 +25,8 @@ export interface Sheet {
 
 export interface Workbook {
   sheetNames: string[];
+  /** Last saved date from the file's document properties (YYYY-MM-DD), or null. */
+  savedAt?: string | null;
   sheet(name: string): Sheet | null;
 }
 
@@ -115,8 +117,13 @@ export function openWorkbook(data: ArrayBuffer | Uint8Array): Workbook {
     };
   }
 
+  // When Excel last saved the file (document properties), as YYYY-MM-DD.
+  const modified = (read("docProps/core.xml") ?? "").match(/<dcterms:modified\b[^>]*>([^<]+)<\/dcterms:modified>/)?.[1];
+  const savedAt = modified && Number.isFinite(Date.parse(modified)) ? new Date(modified).toISOString().slice(0, 10) : null;
+
   return {
     sheetNames: entries.map((e) => e.name),
+    savedAt,
     sheet(name) {
       const entry = entries.find((e) => e.name.trim().toLowerCase() === name.trim().toLowerCase());
       if (!entry) return null;
