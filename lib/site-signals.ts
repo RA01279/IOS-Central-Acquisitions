@@ -31,6 +31,9 @@ import { researchZoning } from "./zoning/research";
 import type { ZoningReport } from "./zoning/types";
 import { scoreState, type FlagKey, type SignalState } from "./hopper-tokens";
 import { type DemandSnapshot, type SignalRow } from "./site-score";
+import { lookupParcel } from "./sourcing/parcels";
+import { measureUsableAcres } from "./sourcing/usable-acres";
+import { usableSummary, type UsableAcres } from "./sourcing/usable-summary";
 
 const SQFT_PER_ACRE = 43560;
 const COMP_SOURCE = (type: "sale" | "lease") =>
@@ -273,6 +276,34 @@ export async function computeFlood(point: { lat: number; lng: number }, lotSf: n
   }
 }
 
+/**
+ * Site flag from the parcel outline: net usable acres after buildings, the
+ * 100-year floodplain, wetlands, steep ground and strips too narrow to use,
+ * with the breakdown kept in the flag's detail. Falls back to the point-sampled
+ * flood check where no outline is available (outside Texas and the mapped
+ * Georgia counties) or the measurement doesn't finish in time.
+ */
+export function siteFromUsable(u: UsableAcres): Auto {
+  const share = (a: number | undefined) => (u.grossAcres > 0 ? (a ?? 0) / u.grossAcres : 0);
+  const kept = share(u.netAcres);
+  const state: SignalState =
+    share(u.floodAcres) >= 0.5 || u.netAcres < 1 || kept < 0.35 ? "weak"
+    : share(u.floodAcres) >= 0.1 || u.wetlandsAcres > 0 || share(u.steepAcres) >= 0.1 || kept < 0.6 || u.failed.length ? "watch"
+    : "strong";
+  return { state, note: `${usableSummary(u).replace(/^(\S+) net of (\S+)/, "$1 of $2 ac usable")}. ${u.notChecked.join(", ")} not checked.`, source: "Parcel outline; USA Structures, FEMA NFHL, NWI wetlands, USGS 3DEP", detail: { usable: u } };
+}
+
+export async function computeSite(point: { lat: number; lng: number }, lotSf: number | null): Promise<Auto> {
+  try {
+    const parcel = await lookupParcel(point.lat, point.lng);
+    if (parcel?.outline?.length) {
+      const u = await Promise.race([measureUsableAcres(parcel.outline), new Promise<null>((r) => setTimeout(() => r(null), 40000))]);
+      if (u) return siteFromUsable(u);
+    }
+  } catch { /* fall through to the point check */ }
+  return computeFlood(point, lotSf);
+}
+
 // ---- basis & rent -----------------------------------------------------------
 
 // Both flags take the market from marketRange() -- the ranking and weighted
@@ -416,7 +447,7 @@ export async function refreshSignals(
     needDemand ? run("demand", () => computeDemand(point)) : Promise.resolve(),
     run("zoning", () => computeZoning(dealId, p.address ?? "", point, p.geocode_precision ?? "")),
     run("access", () => computeAccess(point)),
-    run("site", () => computeFlood(point, p.lot_sf != null ? Number(p.lot_sf) : null)),
+    run("site", () => computeSite(point, p.lot_sf != null ? Number(p.lot_sf) : null)),
     run("basis", () => computeBasis(deal, comps)),
     run("rent", () => computeRent(deal, comps, mla != null ? Number(mla) : null)),
   ]);

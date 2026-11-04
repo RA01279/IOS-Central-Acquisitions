@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { measureUsableAcres, ringsToGeom, STRUCTURES, NFHL_ZONES, NWI } from "./usable-acres";
+import { DEM } from "./site-raster";
 import { usableSummary, type UsableAcres } from "./usable-summary";
 import { assessSourcingFit } from "./fit";
 
@@ -8,8 +9,15 @@ const box = (w: number, s: number, e: number, n: number) => [[w, s], [w, n], [e,
 const hole = (w: number, s: number, e: number, n: number) => [[w, s], [e, s], [e, n], [w, n], [w, s]];
 const parcel = [box(-95.002, 29.998, -95.0, 30.0)];
 
-function fake(layers: Partial<Record<string, any[] | "fail">>): typeof fetch {
-  return (async (url: any) => {
+// Elevation: flat unless a slope (rise per degree of longitude) is given; answers every requested point.
+const dem = (risePerDegLng = 0) => async (_url: any, init: any) => {
+  const pts: number[][] = JSON.parse(new URLSearchParams(String(init.body)).get("geometry")!).points;
+  return new Response(JSON.stringify({ samples: pts.map(([x], i) => ({ locationId: i, value: 10 + (x + 95.002) * risePerDegLng })) }), { status: 200 });
+};
+function fake(layers: Partial<Record<string, any[] | "fail">>, rise = 0): typeof fetch {
+  const elevation = dem(rise);
+  return (async (url: any, init: any) => {
+    if (String(url).startsWith(DEM)) return elevation(url, init);
     const hit = Object.entries(layers).find(([k]) => String(url).startsWith(k));
     const v = hit?.[1] ?? [];
     if (v === "fail") return new Response("busy", { status: 503 });
@@ -31,7 +39,8 @@ describe("net usable acres from a parcel outline", () => {
     // Flood covers half the parcel, less the quarter of that under the building.
     expect(u.floodAcres).toBeCloseTo(u.grossAcres * 3 / 8, 1);
     expect(u.wetlandsAcres).toBeCloseTo(u.grossAcres * (0.4 * 0.5) / 4, 1);
-    expect(u.netAcres + u.buildingsAcres + u.floodAcres + u.wetlandsAcres).toBeCloseTo(u.grossAcres, 1);
+    expect(u.netAcres + u.buildingsAcres + u.floodAcres + u.wetlandsAcres + (u.steepAcres ?? 0) + (u.narrowAcres ?? 0)).toBeCloseTo(u.grossAcres, 1);
+    expect(u.steepAcres).toBe(0);
     expect(u.coveragePct).toBeCloseTo(25, 0);
     expect(u.buildingCount).toBe(1);
     expect(u.floodZones).toEqual(["AE floodway"]);
@@ -42,7 +51,8 @@ describe("net usable acres from a parcel outline", () => {
   it("treats a layer it could not read as not measured, so net is an upper bound", async () => {
     const u = (await measureUsableAcres(parcel, fake({ [NFHL_ZONES]: "fail" })))!;
     expect(u.failed).toEqual(["flood"]);
-    expect(u.netAcres).toBeCloseTo(u.grossAcres, 2);
+    // Only the corner rounding of the narrow-strip step (a few hundredths of an acre) comes off.
+    expect(u.netAcres).toBeCloseTo(u.grossAcres, 1);
     expect(usableSummary(u)).toMatch(/flood not read, so net may be lower/);
   });
 
@@ -50,6 +60,29 @@ describe("net usable acres from a parcel outline", () => {
     const g = ringsToGeom([box(-95.002, 29.998, -95.0, 30.0), hole(-95.0015, 29.9985, -95.0005, 29.9995)]);
     expect(g).toHaveLength(1);
     expect(g[0]).toHaveLength(2);
+  });
+});
+
+describe("steep ground and narrow strips", () => {
+  it("removes a strip too narrow for a truck turn", async () => {
+    // A 0.002° square with an ~9 m wide, 100 m long panhandle on its east side.
+    const withHandle = [[[-95.002, 29.998], [-95.002, 30.0], [-95.0, 30.0], [-95.0, 29.9991], [-94.999, 29.9991], [-94.999, 29.99902], [-95.0, 29.99902], [-95.0, 29.998], [-95.002, 29.998]]];
+    const u = (await measureUsableAcres(withHandle, fake({})))!;
+    expect(u.narrowAcres!).toBeGreaterThan(0.15);
+    expect(u.narrowAcres!).toBeLessThan(0.4);
+    expect(u.netAcres).toBeCloseTo(u.grossAcres - u.narrowAcres!, 1);
+  });
+  it("removes ground over a 5% grade but not a gentle one", async () => {
+    // 0.002° of longitude is ~193 m: a 25 m rise across it is ~13%, a 2 m rise ~1%.
+    const steep = (await measureUsableAcres(parcel, fake({}, 25 / 0.002)))!;
+    const gentle = (await measureUsableAcres(parcel, fake({}, 2 / 0.002)))!;
+    expect(steep.steepAcres!).toBeGreaterThan(steep.grossAcres * 0.8);
+    expect(gentle.steepAcres).toBe(0);
+  });
+  it("reports slope as not read when the elevation service fails", async () => {
+    const broken: typeof fetch = (async (url: any, init: any) => (String(url).startsWith(DEM) ? new Response("down", { status: 503 }) : fake({})(url, init))) as typeof fetch;
+    const u = (await measureUsableAcres(parcel, broken))!;
+    expect(u.failed).toContain("slope");
   });
 });
 

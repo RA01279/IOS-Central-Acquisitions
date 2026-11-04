@@ -77,7 +77,7 @@ export async function buildSourcingWorkbook(sites: Site[], label: string, resear
       brokerEmail: assignment?.brokerEmail, brokerPhone: assignment?.brokerPhone,
       usableAcres: r?.usableAcres, footprint: r?.buildingFootprintSf,
       netUsable: site.usable?.netAcres, coverage: site.usable?.coveragePct,
-      usableBreakdown: site.usable ? `${usableSummary(site.usable)}. Measured from the parcel outline: building footprints (USA Structures), FEMA 100-yr floodplain, NWI wetlands. ${site.usable.notChecked.join(", ")} not checked.` : site.parcel ? "Not measured" : undefined,
+      usableBreakdown: site.usable ? `${usableSummary(site.usable)}. Measured from the parcel outline: building footprints (USA Structures), FEMA 100-yr floodplain, NWI wetlands, ground over a 5% grade (USGS 3DEP), strips under 60 ft wide. ${site.usable.notChecked.join(", ")} not checked.` : site.parcel ? "Not measured" : undefined,
       identity: site.identityStatus ?? "unverified", related: [site.known, ...(site.nearby ?? [])].filter(Boolean).map(k => `${k!.label}: ${k!.match ?? "unverified match"}`).join("\n"),
     });
     row.height = 62;

@@ -21,7 +21,7 @@ import { usableSummary, type UsableAcres } from "@/lib/sourcing/usable-summary";
 /** Net usable acres for a sweep row, with what was taken off underneath. */
 function UsableCell({ u, hasParcel, strong }: { u?: UsableAcres | null; hasParcel: boolean; strong: boolean }) {
   if (!u) return <span className="hint">{hasParcel ? "Not measured" : "—"}</span>;
-  const off = [u.buildingsAcres && `bldgs −${u.buildingsAcres}`, u.floodAcres && `flood −${u.floodAcres}`, u.wetlandsAcres && `wetland −${u.wetlandsAcres}`].filter(Boolean).join(" · ");
+  const off = [u.buildingsAcres && `bldgs −${u.buildingsAcres}`, u.floodAcres && `flood −${u.floodAcres}`, u.wetlandsAcres && `wetland −${u.wetlandsAcres}`, u.steepAcres && `steep −${u.steepAcres}`, u.narrowAcres && `narrow −${u.narrowAcres}`].filter(Boolean).join(" · ");
   return (
     <span title={`${usableSummary(u)}. ${u.notChecked.join(", ")} not checked.`}>
       <span style={{ fontWeight: strong ? 600 : 400 }}>{u.failed.length ? "≤" : ""}{u.netAcres}</span>
