@@ -74,11 +74,12 @@ creates them, and the decision is reversible.
 - **`lib/digest.ts`** is the single source of the morning brief; the cron route
   and the RSS feed are both just senders.
 - **CI** (`.github/workflows/ci.yml`) typechecks and runs `npm test` on every push.
-- **Deploying Central production:** only from `main`, only with
-  `npm run deploy:prod`. It refuses unless the checkout is on `main`, clean,
-  identical to `origin/main` and green in CI. Never run `vercel deploy --prod`
-  from a feature branch or another worktree: production has lost work that way.
-  Finished work goes into `main` first (merge, push, wait for CI), then deploy.
+- **Deploying Central production:** pushing to `main` deploys it (Vercel Git
+  integration), so work goes into `main` only after CI passes on its branch.
+  To redeploy without a new commit, run `npm run deploy:prod`; it refuses
+  unless the checkout is on `main`, clean, identical to `origin/main` and green
+  in CI. Never run `vercel deploy --prod` from a feature branch or another
+  worktree: production has lost work that way.
 
 ## Setup
 
