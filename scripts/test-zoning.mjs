@@ -44,10 +44,13 @@ delete env.ZONEOMICS_API_KEY;
 await assert.rejects(()=>z.lookupZoneomics(point),/administrator/);
 const ExcelJS=require("exceljs");
 const parser=load("lib/excel-parser.ts");
-const ios=new ExcelJS.Workbook(), sheet=ios.addWorksheet("Summary Table");
-sheet.getCell("F7").value=4200000;
-sheet.getCell("G24").value={formula:"0.2",result:0.2};
-sheet.getCell("G25").value=2.1;
+// IOS returns come from the visible Pro Forma by row label; a hidden Summary Table is ignored.
+const ios=new ExcelJS.Workbook(), stale=ios.addWorksheet("Summary Table",{state:"hidden"}), sheet=ios.addWorksheet("Pro Forma");
+stale.getCell("F7").value=9999999;
+sheet.getCell("F7").value="Levered";
+sheet.getCell("B8").value="IRR";sheet.getCell("F8").value={formula:"0.2",result:0.2};
+sheet.getCell("B10").value="Multiple";sheet.getCell("F10").value=2.1;
+sheet.getCell("B33").value="Purchase Price";sheet.getCell("F33").value=4200000;
 const summary=await parser.parseReturnsSummary(Buffer.from(await ios.xlsx.writeBuffer()));
 assert.equal(summary.purchasePrice,4200000);assert.equal(summary.irrPct,0.2);assert.equal(summary.equityMultiple,2.1);
 const industrial=new ExcelJS.Workbook(),upload=industrial.addWorksheet("_Upload_");
