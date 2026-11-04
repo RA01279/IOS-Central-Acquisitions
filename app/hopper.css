@@ -2305,3 +2305,119 @@ main.bleed {
 .fin details.fin-collapse[open] > summary {
   margin-bottom: 14px;
 }
+
+/* Evidence and decision / decision snapshot panels. */
+.fin .fin-muted {
+  color: var(--n500);
+}
+.fin .fin-section {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.fin details.fin-collapse > .fin-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+.fin .fin-section h3 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n500);
+}
+.fin .fin-section .fin-form-grid,
+.fin .fin-subform {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: start;
+}
+.fin .fin-section .fin-form-grid label,
+.fin .fin-subform label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.fin .fin-section .fin-form-grid :is(input, select, textarea),
+.fin .fin-subform :is(input, select, textarea) {
+  width: 100%;
+  box-sizing: border-box;
+  font-weight: 400;
+}
+.fin .fin-section textarea {
+  resize: vertical;
+  min-height: 38px;
+}
+.fin .fin-span-2 {
+  grid-column: span 2;
+}
+.fin .fin-span-3 {
+  grid-column: 1 / -1;
+}
+.fin .fin-subform {
+  display: grid;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--canvas);
+}
+.fin .fin-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fin .fin-save-bar {
+  margin-top: 16px;
+  padding: 12px 0 4px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.fin .fin-saved {
+  color: var(--strong);
+  font-weight: 600;
+  font-size: 13px;
+}
+.fin .fin-save-bar .error {
+  margin: 0;
+}
+.fin .fin-dl {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 8px 16px;
+  margin: 14px 0;
+  font-size: 13px;
+}
+.fin .fin-dl dt {
+  color: var(--n500);
+  font-weight: 600;
+}
+.fin .fin-dl dd {
+  margin: 0;
+  color: var(--ink);
+}
+@media (max-width: 820px) {
+  .fin .fin-section .fin-form-grid,
+  .fin .fin-subform {
+    grid-template-columns: 1fr;
+  }
+  .fin .fin-span-2 {
+    grid-column: auto;
+  }
+  .fin .fin-dl {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .fin .fin-dl dd {
+    margin-bottom: 8px;
+  }
+}
+.fin .fin-link-sm {
+  font-size: 13px;
+}

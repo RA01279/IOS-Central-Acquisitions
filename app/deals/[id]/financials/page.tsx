@@ -273,8 +273,8 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
 
       {/* Long review forms, collapsed and last: opened when reconciling a source, not on every visit. */}
       <h2 className="fin-group">Decision and evidence</h2>
-      <InvestmentReview key={deal.investment_review?.updatedAt ?? "initial"} deal={deal} />
       <DecisionContext deal={deal} />
+      <InvestmentReview deal={deal} />
     </div>
   );
 }
