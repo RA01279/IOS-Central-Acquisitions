@@ -3,10 +3,9 @@
 // Parses the Dalfen underwriting model's returns summary. Two template
 // families are supported:
 //
-//  - IOS template ("Summary Table" tab): a formula-linked one-pager with
-//    fixed cell addresses. Mapped against 1717 Shady Oaks - V1 - CURRENT.xlsx.
-//    If a future IOS template version moves these cells, IOS_CELLS below
-//    needs to be updated.
+//  - IOS template ("Pro Forma" tab): values found by their row label in
+//    column B, never from the hidden Summary Table. Mapped against
+//    10526 Tanner Rd (Nov 2026 template).
 //
 //  - Industrial template ("_Upload_" tab): a much larger institutional
 //    JV/development model (T_ExecUpd, waterfall, refi, etc.) that ships
@@ -80,47 +79,81 @@ function readCellValue(
     return null;
 }
 
-// ---------- IOS template ("Summary Table") ----------
+// ---------- IOS template ("Pro Forma") ----------
+//
+// Everything comes from the visible Pro Forma tab, found by the row label in
+// column B. The template also carries a hidden "Summary Table" (and "Deal
+// Overview", "Memo Table") that can be left over from an earlier deal or an
+// earlier price, so those are never read. Labels survive inserted rows;
+// fixed cell addresses did not.
 
-const IOS_SHEET_NAME = "Summary Table";
+const IOS_SHEET_NAME = "Pro Forma";
+const LABEL_COL = 2; // B
 
-const IOS_CELLS: Record<FieldKey, string> = {
-    purchasePrice: "F7",
-    allInCost: "F12",
-    goingInYieldPct: "F14",
-    stabilizedReturnOnCostPct: "F15",
-    exitCapPct: "F16",
-    marketRentPsfMo: "G18",
-    holdPeriodYears: "G23",
-    irrPct: "G24",
-    equityMultiple: "G25",
-    stabilizedCashOnCashPct: "G26",
+const textOf = (cell: ExcelJS.Cell | undefined): string | null => {
+    let v: any = cell?.value;
+    if (v && typeof v === "object") v = "result" in v ? v.result : "richText" in v ? v.richText.map((t: any) => t.text).join("") : null;
+    return typeof v === "string" && v.trim() ? v.trim() : null;
 };
+const sameLabel = (a: string | null, label: string) => !!a && a.replace(/\s+/g, " ").toLowerCase() === label.toLowerCase();
 
-function parseIosTemplate(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook): ReturnsSummary {
-    const warnings: string[] = [];
-    const summary = Object.fromEntries(
-          Object.entries(IOS_CELLS).map(([key, addr]) => [
-                  key,
-                  readCellValue(sheet.getCell(addr), `${key} (${addr})`, warnings),
-                ])
-        ) as Pick<ReturnsSummary, FieldKey>;
-    // Summary Table G18 is linked to a market rate whose period can be annual,
-    // despite the template's fixed "Mo." caption. Read the actual MLA basis.
-    const rawBasis = workbook.getWorksheet("Market Leasing Summary")?.getCell("D17").value;
-    const basis = typeof rawBasis === "object" && rawBasis && "result" in rawBasis ? String(rawBasis.result ?? "") : String(rawBasis ?? "");
-    const key = basis.toLowerCase().replace(/[^a-z]/g, "");
-    if (summary.marketRentPsfMo !== null) {
-      if (/^(?:dollars)?sfyear$|^sfyr$/.test(key)) summary.marketRentPsfMo /= 12;
-      else if (!/^(?:dollars)?sfmonth$|^sfmo$/.test(key)) {
-        summary.marketRentPsfMo = null;
-        warnings.push("Market rent units are unverified: Market Leasing Summary D17 must state $/SF/month or $/SF/year. G18's fixed caption alone is insufficient.");
-      }
+/** Rows whose column B reads `label` (a label can repeat, e.g. an "Exit Cap" heading above the "Exit Cap" value). */
+function labelRows(sheet: ExcelJS.Worksheet, label: string): number[] {
+    const rows: number[] = [];
+    sheet.eachRow((row, r) => { if (sameLabel(textOf(row.getCell(LABEL_COL)), label)) rows.push(r); });
+    return rows;
+}
+
+/** Column of the "Levered" heading in the returns block at the top of Pro Forma. */
+function leveredColumn(sheet: ExcelJS.Worksheet): number | null {
+    for (let r = 1; r <= 15; r++) {
+      const row = sheet.getRow(r);
+      for (let c = 3; c <= 7; c++) if (sameLabel(textOf(row.getCell(c)), "Levered")) return c;
     }
-    const identity = workbook.getWorksheet("Pro Forma")?.getCell("F15").value;
-    const sourceProperty = typeof identity === "string" ? identity.trim() : null;
-    const text = (addr: string) => { const v:any=sheet.getCell(addr).value; return typeof v==="string"?v:typeof v?.result==="string"?v.result:null; };
-    return { ...summary, sourceProperty, sourceIdentity: { address: text("C8") ?? sourceProperty, city: text("C9"), acres:readCellValue(sheet.getCell("C10"),"Identity acres",warnings), buildingSf:readCellValue(sheet.getCell("C12"),"Identity building SF",warnings) }, marketRentSourceBasis: basis || null, warnings };
+    return null;
+}
+
+function parseIosTemplate(sheet: ExcelJS.Worksheet): ReturnsSummary {
+    const warnings: string[] = [];
+    const missing: string[] = [];
+    // The first row with this label whose `col` holds a saved result; a missing
+    // label or empty value is reported once in plain language.
+    const read = (label: string, col: number | null, field: string): number | null => {
+      const rows = labelRows(sheet, label);
+      if (!rows.length || col == null) { missing.push(`"${label}"`); return null; }
+      for (const r of rows) {
+        const cell = sheet.getRow(r).getCell(col);
+        if (cell.value === null || cell.value === undefined) continue;
+        return readCellValue(cell, `${field} (Pro Forma ${cell.address}, "${label}")`, warnings);
+      }
+      missing.push(`"${label}"`);
+      return null;
+    };
+    const F = 6, E = 5, D = 4, C = 3;
+    const lev = leveredColumn(sheet);
+    if (lev == null) warnings.push('Could not find the "Levered" column in the returns block at the top of Pro Forma, so IRR, multiple and cash-on-cash were not read.');
+    const months = read("Month of Sale", D, "holdPeriodYears");
+    const summary: Pick<ReturnsSummary, FieldKey> = {
+      purchasePrice: read("Purchase Price", F, "purchasePrice"),
+      allInCost: read("Total All-in Cost", F, "allInCost"),
+      goingInYieldPct: read("Going-in Cap Rate (tax adj.)", C, "goingInYieldPct"),
+      stabilizedReturnOnCostPct: read("Yield on Cost at Exit", C, "stabilizedReturnOnCostPct"),
+      exitCapPct: read("Exit Cap", F, "exitCapPct"),
+      // "Market Rent" in the exit block is stated in $ PSF / Mo. (column E).
+      marketRentPsfMo: read("Market Rent", E, "marketRentPsfMo"),
+      holdPeriodYears: months != null ? months / 12 : null,
+      irrPct: read("IRR", lev, "irrPct"),
+      equityMultiple: read("Multiple", lev, "equityMultiple"),
+      // Average levered cash-on-cash over the hold, as in the industrial template.
+      stabilizedCashOnCashPct: read("Avg. Cash-on-Cash", lev, "stabilizedCashOnCashPct"),
+    };
+    if (missing.length) warnings.push(`Pro Forma rows not found or empty: ${missing.join(", ")}. Check the workbook follows the standard IOS template.`);
+    const address = textOf(sheet.getRow(labelRows(sheet, "Address")[0] ?? 0).getCell(F)) ?? textOf(sheet.getRow(labelRows(sheet, "Property Name")[0] ?? 0).getCell(F));
+    const city = textOf(sheet.getRow(labelRows(sheet, "City, State")[0] ?? 0).getCell(F));
+    const lotRow = labelRows(sheet, "Lot Size (Acre / SF)")[0], bldgRow = labelRows(sheet, "Building SF")[0];
+    const acres = lotRow ? readCellValue(sheet.getRow(lotRow).getCell(E), "Identity acres", warnings) : null;
+    const buildingSf = bldgRow ? readCellValue(sheet.getRow(bldgRow).getCell(F), "Identity building SF", warnings) : null;
+    return { ...summary, sourceProperty: address, sourceIdentity: { address, city, acres, buildingSf }, marketRentSourceBasis: summary.marketRentPsfMo != null ? "Pro Forma Market Rent ($ PSF / Mo.)" : null, warnings };
 }
 
 // ---------- Industrial template ("_Upload_") ----------
@@ -188,14 +221,14 @@ export async function parseReturnsSummary(buffer: Buffer, expectedProperty?: str
     await workbook.xlsx.load(buffer as any);
 
   const iosSheet = workbook.getWorksheet(IOS_SHEET_NAME);
-    if (iosSheet) {
-          const result = parseIosTemplate(iosSheet, workbook);
+    if (iosSheet && labelRows(iosSheet, "Purchase Price").length) {
+          const result = parseIosTemplate(iosSheet);
           // A conflicting street number is definite evidence of an identity
           // problem, not something the upload filename can override.
           const sourceNumber = result.sourceProperty?.match(/^\d+(?:-\d+)?\b/)?.[0];
           const expectedNumber = expectedProperty?.match(/^\d+(?:-\d+)?\b/)?.[0];
           if (sourceNumber && expectedNumber && sourceNumber !== expectedNumber) result.warnings.push(`Detected identity discrepancy: workbook ${result.sourceProperty}; deal ${expectedProperty}. Review before using this source; this does not confirm a wrong upload.`);
-          if (!result.sourceProperty) result.warnings.push("No internal workbook property identity was found at Pro Forma F15.");
+          if (!result.sourceProperty) result.warnings.push('No property address was found on Pro Forma (the "Address" row).');
           return result;
     }
 
@@ -205,7 +238,7 @@ export async function parseReturnsSummary(buffer: Buffer, expectedProperty?: str
     }
 
   throw new Error(
-        `Didn't recognize this workbook's template. Expected either a "${IOS_SHEET_NAME}" tab (IOS models) ` +
+        `Didn't recognize this workbook's template. Expected either a "${IOS_SHEET_NAME}" tab with a "Purchase Price" row (IOS models) ` +
           `or a "${INDUSTRIAL_SHEET_NAME}" tab (industrial models), and found neither. Check this file matches a standard template.`
       );
 }

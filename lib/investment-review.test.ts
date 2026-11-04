@@ -40,10 +40,10 @@ describe("source authority and current income",()=>{
    const d:any={properties:{address:"100 Subject Rd"},uw_versions:[{version_number:1,returns_summary:{sourceProperty:"100 Subject Rd",marketRentPsfMo:16,irrPct:.1}}]};
    expect(authoritativeReturns(d)?.marketRentPsfMo).toBeNull();expect(authoritativeReturns(d)?.irrPct).toBe(.1);expect(d.uw_versions[0].returns_summary.marketRentPsfMo).toBe(16);
  });
- it("retains detected upload conflicts and normalizes annual units without approving source",async()=>{
-  const w=new ExcelJS.Workbook(),s=w.addWorksheet("Summary Table"),p=w.addWorksheet("Pro Forma"),m=w.addWorksheet("Market Leasing Summary");
-  p.getCell("F15").value="1301-1347 Lathrop";s.getCell("C8").value="1301-1347 Lathrop";s.getCell("C9").value="Houston";s.getCell("C10").value=1.92;s.getCell("C12").value=9460;s.getCell("G18").value=16;m.getCell("D17").value="$/SF/Year";
-  const r=await parseReturnsSummary(Buffer.from(await w.xlsx.writeBuffer()),"3000 Amwiler Rd");expect(r.marketRentPsfMo).toBeCloseTo(16/12);expect(r.warnings.join(" ")).toMatch(/discrepancy/);const d:any=deal();d.uw_versions[0].returns_summary=r;expect(modelIdentity(d).authoritative).toBe(false);
+ it("retains detected upload conflicts from the Pro Forma identity without approving source",async()=>{
+  const w=new ExcelJS.Workbook(),p=w.addWorksheet("Pro Forma");
+  for(const [label,col,value] of [["Address","F","1301-1347 Lathrop"],["City, State","F","Houston"],["Lot Size (Acre / SF)","E",1.92],["Building SF","F",9460],["Purchase Price","F",4000000],["Market Rent","E",1.33]] as const){const r=p.rowCount+2;p.getCell(`B${r}`).value=label;p.getCell(`${col}${r}`).value=value;}
+  const r=await parseReturnsSummary(Buffer.from(await w.xlsx.writeBuffer()),"3000 Amwiler Rd");expect(r.marketRentPsfMo).toBe(1.33);expect(r.marketRentSourceBasis).toMatch(/PSF \/ Mo/);expect(r.warnings.join(" ")).toMatch(/discrepancy/);const d:any=deal();d.uw_versions[0].returns_summary=r;expect(modelIdentity(d).authoritative).toBe(false);
  });
 });
 describe("workbook identity tolerates formatting differences",()=>{
