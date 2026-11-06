@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarize, breakdown, canvasMapView, projectToView, radiusRing, type CanvasRecord } from "./canvas";
+import { submarketFromPoints, summarize, breakdown, canvasMapView, projectToView, radiusRing, type CanvasRecord } from "./canvas";
 
 const rec = (acres: number | null, occupiedAcres: number | null, tenantUse: string | null, owner: string | null = "User"): CanvasRecord =>
   ({ acres, occupiedAcres, occupancy: "Leased", tenantUse, owner });
@@ -50,5 +50,20 @@ describe("market canvas", () => {
     const ys = radiusRing(site.lat, site.lng, 5).map(([la, ln]) => projectToView(v, la, ln)[1]);
     expect(Math.min(...ys)).toBeGreaterThan(-0.1);
     expect(Math.max(...ys)).toBeLessThan(1.1);
+  });
+});
+
+describe("submarket of a pin", () => {
+  const pt = (lat: number, lng: number, submarket: string | null) => ({ lat, lng, submarket });
+  it("takes the most common label among the nearest five", () => {
+    const pts = [pt(30.001, -95, "North Corridor"), pt(30.002, -95, "Northwest"), pt(30.003, -95, "North Corridor"), pt(30.004, -95, "North Corridor"), pt(30.005, -95, "Northwest"), pt(30.1, -95, "Northwest"), pt(30.11, -95, "Northwest")];
+    expect(submarketFromPoints(30, -95, pts)).toBe("North Corridor");
+  });
+  it("breaks a tie toward the nearest", () => {
+    expect(submarketFromPoints(30, -95, [pt(30.002, -95, "B"), pt(30.001, -95, "A")])).toBe("A");
+  });
+  it("ignores unlabelled and unplaced points", () => {
+    expect(submarketFromPoints(30, -95, [pt(30.0001, -95, null), { lat: null, lng: null, submarket: "X" }, pt(30.01, -95, " Y ")])).toBe("Y");
+    expect(submarketFromPoints(30, -95, [])).toBeNull();
   });
 });

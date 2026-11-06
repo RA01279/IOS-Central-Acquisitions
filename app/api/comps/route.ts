@@ -17,10 +17,11 @@ import { readAllCompPages } from "@/lib/comps/mapData";
 const NAME_FIELDS = ["tenant_name", "buyer", "seller", "landlord_name", "market", "submarket", "city"] as const;
 import { validCoordinates } from "@/lib/location";
 import { parseMoney } from "@/lib/money";
-import { canonicalMarket, escalationFraction } from "@/lib/markets";
+import { escalationFraction } from "@/lib/markets";
 import { invalidateComps } from "@/lib/comps/cache";
 import { conflictingEvidence, sameStoredTransaction } from "@/lib/comps/conflicts";
 import { savePortfolioBatch } from "@/lib/comps/save-portfolio";
+import { placeComps } from "@/lib/comps/auto-location";
 
 export const dynamic = "force-dynamic";
 
@@ -173,6 +174,9 @@ async function handlePOST(req: NextRequest):Promise<NextResponse> {
     geo.push(l.found ? { lat: l.latitude, lng: l.longitude, precision: l.precision } : null);
     geoReason.push(l.found ? null : l.reason);
   }
+  // Market and submarket from the pin wherever the row left them blank
+  // (lib/comps/auto-location), so nobody has to type them.
+  const places = await placeComps(valid.map((c, i) => ({ market: c.market, submarket: c.submarket, city: c.city, latitude: geo[i]?.lat, longitude: geo[i]?.lng })));
 
   const supabase = getServiceClient();
   const completedKeys: string[] = [];
@@ -218,8 +222,8 @@ async function handlePOST(req: NextRequest):Promise<NextResponse> {
         const s = str(c.state);
         return s && /^[A-Za-z]{2}$/.test(s) ? s.toUpperCase() : null;
       })(),
-      market: canonicalMarket(c.market, c.city, c.longitude),
-      submarket: str(c.submarket),
+      market: places[i].market,
+      submarket: places[i].submarket,
       asset_class: c.assetClass === "industrial" ? "industrial" : c.assetClass === "ios" ? "ios" : null,
       building_sf: plain(c.buildingSf),
       lot_sf: lotSf,

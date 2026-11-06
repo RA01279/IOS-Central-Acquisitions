@@ -6,6 +6,7 @@
     {"path":"/api/cron/property-taxes/3","schedule":"0 19 * * *"},
     {"path":"/api/cron/property-taxes/4","schedule":"0 23 * * *"},
     {"path":"/api/cron/property-taxes/5","schedule":"0 3 * * *"},
+    {"path":"/api/cron/comp-places","schedule":"30 9 * * *"},
     {
       "path": "/api/cron/digest",
       "schedule": "0 13 * * 1-5"

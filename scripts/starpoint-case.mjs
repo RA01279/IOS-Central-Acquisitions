@@ -4,7 +4,7 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 export function load(file, deps = {}) {
   const m = new Module(process.cwd() + '/' + file); m.paths = Module._nodeModulePaths(process.cwd());
-  m.require = (name) => deps[name] ?? (name === '@/lib/comps/portfolios' ? load('lib/comps/portfolios.ts') : name === '@/lib/comps/fromPdf' ? {pdfSaleTables:()=>{throw Error('PDF not used in lease regression');}} : name === '@/lib/comps/save-portfolio' ? {savePortfolioBatch:()=>{throw Error('Portfolio not used in lease regression');}} : require(name));
+  m.require = (name) => deps[name] ?? (name === '@/lib/comps/portfolios' ? load('lib/comps/portfolios.ts') : name === '@/lib/comps/auto-location' ? load('lib/comps/auto-location.ts', {'@/lib/markets': load('lib/markets.ts'), '@/lib/ic-deck/canvas': {submarketAt: async () => null}}) : name === '@/lib/comps/fromPdf' ? {pdfSaleTables:()=>{throw Error('PDF not used in lease regression');}} : name === '@/lib/comps/save-portfolio' ? {savePortfolioBatch:()=>{throw Error('Portfolio not used in lease regression');}} : require(name));
   m._compile(ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, file);
   return m.exports;
 }

@@ -17,6 +17,7 @@ const dependencies = {
   "@/lib/location": load("../lib/location.ts"),
   "@/lib/money": load("../lib/money.ts"),
   "@/lib/markets": load("../lib/markets.ts"),
+  "@/lib/comps/auto-location": load("../lib/comps/auto-location.ts", { "@/lib/markets": load("../lib/markets.ts"), "@/lib/ic-deck/canvas": { submarketAt: async () => null } }),
   "@/lib/comps/cache": { invalidateComps: () => {} },
   "@/lib/comps/intake-validation": load("../lib/comps/intake-validation.ts", { "../stage-rules": load("../lib/stage-rules.ts") }),
   "@/lib/comps/match": match,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { geocodeDetailed } from "@/lib/geocode";
 import { locateSite } from "@/lib/locate-site";
+import { placeComp } from "@/lib/comps/auto-location";
 
 // POST { address, city?, state?, market?, retries? }
 // retries: true (New deal > Portfolio OM) also tries the address with
@@ -15,8 +16,13 @@ export async function POST(req: NextRequest) {
 
   if (body.retries === true) {
     const site = await locateSite({ address: body.address, city: body.city, state: body.state, market: body.market });
+    // place: true (comp intake) also returns the market and submarket the pin
+    // falls in, so the review table can show them before saving.
+    const place = site.found && body.place === true
+      ? await placeComp({ market: body.market, submarket: null, city: body.city, latitude: site.latitude, longitude: site.longitude })
+      : undefined;
     return NextResponse.json(site.found
-      ? { location: { latitude: site.latitude, longitude: site.longitude, geocode_precision: site.precision }, matchedAddress: site.matchedAddress, via: site.via, note: site.note }
+      ? { location: { latitude: site.latitude, longitude: site.longitude, geocode_precision: site.precision }, matchedAddress: site.matchedAddress, via: site.via, note: site.note, place }
       : { location: null, reason: site.reason, message: `Google couldn't locate it. ${site.reason}` });
   }
 

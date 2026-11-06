@@ -407,7 +407,7 @@ export default function CompIntakeForm({
         let result = cache.get(addressKey);
         if (!result) {
           // retries: directions abbreviated, the road alone, a Places search (lib/locate-site).
-          const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: d.address, city: d.city, state: d.state, market: d.market, retries: true }) });
+          const res = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: d.address, city: d.city, state: d.state, market: d.market, retries: true, place: true }) });
           result = await res.json();
           if (!res.ok && res.status !== 400) throw new Error(result.error ?? "Location lookup failed");
           cache.set(addressKey, result);
@@ -416,7 +416,8 @@ export default function CompIntakeForm({
         setDrafts(prev=>prev?.map(row=>{
           if(row._key!==d._key||row.city!==d.city||row.state!==d.state||row.market!==d.market)return row;
           if(d._propertyIndex!=null&&row.portfolio)return {...row,portfolio:{...row.portfolio,properties:row.portfolio.properties.map((p,i)=>i===d._propertyIndex&&p.address===d.address?{...p,...patch,locationWarning:!result.location||result.location.geocode_precision==='approximate'?locationMessage(result):null}:p)}};
-          return row.address===d.address?{...row,...patch}:row;
+          // Market and submarket come from the pin wherever the row left them blank.
+          return row.address===d.address?{...row,...patch,market:row.market||result.place?.market||null,submarket:row.submarket||result.place?.submarket||null}:row;
         })??null);
       }
     } catch (e: any) { setError(e.message); }
@@ -537,10 +538,10 @@ export default function CompIntakeForm({
 
       <details className="comp-rentroll">
         <summary>Set shared location and asset class (optional)</summary>
-        <p className="hint">Use these when all rows belong to one place. Leave them blank for a multi-market file; review each row after parsing.</p>
+        <p className="hint">Optional. Market and submarket fill in from each comp&apos;s location when you check locations (and again on save), so you can leave these blank. Type one only to override.</p>
       <div className="grid-2">
         <label>
-          Market * — the metro
+          Market — the metro (auto from location)
           <input
             list="comp-markets"
             value={market}
@@ -571,7 +572,7 @@ export default function CompIntakeForm({
           />
         </label>
         <label>
-          Submarket — within the metro
+          Submarket — within the metro (auto from location)
           <input
             value={submarket}
             onChange={(e) => setSubmarket(e.target.value)}
@@ -985,9 +986,10 @@ export default function CompIntakeForm({
                         <label>Asset class<select disabled={busy} value={d.assetClass ?? ""} onChange={e => update(i, { assetClass: e.target.value })}><option value="">Choose class</option><option value="ios">IOS</option><option value="industrial">Industrial</option></select></label>
                       </td>
                       <td>
-                        <LocationPreview key={JSON.stringify([d.address,d.city,d.state,d.market])} address={d.address} city={d.city} state={d.state} market={d.market}
+                        <LocationPreview key={JSON.stringify([d.address,d.city,d.state])} address={d.address} city={d.city} state={d.state} market={d.market}
                           value={validCoordinates(d) ? { latitude: Number(d.latitude), longitude: Number(d.longitude), geocode_precision: d.geocodePrecision || "supplied" } : null}
-                          onChange={p => update(i, { latitude: p?.latitude ?? null, longitude: p?.longitude ?? null, geocodePrecision: p?.geocode_precision ?? null })} />
+                          onChange={p => update(i, { latitude: p?.latitude ?? null, longitude: p?.longitude ?? null, geocodePrecision: p?.geocode_precision ?? null })}
+                          onPlace={place => setDrafts(prev => prev?.map((row, j) => j === i ? { ...row, market: row.market || place.market, submarket: row.submarket || place.submarket } : row) ?? null)} />
                         {d._locationMessage && <p className="hint">{d._locationMessage}</p>}
                       </td>
                       {/* Market shown, not just submarket: a multi-market file
@@ -1083,11 +1085,11 @@ export default function CompIntakeForm({
             <div className="warning" style={{ marginTop: 10 }}>
               <p style={{ margin: 0 }}>
                 <strong>
-                  {noMarket} of these {saveable.length} {noMarket === 1 ? "has" : "have"} no market.
+                  {noMarket} of these {saveable.length} {noMarket === 1 ? "has" : "have"} no market yet.
                 </strong>{" "}
-                They&apos;ll save and they&apos;ll plot on the map, but the map&apos;s market filter
-                is built from the markets present — so picking any market hides them. Fill the
-                Market field on each review row before saving.
+                Hopper fills market and submarket from each comp&apos;s pin when it saves. A comp
+                outside the metros Hopper covers saves without a market, and picking any market on
+                the comps map hides it. Type a market on those rows if you want them filed.
               </p>
             </div>
           )}

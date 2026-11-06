@@ -15,7 +15,7 @@ vm.runInNewContext(
   }).outputText,
   { exports: m }
 );
-const { canonicalMarket: cm, escalationFraction: esc, stateOfMarket } = m;
+const { canonicalMarket: cm, escalationFraction: esc, stateOfMarket, marketAt, resolveMarket } = m;
 
 let n = 0;
 const check = (label, actual, expected) => { assert.equal(actual, expected, label); n++; };
@@ -60,4 +60,23 @@ check("blank", esc(""), null);
 check("junk", esc("abc"), null);
 check("negative", esc(-1), null);
 
+// Market from the pin, for comps with no market and no known city.
+check("Hufsmith Kohrville pin -> Houston", marketAt(30.0896, -95.6211), "Houston");
+check("Conroe pin -> Houston", marketAt(30.3119, -95.4561), "Houston");
+check("Irving pin -> Dallas", marketAt(32.814, -96.9489), "Dallas");
+check("Saginaw pin -> Fort Worth", marketAt(32.8601, -97.3639), "Fort Worth");
+check("Arlington city beats its longitude", marketAt(32.7357, -97.08, "Arlington"), "Fort Worth");
+check("New Braunfels pin -> San Antonio", marketAt(29.703, -98.1245), "San Antonio");
+check("York Creek, New Braunfels pin -> San Antonio", marketAt(29.7861, -98.018), "San Antonio");
+check("River City Blvd, New Braunfels pin -> San Antonio", marketAt(29.7853, -98.0266), "San Antonio");
+check("Kyle pin -> Austin", marketAt(29.989, -97.877), "Austin");
+check("San Marcos pin -> Austin", marketAt(29.8833, -97.9414), "Austin");
+check("Pooler pin -> Savannah", marketAt(32.1155, -81.247), "Savannah");
+check("McDonough pin -> Atlanta", marketAt(33.4473, -84.1469), "Atlanta");
+check("rural West Texas -> none", marketAt(31.0, -100.0), null);
+check("no pin -> none", marketAt(null, null), null);
+check("blank strings are not 0,0", marketAt("", ""), null);
+check("typed market wins over pin", resolveMarket("Dallas", null, 29.76, -95.37), "Dallas");
+check("known city wins over pin", resolveMarket(null, "Conroe", 32.78, -96.8), "Houston");
+check("blank market and city -> pin", resolveMarket(null, null, 29.6, -95.2), "Houston");
 console.log(`markets: ${n} checks passed`);

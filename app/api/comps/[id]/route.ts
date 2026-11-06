@@ -11,6 +11,7 @@ import { geocodeAddress } from "@/lib/geocode";
 import { validCoordinates } from "@/lib/location";
 import { canonicalMarket, escalationFraction } from "@/lib/markets";
 import { invalidateComps } from "@/lib/comps/cache";
+import { placeComp } from "@/lib/comps/auto-location";
 
 export const dynamic = "force-dynamic";
 
@@ -253,6 +254,17 @@ async function handlePATCH(req: NextRequest, props: { params: Promise<{ id: stri
     update.longitude = g?.lng ?? null;
     update.geocode_precision = g?.precision ?? null;
     update.geocoded_at = g ? new Date().toISOString() : null;
+  }
+
+  // A blank market or submarket fills from the (possibly new) pin, the same
+  // way intake does (lib/comps/auto-location). Typed values are left alone.
+  if (!existing.is_portfolio) {
+    const after = { ...existing, ...update };
+    if (!after.market || !after.submarket) {
+      const place = await placeComp({ market: after.market, submarket: after.submarket, city: after.city, latitude: after.latitude, longitude: after.longitude });
+      if (!after.market && place.market) update.market = place.market;
+      if (!after.submarket && place.submarket) update.submarket = place.submarket;
+    }
   }
 
   // A class set by hand replaces an inferred one, and says who decided it.

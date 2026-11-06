@@ -121,6 +121,61 @@ export function breakdown(records: CanvasRecord[], key: "tenantUse" | "owner", t
 
 const num = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 
+// ---- submarket of a single pin -------------------------------------------------
+/** How far around a pin to look for inventoried properties, and how many of the nearest decide. */
+export const SUBMARKET_RADIUS_MILES = 3;
+const SUBMARKET_NEAREST = 5;
+
+/**
+ * The Dalfen submarket for a pin, from the labelled inventory points around
+ * it: the most common label among the nearest few, ties going to the nearest.
+ * Pure, for tests.
+ */
+export function submarketFromPoints(lat: number, lng: number, points: Array<{ lat: number | null; lng: number | null; submarket: string | null }>): string | null {
+  const labelled = points
+    .filter((p) => p.lat != null && p.lng != null && (p.submarket ?? "").trim())
+    .map((p) => ({ label: p.submarket!.trim(), d: (p.lat! - lat) ** 2 + ((p.lng! - lng) * Math.cos((lat * Math.PI) / 180)) ** 2 }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, SUBMARKET_NEAREST);
+  if (!labelled.length) return null;
+  const votes = new Map<string, { n: number; first: number }>();
+  labelled.forEach((p, i) => { const v = votes.get(p.label); votes.set(p.label, v ? { n: v.n + 1, first: v.first } : { n: 1, first: i }); });
+  return [...votes.entries()].sort((a, b) => b[1].n - a[1].n || a[1].first - b[1].first)[0][0];
+}
+
+const submarketCache = new Map<string, string | null>();
+
+/**
+ * The Dalfen submarket a pin sits in, read from the acquisitions team's
+ * ArcGIS inventory (the same layers as the market canvas). Null when ArcGIS
+ * isn't configured or no inventoried property is within a few miles. Never
+ * throws: a missing submarket must not stop a comp from saving.
+ */
+export async function submarketAt(lat: number, lng: number): Promise<string | null> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (submarketCache.has(key)) return submarketCache.get(key)!;
+  let tok: string | null = null;
+  try { tok = await token(); } catch { return null; }
+  if (!tok) return null;
+  let found: string | null = null;
+  let failed = false;
+  for (const s of CANVAS_SOURCES) {
+    try {
+      const layer = await layerOf(s.itemId, tok);
+      const page = await get(`${layer.url}/query`, {
+        ...near(lat, lng, SUBMARKET_RADIUS_MILES), where: "Dalfen_Submarkets IS NOT NULL",
+        outFields: "Dalfen_Submarkets", returnGeometry: "true", outSR: "4326", resultRecordCount: "500",
+      }, tok);
+      found = submarketFromPoints(lat, lng, (page.features ?? []).map((f: any) => ({ lat: num(f.geometry?.y), lng: num(f.geometry?.x), submarket: f.attributes?.Dalfen_Submarkets ?? null })));
+      if (found) break;
+    } catch { failed = true; /* next inventory */ }
+  }
+  // A miss caused by an ArcGIS error isn't remembered, so the next save retries.
+  if (found || !failed) submarketCache.set(key, found);
+  return found;
+}
+
 /** The market canvas around a site, or null when no inventory covers it (or ArcGIS isn't configured). */
 export async function marketCanvas(lat: number, lng: number, radiusMiles = CANVAS_RADIUS_MILES): Promise<MarketCanvas | null> {
   const tok = await token();

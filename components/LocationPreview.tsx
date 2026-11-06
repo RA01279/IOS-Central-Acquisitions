@@ -5,11 +5,13 @@ import { parseCoordinatePair, validCoordinates } from "@/lib/location";
 
 export interface LocationPoint { latitude: number; longitude: number; geocode_precision: string }
 
-export default function LocationPreview({ address, city, market, state, value, onChange,allowLookup=true,locationRequired=true }: {
+export default function LocationPreview({ address, city, market, state, value, onChange,allowLookup=true,locationRequired=true,onPlace }: {
   address: string; city?: string | null; market?: string | null; state?: string | null;
   value: LocationPoint | null; onChange: (point: LocationPoint | null) => void;
   allowLookup?:boolean;
   locationRequired?:boolean;
+  /** Comp intake: also receive the market and submarket the found pin falls in. */
+  onPlace?: (place: { market: string | null; submarket: string | null }) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const active = useRef(true);
@@ -22,11 +24,12 @@ export default function LocationPreview({ address, city, market, state, value, o
     setBusy(true); setMessage("");
     try {
       // retries: directions abbreviated, the road alone, a Places search (lib/locate-site).
-      const response = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address, city, market, state, retries: true }) });
+      const response = await fetch("/api/locations/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address, city, market, state, retries: true, place: !!onPlace }) });
       const result = await response.json();
       if (!active.current) return;
       if (!response.ok) throw new Error(result.error ?? "Location lookup failed");
       onChange(result.location);
+      if (result.place && onPlace) onPlace(result.place);
       setMessage(result.location
         ? result.location.geocode_precision === "approximate"
           ? `⚠ ${result.note ?? `Approximate location only: ${result.matchedAddress}`}`
