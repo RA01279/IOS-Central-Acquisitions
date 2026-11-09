@@ -183,7 +183,7 @@ export async function getContactWithRelations(contactId: string) {
       .single(),
     supabase
       .from("deal_contacts")
-      .select("role, deals(id, deal_type, stage, properties(address, market))")
+      .select("role, deals(id, deal_type, stage, created_at, asking_price, marketing_status, asset_class, properties(address, market, lot_sf))")
       .eq("contact_id", contactId),
     supabase
       .from("activities")

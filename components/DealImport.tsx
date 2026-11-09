@@ -300,8 +300,10 @@ export function ImportReview({ draft, source, file }: { draft: Draft; source: st
     deadlineSourceDate: "Deadline source date",
     deadlineSourceQuote: "Deadline source quote",
   };
-  const found = Object.entries(draft.fields).filter(([, v]) => v != null);
-  const missing = Object.entries(draft.fields).filter(([, v]) => v == null).map(([k]) => LABELS[k]);
+  // Only the labelled single-value fields; the broker list shows in the form.
+  const shown = Object.entries(draft.fields).filter(([k]) => k in LABELS);
+  const found = shown.filter(([, v]) => v != null);
+  const missing = shown.filter(([, v]) => v == null).map(([k]) => LABELS[k]);
   return (
     <div className="card" style={{ marginBottom: 20, borderColor: "#0E5AA7" }}>
       <div className="card-head">

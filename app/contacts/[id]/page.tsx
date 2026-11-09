@@ -11,6 +11,7 @@ import ActivityLogForm from "@/components/ActivityLogForm";
 import BackButton from "@/components/BackButton";
 import TruncatedList from "@/components/TruncatedList";
 import { loadBrokerScorecard } from "@/lib/broker-scorecard-db";
+import { fmtAcres, fmtMoney, fmtShortDate } from "@/lib/format";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -95,6 +96,16 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
               As broker: {asBroker.deals} deal{asBroker.deals === 1 ? "" : "s"} · {asBroker.offered} offered · {asBroker.lois} LOI ·{" "}
               {asBroker.psa} to PSA · {asBroker.closed} closed{asBroker.comps ? ` · ${asBroker.comps} comps from ${asBroker.firm}` : ""} ·{" "}
               <Link href="/contacts/brokers">scorecard</Link>
+              {(asBroker.volume > 0 || asBroker.markets.length > 0) && (
+                <>
+                  <br />
+                  {asBroker.volume > 0 ? `${fmtMoney(asBroker.volume)} asking` : null}
+                  {asBroker.acres > 0 ? ` · ${asBroker.acres.toFixed(1)} ac` : null}
+                  {asBroker.offMarket || asBroker.marketed ? ` · ${asBroker.offMarket} off-market, ${asBroker.marketed} marketed` : null}
+                  {asBroker.ios || asBroker.industrial ? ` · ${asBroker.ios} IOS, ${asBroker.industrial} industrial` : null}
+                  {asBroker.markets.length ? ` · ${asBroker.markets.map((m) => `${m.name} (${m.deals})`).join(", ")}` : null}
+                </>
+              )}
             </p>
           )}
           {deals.length === 0 ? (
@@ -103,6 +114,8 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
             <TruncatedList
               items={deals
                 .filter((d: any) => d.deals)
+                // Newest first: what they've sent us lately is what matters.
+                .sort((a: any, b: any) => String(b.deals.created_at ?? "").localeCompare(String(a.deals.created_at ?? "")))
                 .map((d: any, i: number) => {
                   const deal = d.deals;
                   // Legacy lease deals have no page any more, so they're shown
@@ -122,6 +135,12 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
                         {" "}
                         · {isLease ? "Leasing (retired)" : "Acquisition"} ·{" "}
                         {STAGE_LABELS[deal.stage] ?? deal.stage}
+                        {deal.properties?.market ? ` · ${deal.properties.market}` : ""}
+                        {deal.asset_class ? ` · ${deal.asset_class === "ios" ? "IOS" : "Industrial"}` : ""}
+                        {deal.asking_price ? ` · ${fmtMoney(Number(deal.asking_price))}` : ""}
+                        {deal.properties?.lot_sf ? ` · ${fmtAcres(deal.properties.lot_sf)}` : ""}
+                        {deal.marketing_status ? ` · ${deal.marketing_status === "off_market" ? "Off-market" : "Marketed"}` : ""}
+                        {deal.created_at ? ` · added ${fmtShortDate(deal.created_at)}` : ""}
                       </span>
                     </li>
                   );
