@@ -10,6 +10,9 @@ vi.mock("@/lib/auth",()=>({getCurrentUser:async()=>mocks.user}));
 vi.mock("@/lib/supabase",()=>({getServiceClient:()=>mocks.db}));
 vi.mock("next/cache",()=>({revalidatePath:mocks.revalidate}));
 vi.mock("@/lib/property-taxes/research",()=>({researchTaxes:(...args:any[])=>mocks.research(...args)}));
+// Research's automatic review outlines the site with a live county parcel lookup
+// (up to 20 s). Tests stay offline: no footprint, so only the review is skipped.
+vi.mock("@/lib/ic-deck/site-geo",async(importOriginal)=>({...(await importOriginal<object>()),parcelFootprint:async()=>null}));
 import {GET,POST} from "../../../app/api/deals/[id]/property-taxes/route";
 let pg:Awaited<ReturnType<typeof taxTestDb>>;const props={params:Promise.resolve({id:taxDealId})};
 const request=(body:unknown,origin="http://localhost")=>new NextRequest(`http://localhost/api/deals/${taxDealId}/property-taxes`,{method:"POST",headers:{"Content-Type":"application/json",origin},body:JSON.stringify(body)});
