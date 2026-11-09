@@ -46,9 +46,10 @@ async function firmId(name: string, cache: Map<string, string>): Promise<string>
   const key = firm.toLowerCase();
   if (cache.has(key)) return cache.get(key)!;
   const db = getServiceClient();
-  const { data: found, error } = await db.from("companies").select("id").ilike("name", firm.replace(/[%_\\]/g, "\\$&")).order("created_at").limit(1).maybeSingle();
+  // Compared tidied, so "Colliers (Houston)" or "CBRE, Inc." is the same firm as "Colliers" / "CBRE".
+  const { data: all, error } = await db.from("companies").select("id, name").order("created_at");
   if (error) throw error;
-  let id = found?.id as string | undefined;
+  let id = (all ?? []).find((c: any) => tidyFirm(c.name).toLowerCase() === key)?.id as string | undefined;
   if (!id) {
     const { data: made, error: insertError } = await db.from("companies").insert({ name: firm, company_type: "broker" }).select("id").single();
     if (insertError) throw insertError;

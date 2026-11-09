@@ -29,13 +29,17 @@ const STAGE_EVENTS = new Set([
   "restored",
 ]);
 
-export function daysInStage(deal: any): number {
+/** When the deal entered its current stage (newest stage event, else creation). */
+export function stageEnteredAt(deal: any): string {
   const stamps = (deal.deal_events ?? [])
     .filter((e: any) => STAGE_EVENTS.has(e.event_type))
     .map((e: any) => e.created_at)
     .sort();
-  const entered = stamps.pop() ?? deal.created_at;
-  return Math.max(0, Math.floor((Date.now() - new Date(entered).getTime()) / DAY_MS));
+  return stamps.pop() ?? deal.created_at;
+}
+
+export function daysInStage(deal: any): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(stageEnteredAt(deal)).getTime()) / DAY_MS));
 }
 
 export interface DealCardData {
@@ -59,6 +63,8 @@ export interface DealCardData {
   stage: string;
   stageLabel: string;
   days: number;
+  /** ISO timestamp the deal entered its current stage. */
+  stageEnteredAt: string;
   createdAt: string;
   icOn: string | null;
   callForOffersOn: string | null;
@@ -109,6 +115,7 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
     stage: deal.stage,
     stageLabel: STAGE_LABELS[deal.stage] ?? deal.stage,
     days: daysInStage(deal),
+    stageEnteredAt: stageEnteredAt(deal),
     createdAt: deal.created_at,
     icOn: deal.ic_on ?? null,
     callForOffersOn: callForOffersDate(deal),
