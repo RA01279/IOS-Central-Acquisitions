@@ -108,10 +108,13 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
     ...team.filter((t) => t.email !== me).map((t) => ({ value: t.email, label: t.name, count: ownerCount(t.email) })),
     { value: "none", label: "Unassigned", count: ownerCount("none") },
   ];
+  // On the board, "newest" means newest to its column: a deal moved to Offered
+  // today goes to the top of Offered, whenever it was first added.
+  const addedAt = (c: DealCardData) => (view === "board" ? c.stageEnteredAt : c.createdAt);
   const by: Record<string, (a: DealCardData, b: DealCardData) => number> = {
     score: (a, b) => (b.score ?? -1) - (a.score ?? -1),
-    newest: (a, b) => b.createdAt.localeCompare(a.createdAt),
-    oldest: (a, b) => a.createdAt.localeCompare(b.createdAt),
+    newest: (a, b) => addedAt(b).localeCompare(addedAt(a)),
+    oldest: (a, b) => addedAt(a).localeCompare(addedAt(b)),
     price: (a, b) => (b.price ?? 0) - (a.price ?? 0),
     stale: (a, b) => b.days - a.days,
   };
