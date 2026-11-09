@@ -10,7 +10,8 @@
 //   REMINDER_WEBHOOK_URL  -> POST {to, subject, html} (e.g. a Power Automate
 //                            flow that sends from a team member's mailbox)
 //   RESEND_API_KEY        -> Resend API (DIGEST_FROM sets the from address)
-// Recipients: DIGEST_RECIPIENTS (comma-separated) or PSA_CONFIRM_ALLOWLIST.
+// Recipients: DIGEST_RECIPIENTS (comma-separated) or PSA_CONFIRM_ALLOWLIST,
+// plus anyone in DIGEST_EXTRA_RECIPIENTS.
 // Protected by CRON_SECRET (Vercel Cron sends it as a Bearer token).
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
@@ -30,10 +31,21 @@ export async function GET(req: NextRequest) {
 
   const { subject, html, counts } = await composeDigest();
 
-  const recipients = (process.env.DIGEST_RECIPIENTS ?? process.env.PSA_CONFIRM_ALLOWLIST ?? "")
-    .split(",")
-    .map((e) => e.trim())
-    .filter(Boolean);
+  // DIGEST_EXTRA_RECIPIENTS adds people to the brief without granting them the
+  // PSA-confirm permission (the allowlist is a Sensitive env var, so its value
+  // can't be read back to copy into DIGEST_RECIPIENTS).
+  const parse = (v: string | undefined) =>
+    (v ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const recipients = [
+    ...parse(process.env.DIGEST_RECIPIENTS ?? process.env.PSA_CONFIRM_ALLOWLIST),
+    ...parse(process.env.DIGEST_EXTRA_RECIPIENTS),
+  ].filter((e) => {
+    const k = e.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   if (recipients.length === 0) {
     return NextResponse.json({ sent: false, reason: "No recipients configured", counts });
