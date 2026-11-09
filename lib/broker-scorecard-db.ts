@@ -17,7 +17,7 @@ export const loadBrokerScorecard = cache(async () => {
   const [links, sourced, companies, comps, activities] = await Promise.all([
     fetchAll((f, t) =>
       db.from("deal_contacts")
-        .select(`id, role, contacts(id, name, company_id, companies(name)), deals!inner(${DEAL_FIELDS}, deal_type)`)
+        .select(`id, role, contacts(id, name, company_id, created_at, companies(name)), deals!inner(${DEAL_FIELDS}, deal_type)`)
         .in("role", ["seller_broker", "buyer_broker"])
         .eq("deals.deal_type", "acquisition")
         .order("id").range(f, t)),
@@ -34,7 +34,7 @@ export const loadBrokerScorecard = cache(async () => {
   return scoreBrokers({
     links: links.map((l: any) => ({
       role: l.role,
-      contact: l.contacts ? { id: l.contacts.id, name: l.contacts.name, company_id: l.contacts.company_id ?? null, company_name: l.contacts.companies?.name ?? null } : null,
+      contact: l.contacts ? { id: l.contacts.id, name: l.contacts.name, company_id: l.contacts.company_id ?? null, company_name: l.contacts.companies?.name ?? null, created_at: l.contacts.created_at ?? null } : null,
       deal: l.deals ?? null,
     })),
     sourced: sourced

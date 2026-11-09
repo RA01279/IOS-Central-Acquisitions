@@ -131,3 +131,27 @@ export function brokerEntries(list: unknown, text: unknown): BrokerEntry[] {
   }
   return typeof text === "string" ? parseBrokers(text) : [];
 }
+
+/**
+ * Brokers named on an outgoing LOI ("Jane Smith, CBRE" in Attn, plus the SLB
+ * form's separate firm field), saved to Contacts and linked to each deal as
+ * seller broker unless they already are. Returns how many links were added.
+ */
+export async function linkLoiBrokers(dealIds: string[], attn: unknown, firm: unknown): Promise<number> {
+  const name = typeof attn === "string" ? attn.trim() : "";
+  if (!name || !dealIds.length) return 0;
+  const f = typeof firm === "string" ? firm.trim() : "";
+  const text = f && !name.toLowerCase().includes(f.toLowerCase()) ? `${name}, ${f}` : name;
+  const ids = await ensureBrokers(parseBrokers(text.slice(0, 400)));
+  if (!ids.length) return 0;
+  const db = getServiceClient();
+  const { data: existing, error } = await db
+    .from("deal_contacts").select("deal_id, contact_id").in("deal_id", dealIds).eq("role", "seller_broker").in("contact_id", ids);
+  if (error) throw error;
+  const have = new Set((existing ?? []).map((l: any) => `${l.deal_id}:${l.contact_id}`));
+  const rows = dealIds.flatMap((deal_id) => ids.filter((c) => !have.has(`${deal_id}:${c}`)).map((contact_id) => ({ deal_id, contact_id, role: "seller_broker" })));
+  if (!rows.length) return 0;
+  const { error: insertError } = await db.from("deal_contacts").insert(rows);
+  if (insertError) throw insertError;
+  return rows.length;
+}

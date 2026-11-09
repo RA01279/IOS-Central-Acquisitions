@@ -40,3 +40,24 @@ describe("broker scorecard volume, markets and mix", () => {
     expect(firms[0]).toMatchObject({ name: "CBRE", volume: 10_000_000, offMarket: 2 });
   });
 });
+
+describe("broker scorecard added date", () => {
+  const { people, firms } = scoreBrokers({
+    links: [
+      { role: "seller_broker", contact: { ...jane, created_at: "2026-11-02T15:00:00Z" }, deal: deal("d1") },
+      { role: "seller_broker", contact: { id: "c2", name: "Tom Ruiz", company_id: "f1", company_name: "CBRE", created_at: "2026-03-01T15:00:00Z" }, deal: deal("d1") },
+      { role: "seller_broker", contact: { id: "c3", name: "No Date", company_id: null, company_name: null }, deal: deal("d2") },
+    ],
+    sourced: [],
+    companies: [],
+    compNotes: [],
+    activities: [],
+  });
+  it("keeps when each person was added", () => {
+    expect(people.find((p) => p.key === "c1")?.addedAt).toBe("2026-11-02T15:00:00Z");
+    expect(people.find((p) => p.key === "c3")?.addedAt).toBeNull();
+  });
+  it("dates a firm by its earliest broker", () => {
+    expect(firms.find((f) => f.key === "f1")?.addedAt).toBe("2026-03-01T15:00:00Z");
+  });
+});

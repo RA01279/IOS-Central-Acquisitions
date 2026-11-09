@@ -2445,3 +2445,29 @@ main.bleed {
   margin: 8px 0;
   font-weight: 600;
 }
+
+/* ---------- Broker scorecard (app/contacts/brokers) ---------- */
+.brokers-page .page-header { align-items: flex-end; }
+.broker-fresh { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+.broker-fresh-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
+.broker-name { font-weight: 600; text-decoration: none; }
+.broker-name-line { display: flex; align-items: center; gap: 8px; }
+.broker-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.broker-sub a { color: inherit; }
+.broker-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.broker-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tchip-count { opacity: 0.65; font-weight: 400; }
+.broker-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.broker-search input[type="search"] { width: 200px; height: 30px; }
+.broker-search select, .broker-search button { height: 30px; }
+.broker-table th a { color: inherit; text-decoration: none; white-space: nowrap; }
+.broker-table th a.sort-on { color: var(--ink); }
+.broker-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.broker-table td { vertical-align: top; }
+.broker-table td:first-child { max-width: 360px; }
+.rate-track { height: 4px; border-radius: 2px; background: var(--bg); margin-top: 4px; min-width: 60px; }
+.rate-fill { height: 100%; border-radius: 2px; background: var(--accent-2); }
+@media (max-width: 900px) {
+  .brokers-page .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .broker-search, .broker-search input[type="search"] { width: 100%; }
+}

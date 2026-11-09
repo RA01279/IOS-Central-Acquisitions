@@ -42,6 +42,8 @@ export type BrokerRow = {
   closed: number;
   comps: number;
   lastTouch: string | null;
+  /** When the contact was added (people), or the firm's earliest broker (firms). */
+  addedAt: string | null;
   dealIds: string[];
   /** Sum of asking prices where one is known, and how many deals had one. */
   volume: number;
@@ -67,7 +69,7 @@ function latest(...dates: (string | null | undefined)[]): string | null {
 
 function blank(key: string, kind: BrokerRow["kind"], name: string, firm: string | null, firmId: string | null): BrokerRow {
   return {
-    key, kind, name, firm, firmId, deals: 0, active: 0, offered: 0, lois: 0, psa: 0, closed: 0, comps: 0, lastTouch: null, dealIds: [],
+    key, kind, name, firm, firmId, deals: 0, active: 0, offered: 0, lois: 0, psa: 0, closed: 0, comps: 0, lastTouch: null, addedAt: null, dealIds: [],
     volume: 0, priced: 0, acres: 0, markets: [], offMarket: 0, marketed: 0, ios: 0, industrial: 0,
   };
 }
@@ -109,7 +111,7 @@ export function mentionsFirm(note: string | null | undefined, firm: string): boo
 }
 
 export function scoreBrokers(input: {
-  links: { role: string; contact: { id: string; name: string; company_id: string | null; company_name: string | null } | null; deal: ScoreDeal | null }[];
+  links: { role: string; contact: { id: string; name: string; company_id: string | null; company_name: string | null; created_at?: string | null } | null; deal: ScoreDeal | null }[];
   sourced: { company_id: string; company_name: string; deal: ScoreDeal }[];
   companies: { id: string; name: string }[];
   compNotes: (string | null)[];
@@ -125,7 +127,7 @@ export function scoreBrokers(input: {
   for (const l of input.links) {
     if (!l.contact || !l.deal || !BROKER_ROLES.includes(l.role)) continue;
     const c = l.contact;
-    if (!people.has(c.id)) people.set(c.id, blank(c.id, "person", c.name, c.company_name, c.company_id));
+    if (!people.has(c.id)) people.set(c.id, { ...blank(c.id, "person", c.name, c.company_name, c.company_id), addedAt: c.created_at ?? null });
     addDeal(people.get(c.id)!, l.deal);
     if (c.company_id && c.company_name) addDeal(firm(c.company_id, c.company_name), l.deal);
   }
@@ -135,7 +137,12 @@ export function scoreBrokers(input: {
     const n = input.compNotes.filter((note) => mentionsFirm(note, co.name)).length;
     if (n) firm(co.id, co.name).comps = n;
   }
-  for (const p of people.values()) if (p.firmId) p.comps = firms.get(p.firmId)?.comps ?? 0;
+  for (const p of people.values()) {
+    if (!p.firmId) continue;
+    p.comps = firms.get(p.firmId)?.comps ?? 0;
+    const fr = firms.get(p.firmId);
+    if (fr && p.addedAt && (!fr.addedAt || p.addedAt < fr.addedAt)) fr.addedAt = p.addedAt;
+  }
 
   for (const a of input.activities) {
     const p = a.contact_id ? people.get(a.contact_id) : null;

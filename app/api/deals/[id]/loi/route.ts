@@ -15,6 +15,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { dropSecondSigner, appendPortfolioSchedule, omitBrokerDetails } from "@/lib/loi-docx";
 import { parseMoney } from "@/lib/money";
 import { validDate } from "@/lib/stage-rules";
+import { linkLoiBrokers } from "@/lib/broker-contacts";
 
 // Dollar amounts go through the app's one money parser ("$4.2M" -> 4200000)
 // and are rejected before anything renders, so the letter and the logged offer
@@ -259,7 +260,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
   }
 
-  // 5. Hand the file back as a download.
+  // 5. The broker the letter is addressed to is a broker we work with: save
+  // them to Contacts and link them to the deal(s) as seller broker, so the
+  // broker scorecard picks up everyone we offer through. Never fatal.
+  if (t.offerChannel !== "direct") {
+    try {
+      await linkLoiBrokers((portfolioSites ?? [{ id: params.id }]).map((s: any) => s.id), t.attn, t.brokerFirm);
+    } catch (err: any) {
+      await logDealEvent(params.id, "loi_broker_link_failed", { error: String(err?.message ?? err) }, "system");
+    }
+  }
+
+  // 6. Hand the file back as a download.
   return new NextResponse(buffer as any, {
     status: 200,
     headers: {
