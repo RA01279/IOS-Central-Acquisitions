@@ -9,7 +9,8 @@ import { getServiceClient } from "./supabase";
 import { fetchAll } from "./fetch-all";
 import { scoreBrokers } from "./broker-scorecard";
 
-const DEAL_FIELDS = "id, stage, death_stage, created_at, offers(offered_at, source), documents(doc_type), deal_events(created_at)";
+const DEAL_FIELDS =
+  "id, stage, death_stage, created_at, asking_price, marketing_status, asset_class, properties(market, lot_sf), offers(offered_at, source), documents(doc_type), deal_events(created_at)";
 
 export const loadBrokerScorecard = cache(async () => {
   const db = getServiceClient();

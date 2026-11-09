@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import BrokerPicker, { brokerEntriesOf, unresolvedBrokers, type PickedBroker } from "./BrokerPicker";
 
 type LinkedContact = {
   id: string; // deal_contacts link id
@@ -56,6 +57,10 @@ export default function DealContactsPanel({
   const [role, setRole] = useState(roleOptions[0]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Broker roles go through the broker picker: matched to Contacts, or saved
+  // there with their firm, before they're linked.
+  const [brokers, setBrokers] = useState<PickedBroker[]>([]);
+  const brokerRole = ROLE_TO_TYPE[role] === "broker";
 
   const q = query.trim().toLowerCase();
   const matches =
@@ -74,19 +79,47 @@ export default function DealContactsPanel({
     setAdding(false);
     setQuery("");
     setPicked(null);
+    setBrokers([]);
     setError(null);
   }
 
-  async function linkContact(contactId: string) {
+  async function linkContact(contactId: string, opts: { allowRepeat?: boolean } = {}) {
     const res = await fetch(`/api/deals/${dealId}/contacts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contactId, role }),
     });
+    // Already on the deal in this role: nothing to do.
+    if (res.status === 409 && opts.allowRepeat) return;
     if (!res.ok) throw new Error((await res.json()).error ?? "Failed to link contact");
   }
 
+  async function handleLinkBrokers() {
+    const unsure = unresolvedBrokers(brokers);
+    if (unsure.length) { setError(`Confirm who ${unsure.join(" and ")} is first.`); return; }
+    if (!brokers.length) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/contacts/brokers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: brokerEntriesOf(brokers) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to save the broker");
+      for (const id of body.contactIds as string[]) await linkContact(id, { allowRepeat: true });
+      reset();
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleLink() {
+    if (brokerRole) return handleLinkBrokers();
     if (!picked) return;
     setBusy(true);
     setError(null);
@@ -182,6 +215,22 @@ export default function DealContactsPanel({
         <div className="inline-add-form">
           <div className="grid-2">
             <label>
+              Role on this deal
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
+                {roleOptions.map((r) => (
+                  <option key={r} value={r}>
+                    {roleLabels[r] ?? r}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {brokerRole ? (
+              <div className="picker-field">
+                Who
+                <BrokerPicker value={brokers} onChange={setBrokers} disabled={busy} autoFocus />
+              </div>
+            ) : (
+            <label>
               Who
               {picked ? (
                 <span className="picked-contact">
@@ -236,21 +285,12 @@ export default function DealContactsPanel({
                 </span>
               )}
             </label>
-            <label>
-              Role on this deal
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
-                {roleOptions.map((r) => (
-                  <option key={r} value={r}>
-                    {roleLabels[r] ?? r}
-                  </option>
-                ))}
-              </select>
-            </label>
+            )}
           </div>
           {error && <p className="error">{error}</p>}
           <div className="stage-actions" style={{ marginBottom: 0 }}>
-            <button type="button" onClick={handleLink} disabled={busy || !picked}>
-              {busy ? "Linking…" : "Link contact"}
+            <button type="button" onClick={handleLink} disabled={busy || (brokerRole ? !brokers.length : !picked)}>
+              {busy ? "Linking…" : brokerRole && brokers.length > 1 ? `Link ${brokers.length} brokers` : "Link contact"}
             </button>
             <button type="button" className="secondary" onClick={reset}>
               Cancel

@@ -11,6 +11,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import BrokerPicker, { brokerEntriesOf, unresolvedBrokers, type PickedBroker } from "./BrokerPicker";
 import LocationPreview, { type LocationPoint } from "./LocationPreview";
 import type { DealImport } from "@/lib/agents/deal-import";
 import type { ImportedFile } from "./DealImport";
@@ -37,10 +38,14 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
   const [substantialYard,setSubstantialYard] = useState(false);
   const [pipeline,setPipeline] = useState<string>(f?.assetClass ?? "");
   const [duplicates, setDuplicates] = useState<{id:string;address:string;city:string;stage:string}[]>([]);
+  const [buyerBrokers, setBuyerBrokers] = useState<PickedBroker[]>([]);
+  const [sellerBrokers, setSellerBrokers] = useState<PickedBroker[]>([]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!location) { setError("Check the property location with Google or place a pin before creating the deal."); return; }
+    const unsure = unresolvedBrokers([...buyerBrokers, ...sellerBrokers]);
+    if (unsure.length) { setError(`Confirm who ${unsure.join(" and ")} is under Brokers: pick the existing contact or add them as new.`); return; }
     setSubmitting(true);
     setError(null);
     setDuplicates([]);
@@ -92,8 +97,9 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
       waltYears: occupancy === "occupied" ? num("waltYears") : undefined,
       tenancy: (form.get("tenancy") as string) || undefined,
       currentOwnerName: (form.get("currentOwnerName") as string) || undefined,
-      buyerBrokerName: (form.get("buyerBrokerName") as string) || undefined,
-      sellerBrokerName: (form.get("sellerBrokerName") as string) || undefined,
+      // Saved to Contacts (or matched there) and linked to the deal.
+      buyerBrokers: brokerEntriesOf(buyerBrokers),
+      sellerBrokers: brokerEntriesOf(sellerBrokers),
       sourceBrokerId: form.get("sourceBrokerId") || undefined,
       mla,
     };
@@ -175,14 +181,17 @@ export default function DealForm({ prefill, importedFile }: { prefill?: DealImpo
       </div>
 
       <div className="grid-2">
-        <label>
+        <div className="picker-field">
           Buyer broker
-          <input name="buyerBrokerName" placeholder="Broker repping us" />
-        </label>
-        <label>
+          <BrokerPicker value={buyerBrokers} onChange={setBuyerBrokers} placeholder="Broker repping us" />
+        </div>
+        <div className="picker-field">
           Sales broker
-          <input name="sellerBrokerName" defaultValue={f?.sellerBroker ?? ""} placeholder="Broker repping the seller" />
-        </label>
+          <BrokerPicker value={sellerBrokers} onChange={setSellerBrokers} initialText={f?.sellerBroker} initialPeople={f?.sellerBrokers} placeholder="Broker repping the seller" />
+        </div>
+        <p className="hint" style={{ gridColumn: "1 / -1", margin: 0 }}>
+          Brokers are saved to Contacts and linked to this deal, so their scorecard counts it.
+        </p>
       </div>
 
       <div className="grid-2">

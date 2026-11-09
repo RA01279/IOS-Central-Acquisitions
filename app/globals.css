@@ -955,6 +955,35 @@ a.stat-tile:hover {
   color: var(--accent-2);
   font-weight: 500;
 }
+/* A form field that holds buttons (the broker picker): styled like a label,
+   but not a <label>, which would forward clicks to its first button. */
+.picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.broker-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  color: var(--ink);
+}
+.broker-picker .picked-contact {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.broker-choose {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-2);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 13px;
+}
 .picked-contact {
   display: inline-flex;
   align-items: center;

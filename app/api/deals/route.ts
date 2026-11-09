@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getServiceClient } from "@/lib/supabase";
 import { parseMoney } from "@/lib/money";
 import { defaultOwner } from "@/lib/market-owners";
+import { brokerEntries } from "@/lib/broker-contacts";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser(req);
@@ -54,6 +55,9 @@ export async function POST(req: NextRequest) {
       currentOwnerName: body.currentOwnerName,
       buyerBrokerName: body.buyerBrokerName,
       sellerBrokerName: body.sellerBrokerName,
+      // From the broker picker; when absent the names above are parsed.
+      buyerBrokers: Array.isArray(body.buyerBrokers) ? brokerEntries(body.buyerBrokers, null) : undefined,
+      sellerBrokers: Array.isArray(body.sellerBrokers) ? brokerEntries(body.sellerBrokers, null) : undefined,
       sourceBrokerId: body.sourceBrokerId,
       createdBy: user.email,
       mla: body.mla,

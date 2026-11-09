@@ -43,6 +43,8 @@ export interface DealImport {
     acquisitionType: "standard" | "slb" | null;
     marketingStatus: "marketed" | "off_market" | null;
     sellerBroker: string | null;
+    /** Each listing broker on the OM / email, with the details printed next to them. */
+    sellerBrokers?: { name: string; firm: string | null; email: string | null; phone: string | null }[];
     currentOwner: string | null;
     callForOffersOn?: string | null;
     deadlineSourceDate?: string | null;
@@ -55,7 +57,7 @@ export interface DealImport {
 }
 
 export const DEAL_IMPORT_INSTRUCTIONS = `Read the supplied offering memorandum (OM) and/or broker email and extract ONE property for a new acquisition deal. The report field MUST be a serialized JSON object, nothing else, with exactly this shape:
-{"fields":{"address":string|null,"city":string|null,"state":string|null,"market":string|null,"acres":number|null,"buildingSf":number|null,"askingPrice":number|null,"occupancy":"vacant"|"occupied"|null,"waltYears":number|null,"tenancy":"single_tenant"|"multi_tenant"|null,"assetClass":"ios"|"industrial"|null,"acquisitionType":"standard"|"slb"|null,"marketingStatus":"marketed"|"off_market"|null,"sellerBroker":string|null,"currentOwner":string|null},"evidence":{"<fieldName>":"short verbatim quote"},"notes":[string]}
+{"fields":{"address":string|null,"city":string|null,"state":string|null,"market":string|null,"acres":number|null,"buildingSf":number|null,"askingPrice":number|null,"occupancy":"vacant"|"occupied"|null,"waltYears":number|null,"tenancy":"single_tenant"|"multi_tenant"|null,"assetClass":"ios"|"industrial"|null,"acquisitionType":"standard"|"slb"|null,"marketingStatus":"marketed"|"off_market"|null,"sellerBroker":string|null,"sellerBrokers":[{"name":string,"firm":string|null,"email":string|null,"phone":string|null}],"currentOwner":string|null},"evidence":{"<fieldName>":"short verbatim quote"},"notes":[string]}
 Rules:
 - Include callForOffersOn, deadlineSourceDate, deadlineSourceQuote in fields. callForOffersOn must be an explicit YYYY-MM-DD offer deadline supported by a verbatim source quote. deadlineSourceDate is the original message/document date, not today's date. Do not infer a year or convert ambiguous relative dates; return null and explain ambiguity in notes. Proposed leases are not in-place occupancy.
 - address = street address only (no city/state/zip). state = 2-letter code. market = the metro (e.g. "Houston", "Dallas", "Fort Worth", "Austin", "San Antonio"; Dallas-Fort Worth is two markets), not the submarket.
@@ -64,7 +66,7 @@ Rules:
 - occupancy: "occupied" only if current physical occupation is explicit (a commenced lease or owner occupation), "vacant" if delivered vacant. A named proposed tenant or signed future lease alone does not establish current occupation; otherwise null. waltYears = remaining lease term in years if stated.
 - assetClass: "ios" when the site is primarily an industrial outdoor storage yard (truck/trailer/equipment yard, large paved or stabilized yard with a small building), else "industrial" for warehouse/distribution/flex.
 - acquisitionType: "slb" only for an explicit sale-leaseback; otherwise "standard". marketingStatus: "marketed" when it is a broker-listed offering (an OM or listing flyer), "off_market" only when the source says so.
-- sellerBroker = the listing broker's name and firm, e.g. "Jane Smith, CBRE". currentOwner = the seller/owner entity if named.
+- sellerBrokers = EVERY listing broker named in the source (OMs usually list a team), one entry each: their name, their firm, and the email and phone printed with their name (null when not shown; never invent one). sellerBroker = the same people on one line, e.g. "Jane Smith & Tom Ruiz, CBRE". currentOwner = the seller/owner entity if named.
 - Every non-null field needs a short verbatim quote in evidence. Unknown stays null; never guess.
 - If the source covers several properties, extract the main/first one and say so in notes. Put conflicting figures (e.g. two different acreages) in notes.`;
 
@@ -98,6 +100,12 @@ export function parseDealImport(report: string): DealImport | null {
       acquisitionType: pick(f.acquisitionType, ["standard", "slb"] as const),
       marketingStatus: pick(f.marketingStatus, ["marketed", "off_market"] as const),
       sellerBroker: str(f.sellerBroker),
+      sellerBrokers: Array.isArray(f.sellerBrokers)
+        ? f.sellerBrokers
+            .filter((b: any) => b && str(b.name))
+            .slice(0, 8)
+            .map((b: any) => ({ name: str(b.name, 120)!, firm: str(b.firm, 120), email: str(b.email, 120)?.toLowerCase() ?? null, phone: str(b.phone, 40) }))
+        : [],
       currentOwner: str(f.currentOwner),
       callForOffersOn: null,
       deadlineSourceDate: null,
