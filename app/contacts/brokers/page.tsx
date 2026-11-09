@@ -11,6 +11,16 @@ import { ctToday } from "@/lib/summary";
 import { getServiceClient } from "@/lib/supabase";
 import { guessFirm } from "@/lib/firm-guess";
 import BrokerFirmFixer, { type FirmlessBroker } from "@/components/BrokerFirmFixer";
+import { fmtMoney } from "@/lib/format";
+
+/** "Dallas (4), Houston (2) +3" -- the markets a broker covers, busiest first. */
+function marketList(r: BrokerRow) {
+  if (!r.markets.length) return "—";
+  const top = r.markets.slice(0, 2).map((m) => (r.markets.length > 1 ? `${m.name} (${m.deals})` : m.name)).join(", ");
+  return r.markets.length > 2 ? `${top} +${r.markets.length - 2}` : top;
+}
+/** "3 / 1": two counts, or a dash when both are zero. */
+const pair = (a: number, b: number) => (a || b ? `${a} / ${b}` : "—");
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Broker scorecard" };
@@ -18,6 +28,8 @@ export const metadata = { title: "Broker scorecard" };
 const SORTS: Record<string, { label: string; by: (a: BrokerRow, b: BrokerRow) => number }> = {
   rank: { label: "Best results", by: () => 0 },
   deals: { label: "Most deals", by: (a, b) => b.deals - a.deals },
+  volume: { label: "Most volume", by: (a, b) => b.volume - a.volume || b.deals - a.deals },
+  offmarket: { label: "Most off-market", by: (a, b) => b.offMarket - a.offMarket || b.deals - a.deals },
   hit: { label: "Offer rate", by: (a, b) => rate(b) - rate(a) || b.deals - a.deals },
   comps: { label: "Most comps", by: (a, b) => b.comps - a.comps },
   quiet: { label: "Longest since contact", by: (a, b) => (a.lastTouch ?? "").localeCompare(b.lastTouch ?? "") },
@@ -107,6 +119,11 @@ export default async function BrokerScorecardPage(props: { searchParams: Promise
                     <th title="Deals we sent an LOI on">LOI</th>
                     <th title="Reached Moving to PSA or later">PSA</th>
                     <th>Closed</th>
+                    <th title="Total asking price of their deals that had one">Volume</th>
+                    <th title="Land across their deals">Acres</th>
+                    <th title="Markets they've sent deals in, busiest first">Markets</th>
+                    <th title="Off-market / marketed deals">Off-mkt / Mktd</th>
+                    <th title="IOS / industrial deals">IOS / Ind</th>
                     <th title="Comps whose source names this firm">Comps</th>
                     <th>Last touch</th>
                   </tr>
@@ -129,6 +146,13 @@ export default async function BrokerScorecardPage(props: { searchParams: Promise
                         <td>{r.lois || "—"}</td>
                         <td>{r.psa || "—"}</td>
                         <td>{r.closed ? <strong>{r.closed}</strong> : "—"}</td>
+                        <td title={r.priced < r.deals ? `${r.priced} of ${r.deals} deals had an asking price` : undefined}>
+                          {r.volume ? fmtMoney(r.volume) : "—"}
+                        </td>
+                        <td>{r.acres ? r.acres.toFixed(r.acres >= 10 ? 0 : 1) : "—"}</td>
+                        <td title={r.markets.map((m) => `${m.name} (${m.deals})`).join(", ") || undefined}>{marketList(r)}</td>
+                        <td>{pair(r.offMarket, r.marketed)}</td>
+                        <td>{pair(r.ios, r.industrial)}</td>
                         <td>{r.comps || "—"}</td>
                         <td>
                           {d == null ? "—" : <span className={d > 60 ? "overdue" : d > 30 ? "muted" : undefined}>{d === 0 ? "today" : `${d} days ago`}</span>}
@@ -143,7 +167,8 @@ export default async function BrokerScorecardPage(props: { searchParams: Promise
           <p className="hint">
             {totals.deals} deal links · {totals.closed} closed. A deal counts once per broker; a firm counts every deal any of its
             people worked. Last touch is the latest logged call, email or meeting, or activity on one of their deals; over 60
-            days is highlighted. Comps are matched on the firm name in each comp&apos;s source.
+            days is highlighted. Comps are matched on the firm name in each comp&apos;s source. Volume adds up asking prices
+            where a deal has one (hover to see how many did).
           </p>
         </section>
       </main>

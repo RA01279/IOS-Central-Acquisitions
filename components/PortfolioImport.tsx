@@ -12,6 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { pdfText } from "@/lib/pdf-text";
+import BrokerPicker, { brokerEntriesOf, unresolvedBrokers, type PickedBroker } from "./BrokerPicker";
+import { brokerLabel } from "@/lib/broker-match";
 import { mergePortfolioImports, parsePortfolioImport, splitOmText, type PortfolioImport as Draft, type PortfolioSite } from "@/lib/agents/portfolio-import";
 
 type Row = PortfolioSite & {
@@ -43,6 +45,8 @@ export default function PortfolioImport() {
   const [file, setFile] = useState<{ path: string; name: string } | null>(null);
   const [meta, setMeta] = useState<Draft["portfolio"] & { notes: string[] }>({ name: null, sellerBroker: null, currentOwner: null, totalPrice: null, notes: [] });
   const [rows, setRows] = useState<Row[] | null>(null);
+  // The sales broker(s), matched to Contacts and linked to every site deal.
+  const [brokers, setBrokers] = useState<PickedBroker[]>([]);
   const [portfolioId, setPortfolioId] = useState<string | null>(null);
   // Sites can join a portfolio that already exists -- re-importing an OM to
   // add sites that were skipped or deleted -- instead of starting a second one.
@@ -132,6 +136,7 @@ export default function PortfolioImport() {
     if (!merged.sites.length) throw new Error("No property sites found in that OM.");
     const name = merged.portfolio.name ?? f.name.replace(/\.pdf$/i, "");
     setMeta({ ...merged.portfolio, name, notes: [...failures.map((m) => `Not read: ${m}`), ...merged.notes] });
+    setBrokers([]);
     // Offer the existing portfolios, preselecting one with the same name.
     const list: { id: string; name: string; sites: number }[] = await json("/api/deal-portfolios").then((r) => r.portfolios ?? []).catch(() => []);
     setExisting(list);
@@ -173,9 +178,18 @@ export default function PortfolioImport() {
     if (!ready.length) throw new Error(unfixed ? `${unfixed} ticked site${unfixed === 1 ? "" : "s"} still need${unfixed === 1 ? "s" : ""} a manual fix: correct the address and try again.` : "No ticked sites to create.");
     let pid = portfolioId ?? (target || null);
     if (!pid && !meta.name?.trim()) throw new Error("Name the portfolio.");
+    const unsure = unresolvedBrokers(brokers);
+    if (unsure.length) throw new Error(`Confirm who ${unsure.join(" and ")} is under Sales broker: pick the existing contact or add them as new.`);
+    // Brokers are saved once, up front, so all the sites link the same contacts.
+    const sellerBrokers = brokers.length
+      ? ((await post("/api/contacts/brokers", { entries: brokerEntriesOf(brokers) })).contactIds as string[]).map((contactId) => ({ contactId }))
+      : [];
+    const brokerText = brokers.length
+      ? brokerLabel(brokers.map((b) => (b.kind === "choose" ? b.input : b)))
+      : meta.sellerBroker;
     if (!pid) {
       setStep("Creating the portfolio…");
-      const made = await post("/api/deal-portfolios", { name: meta.name, sellerBroker: meta.sellerBroker, currentOwner: meta.currentOwner, notes: meta.notes, importPath: file?.path, fileName: file?.name });
+      const made = await post("/api/deal-portfolios", { name: meta.name, sellerBroker: brokerText, currentOwner: meta.currentOwner, notes: meta.notes, importPath: file?.path, fileName: file?.name });
       pid = made.id as string;
       setPortfolioId(pid);
       if (made.omWarning) setError(made.omWarning);
@@ -197,7 +211,7 @@ export default function PortfolioImport() {
           waltYears: r.occupancy === "occupied" ? r.waltYears ?? undefined : undefined,
           tenancy: r.tenancy ?? undefined,
           marketingStatus: "marketed", acquisitionType: "standard",
-          sellerBrokerName: meta.sellerBroker ?? undefined, currentOwnerName: meta.currentOwner ?? undefined,
+          sellerBrokers, currentOwnerName: meta.currentOwner ?? undefined,
         });
         const dealId = made.deal?.id as string;
         if (file) await post(`/api/deals/${dealId}/documents`, { portfolioId: pid }).catch(() => {});
@@ -266,7 +280,10 @@ export default function PortfolioImport() {
               </select>
             </label>
             {!target && <label>Portfolio name<input value={meta.name ?? ""} disabled={!!portfolioId} onChange={(e) => setMeta({ ...meta, name: e.target.value })} /></label>}
-            <label>Sales broker<input value={meta.sellerBroker ?? ""} disabled={!!portfolioId} onChange={(e) => setMeta({ ...meta, sellerBroker: e.target.value || null })} /></label>
+            <div className="picker-field">
+              Sales broker
+              <BrokerPicker key={meta.sellerBroker ?? ""} value={brokers} onChange={setBrokers} initialText={meta.sellerBroker} disabled={!!portfolioId || busy} />
+            </div>
           </div>
           <p className="hint" style={{ margin: 0 }}>
             {rows.length} sites found · {included.length} ticked · {located.length} located · allocated {money(priced) || "$0"}

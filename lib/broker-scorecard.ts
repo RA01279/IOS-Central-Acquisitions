@@ -21,6 +21,11 @@ export type ScoreDeal = {
   offers?: { offered_at: string | null; source?: string | null }[] | null;
   documents?: { doc_type: string }[] | null;
   deal_events?: { created_at: string }[] | null;
+  // What the deal was: its size and price, where, and how it came to us.
+  asking_price?: number | null;
+  marketing_status?: string | null;
+  asset_class?: string | null;
+  properties?: { market: string | null; lot_sf: number | null } | null;
 };
 
 export type BrokerRow = {
@@ -38,6 +43,17 @@ export type BrokerRow = {
   comps: number;
   lastTouch: string | null;
   dealIds: string[];
+  /** Sum of asking prices where one is known, and how many deals had one. */
+  volume: number;
+  priced: number;
+  /** Land across their deals, in acres. */
+  acres: number;
+  /** Markets they've sent deals in, most deals first. */
+  markets: { name: string; deals: number }[];
+  offMarket: number;
+  marketed: number;
+  ios: number;
+  industrial: number;
 };
 
 /** The furthest stage a deal reached: its own, or where it died. */
@@ -50,7 +66,10 @@ function latest(...dates: (string | null | undefined)[]): string | null {
 }
 
 function blank(key: string, kind: BrokerRow["kind"], name: string, firm: string | null, firmId: string | null): BrokerRow {
-  return { key, kind, name, firm, firmId, deals: 0, active: 0, offered: 0, lois: 0, psa: 0, closed: 0, comps: 0, lastTouch: null, dealIds: [] };
+  return {
+    key, kind, name, firm, firmId, deals: 0, active: 0, offered: 0, lois: 0, psa: 0, closed: 0, comps: 0, lastTouch: null, dealIds: [],
+    volume: 0, priced: 0, acres: 0, markets: [], offMarket: 0, marketed: 0, ios: 0, industrial: 0,
+  };
 }
 
 function addDeal(row: BrokerRow, d: ScoreDeal) {
@@ -64,6 +83,20 @@ function addDeal(row: BrokerRow, d: ScoreDeal) {
   if (PSA_OR_LATER.has(r)) row.psa++;
   if (r === "closed") row.closed++;
   row.lastTouch = latest(row.lastTouch, d.created_at, ...(d.deal_events ?? []).map((e) => e.created_at));
+  const price = Number(d.asking_price);
+  if (d.asking_price != null && Number.isFinite(price) && price > 0) { row.volume += price; row.priced++; }
+  const lot = Number(d.properties?.lot_sf);
+  if (d.properties?.lot_sf != null && Number.isFinite(lot) && lot > 0) row.acres += lot / 43560;
+  const market = d.properties?.market?.trim();
+  if (market) {
+    const m = row.markets.find((x) => x.name.toLowerCase() === market.toLowerCase());
+    if (m) m.deals++; else row.markets.push({ name: market, deals: 1 });
+    row.markets.sort((a, b) => b.deals - a.deals || a.name.localeCompare(b.name));
+  }
+  if (d.marketing_status === "off_market") row.offMarket++;
+  else if (d.marketing_status === "marketed") row.marketed++;
+  if (d.asset_class === "ios") row.ios++;
+  else if (d.asset_class === "industrial") row.industrial++;
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();

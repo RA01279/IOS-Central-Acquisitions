@@ -10,6 +10,8 @@ import { getServiceClient } from "./supabase";
 import { fireStageChangeWebhook } from "./webhooks";
 import { geocodeAddress } from "./geocode";
 import { parseMoney } from "./money";
+import { ensureBrokers } from "./broker-contacts";
+import { parseBrokers, type BrokerEntry } from "./broker-match";
 import { validDate } from "./stage-rules";
 import { canonicalMarket } from "./markets";
 import { validCoordinates } from "./location";
@@ -130,6 +132,11 @@ export interface NewDealInput {
   currentOwnerName?: string;
   buyerBrokerName?: string;
   sellerBrokerName?: string;
+  // Brokers picked or confirmed in the broker picker; these win over the
+  // free-text names above. Free text is parsed ("Jane Smith, CBRE") and
+  // linked on an exact match or saved as a new broker (lib/broker-contacts).
+  buyerBrokers?: BrokerEntry[];
+  sellerBrokers?: BrokerEntry[];
   sourceBrokerId?: string;
   createdBy: string; // who's entering this (Rhett, market lead, or later: "email-intake")
   // MLA is an acquisitions-underwriting concept. The "provided" variant
@@ -202,6 +209,12 @@ export async function createDeal(input: NewDealInput) {
       opex: m.opex ?? null,
       other_assumptions: m.otherAssumptions ?? {},
 } : null;
+  // Every broker is found in (or saved to) the contact book before the deal
+  // exists, so this deal links the same contact all their other deals do.
+  const [buyerBrokerIds, sellerBrokerIds] = await Promise.all([
+    ensureBrokers(input.buyerBrokers ?? parseBrokers(input.buyerBrokerName)),
+    ensureBrokers(input.sellerBrokers ?? parseBrokers(input.sellerBrokerName)),
+  ]);
   const { data, error } = await supabase.rpc("create_deal_atomic", {
     p_key: input.intakeKey ?? crypto.randomUUID(), p_property: property,
     p_deal: { asset_class: input.substantialYard ? "ios" : input.assetClass, source_broker_id: input.sourceBrokerId ?? null,
@@ -211,8 +224,9 @@ export async function createDeal(input: NewDealInput) {
     p_mla: mla, p_actor: input.createdBy,
     p_contacts: [
       { name: input.currentOwnerName, role: "seller", type: null },
-      { name: input.buyerBrokerName, role: "buyer_broker", type: "broker" },
-      { name: input.sellerBrokerName, role: "seller_broker", type: "broker" },
+      // contact_id: the RPC links that contact as-is (20261109120000_deal_broker_contacts.sql).
+      ...buyerBrokerIds.map((id) => ({ contact_id: id, role: "buyer_broker", type: "broker" })),
+      ...sellerBrokerIds.map((id) => ({ contact_id: id, role: "seller_broker", type: "broker" })),
     ],
   });
   if (error) throw error;
