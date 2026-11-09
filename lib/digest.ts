@@ -146,20 +146,6 @@ export async function composeDigest() {
   for (const m of diligence) bump(ownerOf(m.deal_id), "due");
   for (const d of callsForOffers) if (d.daysAway <= 7) bump(d.assigned_analyst ?? null, "due");
   for (const d of stale) bump(d.assigned_analyst, "stale");
-  const ownerLines = [...owners.entries()]
-    .sort((a, b) => (a[0] === "Unassigned" ? 1 : b[0] === "Unassigned" ? -1 : b[1].active - a[1].active))
-    .map(([who, o]) => `<li><strong>${esc(who === "Unassigned" ? who : who.split("@")[0])}</strong> — ${o.active} active · ${o.due} deadline${o.due === 1 ? "" : "s"} this week · ${o.stale} stale</li>`);
-
-  // Bifurcated snapshot: one line per pipeline, so nobody has to mentally
-  // separate IOS from Industrial before reading the numbers.
-  const snapshotLine = (assetClass: string) => {
-    const inClass = active.filter((d: any) => assetClassOf(d) === assetClass);
-    const parts = SNAPSHOT_STAGES.map(
-      (s) => `${inClass.filter((d: any) => d.stage === s).length} ${STAGE_LABELS[s]}`
-    ).join(" · ");
-    return `<strong>${ASSET_CLASS_LABELS[assetClass]}</strong> ${esc(parts)}`;
-  };
-
   const yearStart = `${today.slice(0, 4)}-01-01`;
   const closedYtd = deals.filter(
     (d: any) => d.stage === "closed" && (d.closed_on ?? ctDate(d.created_at)) >= yearStart
@@ -171,15 +157,29 @@ export async function composeDigest() {
   const fmtM = (v: number) =>
     v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v > 0 ? `$${Math.round(v / 1_000)}K` : "$0";
 
+  // Table-based layout and inline styles survive RSS -> Power Automate -> Outlook.
+  const row = (content: string) => `<tr><td style="padding:14px 16px;border-bottom:1px solid #DDE4EB;font-size:14px;line-height:1.65;color:#364049;">${content.replace(/^<li>/, "").replace(/<\/li>$/, "").replace(/color:#2e6e62/g, "color:#0E5AA7")}</td></tr>`;
   const section = (title: string, items: string[], emptyText: string) => `
-    <h3 style="margin:18px 0 6px;font-size:14px;color:#1f3b4d;">${title}</h3>
-    ${
-      items.length
-        ? `<ul style="margin:0;padding-left:18px;color:#1f2937;font-size:13px;line-height:1.7;">${items
-            .slice(0, 15)
-            .join("")}${items.length > 15 ? `<li>…and ${items.length - 15} more</li>` : ""}</ul>`
-        : `<p style="margin:0;color:#6b7280;font-size:13px;">${emptyText}</p>`
-    }`;
+    <tr><td style="padding:24px 24px 0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #DDE4EB;border-collapse:collapse;">
+        <tr><td style="padding:16px;border-top:3px solid #4E9FD6;border-bottom:1px solid #DDE4EB;">
+          <h2 style="margin:0;font-family:Archivo,Arial,sans-serif;font-size:17px;color:#0A2540;">${title}</h2>
+        </td></tr>
+        ${items.length ? items.slice(0, 15).map(row).join("") : row(`<span style="color:#6B7A88;">${emptyText}</span>`)}
+        ${items.length > 15 ? row(`<a href="${APP_URL}/" style="color:#0E5AA7;">View ${items.length - 15} more in Hopper</a>`) : ""}
+      </table>
+    </td></tr>`;
+  const stat = (value: string, label: string) => `<td width="33%" valign="top" style="padding:18px 8px;border:1px solid #DDE4EB;text-align:center;"><div style="font-family:Archivo,Arial,sans-serif;font-size:30px;font-weight:700;line-height:1.2;color:#0A2540;">${value}</div><div style="margin-top:7px;font-size:10px;font-weight:700;letter-spacing:1px;color:#6B7A88;">${label}</div></td>`;
+  const pipeline = ASSET_CLASSES.map(assetClass => {
+    const inClass = active.filter((d: any) => assetClassOf(d) === assetClass && d.stage !== "closed");
+    const stages = SNAPSHOT_STAGES.map(stage => ({ label: STAGE_LABELS[stage], count: inClass.filter((d: any) => d.stage === stage).length }));
+    const max = Math.max(1, ...stages.map(s => s.count));
+    const colors = ["#9EC3E5", "#4E9FD6", "#3E82C4", "#0E5AA7", "#0A2540"];
+    return `<tr><td style="padding:16px;border-bottom:1px solid #DDE4EB;">
+      <div style="font-size:14px;font-weight:700;color:#0A2540;margin-bottom:12px;">${ASSET_CLASS_LABELS[assetClass]} <span style="color:#6B7A88;font-weight:400;">/ ${inClass.length} active</span></div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stages.map((s, i) => `<tr><td width="115" style="font-size:12px;color:#4C5966;padding:5px 8px 5px 0;">${s.label}</td><td style="padding:5px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td width="${Math.max(1, Math.round(s.count / max * 100))}%" height="10" bgcolor="${s.count ? colors[i] : "#FFFFFF"}" style="height:10px;font-size:1px;line-height:10px;">&nbsp;</td><td></td></tr></table></td><td width="32" align="right" style="font-family:'IBM Plex Mono',Consolas,monospace;font-size:13px;font-weight:700;color:#0A2540;">${s.count}</td></tr>`).join("")}</table>
+    </td></tr>`;
+  }).join("");
 
   const dealLink = (d: any) =>
     `<a href="${APP_URL}/deals/${d.id}" style="color:#2e6e62;">${esc(d.properties?.address ?? "Untitled")}</a>`;
@@ -198,63 +198,33 @@ export async function composeDigest() {
     }</li>`;
   };
 
+  const ownerRows = [...owners.entries()]
+    .sort((a, b) => (a[0] === "Unassigned" ? 1 : b[0] === "Unassigned" ? -1 : b[1].active - a[1].active))
+    .map(([who, o]) => `<tr><td style="padding:12px 10px;border-top:1px solid #DDE4EB;font-size:12px;color:#364049;word-break:break-word;">${esc(who === "Unassigned" ? who : who.split("@")[0])}</td>${[o.active, o.due, o.stale].map(n => `<td align="center" style="padding:12px 4px;border-top:1px solid #DDE4EB;font-family:Consolas,monospace;font-size:13px;color:#0A2540;">${n}</td>`).join("")}</tr>`).join("");
+  const dateLabel = new Date(`${today}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const html = `
-  <div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;">
-    <h2 style="color:#1f3b4d;margin:0 0 4px;">Central Acquisitions morning brief</h2>
-    <p style="margin:0 0 6px;color:#6b7280;font-size:13px;">
-      ${ASSET_CLASSES.map(snapshotLine).join("<br/>")}<br/>
-      ${closedYtd.length} closed YTD${closedYtd.length ? ` · ${fmtM(closedYtdValue)}` : ""}${
-        closedYtdEstimated ? ` (${closedYtdEstimated} without a recorded closing price)` : ""
-      } ·
-      <a href="${APP_URL}/" style="color:#2e6e62;">open home screen</a>
-    </p>
-    <h3 style="margin:18px 0 6px;font-size:14px;color:#0A2540;">Call For Offers (${callsForOffers.length})</h3>
-    ${callsForOffers.length
-      ? `<ul style="margin:0;padding-left:18px;color:#364049;font-size:13px;line-height:1.7;">${callsForOffers.map(offerDeadlineLine).join("")}</ul>`
-      : `<p style="margin:0;color:#6B7A88;font-size:13px;">No upcoming call-for-offers dates entered.</p>`}
-    ${section(`👤 By owner`, ownerLines, "No active deals.")}
-    ${section(
-      `⏳ DD expirations &amp; closings — next ${MILESTONE_WINDOW_DAYS} days (${milestones.length})`,
-      milestones.map(milestoneLine),
-      "No DD deadlines or closings in the next 7 days."
-    )}
-    ${section(
-      `📋 Diligence deadlines — next ${MILESTONE_WINDOW_DAYS} days (${diligence.length})`,
-      diligence.map(diligenceLine),
-      "No diligence deadlines in the next 7 days."
-    )}
-    ${section(
-      `🏢 Lease expirations — owned assets, next ${LEASE_WINDOW_DAYS} days (${expiring.length})`,
-      expiring.map(leaseLine),
-      "No leases ending in the next six months."
-    )}
-    ${section(
-      `⚠ Overdue follow-ups (${overdue.length})`,
-      overdue.map(
-        (t: any) =>
-          `<li>${esc(t.title)} — due ${t.due_date}${t.assigned_to ? ` · ${esc(t.assigned_to)}` : ""}${
-            t.deal_id ? ` · <a href="${APP_URL}/deals/${t.deal_id}" style="color:#2e6e62;">deal</a>` : ""
-          }</li>`
-      ),
-      "Nothing overdue."
-    )}
-    ${section(
-      `🎯 Targets due for re-approach (${targetsDue.length})`,
-      targetsDue.map(
-        (d: any) =>
-          `<li>${dealLink(d)}${d.pursuit_score ? ` · ${"★".repeat(d.pursuit_score)}` : ""} — follow up ${d.follow_up_on}</li>`
-      ),
-      "No targets due."
-    )}
-    ${section(
-      `🕰 Stale deals — no touch in ${STALE_DAYS}+ days (${stale.length})`,
-      stale.map(
-        (d: any) => `<li>${dealLink(d)} — ${d.staleDays} days · ${STAGE_LABELS[d.stage] ?? d.stage}</li>`
-      ),
-      "Nothing stale."
-    )}
-    <p style="margin:20px 0 0;color:#9ca3af;font-size:11px;">Sent by Central Acquisitions · ${new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "long", month: "long", day: "numeric" })}</p>
-  </div>`;
+  <div style="display:none;font-size:1px;line-height:1px;color:#FFFFFF;max-height:0;overflow:hidden;">${milestones.length + diligence.length} DD, closing and diligence deadlines; ${overdue.length} overdue follow-ups. Our acquisition pipeline at a glance.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF" style="font-family:'Public Sans','Segoe UI',Arial,sans-serif;border-collapse:collapse;"><tr><td align="center">
+  <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;border:1px solid #DDE4EB;border-collapse:collapse;">
+    <tr><td bgcolor="#0A2540" style="padding:28px 24px;color:#FFFFFF;">
+      <img src="https://ios-central-acquisitions.vercel.app/logo-email.png" width="176" height="44" alt="Dalfen Industrial" style="display:block;border:0;margin-bottom:24px;"/><div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#A9D0EC;">HOPPER / CENTRAL ACQUISITIONS</div>
+      <h1 style="font-family:Archivo,Arial,sans-serif;font-size:30px;line-height:1.2;letter-spacing:-.5px;margin:14px 0 12px;color:#FFFFFF;">Morning Brief</h1>
+      <table role="presentation" width="56" cellpadding="0" cellspacing="0"><tr><td height="4" bgcolor="#4E9FD6" style="font-size:1px;line-height:4px;">&nbsp;</td></tr></table>
+      <p style="font-size:13px;color:#C4CFD9;margin:16px 0 0;">${dateLabel} &nbsp; / &nbsp; Central Time</p>
+    </td></tr>
+    <tr><td style="padding:24px 24px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${stat(String(active.filter((d: any) => d.stage !== "closed").length), "ACTIVE DEALS")}${stat(String(milestones.length + diligence.length), "DEADLINES / 7D + OVERDUE")}${stat(String(overdue.length), "OVERDUE FOLLOW-UPS")}</table></td></tr>
+    <tr><td style="padding:18px 24px 0;font-size:13px;line-height:1.65;color:#6B7A88;"><strong style="color:#0A2540;">${closedYtd.length} Closed YTD &nbsp; / &nbsp; ${fmtM(closedYtdValue)}</strong>${closedYtdEstimated ? `<br/>${closedYtdEstimated} without a recorded closing price; value may use contract or offer estimates.` : ""}</td></tr>
+    <tr><td style="padding:24px 24px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #DDE4EB;border-collapse:collapse;"><tr><td style="padding:16px;border-top:3px solid #4E9FD6;"><div style="font-size:10px;letter-spacing:1.5px;color:#6B7A88;font-weight:700;">PIPELINE SNAPSHOT</div><h2 style="margin:6px 0 0;font-size:18px;color:#0A2540;">Where Our Deals Stand</h2><p style="margin:6px 0 0;font-size:12px;color:#6B7A88;">Deal counts by stage. Bars scaled within each pipeline.</p></td></tr>${pipeline}</table></td></tr>
+    ${section(`Call For Offers <span style="font-size:12px;color:#6B7A88;"> / ${callsForOffers.length}</span>`, callsForOffers.map(offerDeadlineLine), "No upcoming call-for-offers dates entered.")}
+    ${section(`DD Expirations &amp; Closings / Next 7 Days (${milestones.length})`, milestones.map(milestoneLine), "No DD deadlines or closings in the next 7 days.")}
+    ${section(`Diligence Deadlines / Next 7 Days (${diligence.length})`, diligence.map(diligenceLine), "No diligence deadlines in the next 7 days.")}
+    <tr><td style="padding:24px 24px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #DDE4EB;border-collapse:collapse;"><tr><td colspan="4" style="padding:16px;border-top:3px solid #4E9FD6;font-size:17px;font-weight:700;color:#0A2540;">Team Workload</td></tr><tr>${["Owner", "Active", "Due / 7D", "Stale"].map(label => `<th align="${label === "Owner" ? "left" : "center"}" style="padding:10px;font-size:10px;letter-spacing:.5px;color:#6B7A88;">${label}</th>`).join("")}</tr>${ownerRows || '<tr><td colspan="4" style="padding:16px;font-size:13px;color:#6B7A88;">No active deals.</td></tr>'}</table></td></tr>
+    ${section(`Overdue Follow-ups (${overdue.length})`, overdue.map((t: any) => `<li>${esc(t.title)} &mdash; due ${t.due_date}${t.assigned_to ? ` &middot; ${esc(t.assigned_to)}` : ""}${t.deal_id ? ` &middot; <a href="${APP_URL}/deals/${t.deal_id}" style="color:#0E5AA7;">Open deal</a>` : ""}</li>`), "Nothing overdue.")}
+    ${section(`Targets Ready For Re-approach (${targetsDue.length})`, targetsDue.map((d: any) => `<li>${dealLink(d)} &mdash; follow up ${d.follow_up_on}${d.pursuit_score ? ` &middot; Pursuit score: ${d.pursuit_score}/5` : ""}</li>`), "No targets due.")}
+    ${section(`Stale Deals / No Touch In 14+ Days (${stale.length})`, stale.map((d: any) => `<li>${dealLink(d)} &mdash; ${d.staleDays} days &middot; ${STAGE_LABELS[d.stage] ?? d.stage}</li>`), "Nothing stale.")}
+    ${section(`Lease Expirations / Next 180 Days (${expiring.length})`, expiring.map(leaseLine), "No leases ending in the next six months.")}
+    <tr><td align="center" style="padding:28px 24px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#0E5AA7" style="padding:14px 24px;border-radius:3px;"><a href="${APP_URL}/" style="font-size:12px;font-weight:700;letter-spacing:1px;color:#FFFFFF;text-decoration:none;">OPEN HOPPER</a></td></tr></table><p style="font-size:11px;line-height:1.6;color:#6B7A88;margin:18px 0 0;">Central Acquisitions &middot; Dalfen Industrial<br/>Dates use Central Time. Deadline counts include overdue items.<br/>Review the linked deal for the latest details.</p></td></tr>
+  </table></td></tr></table>`;
 
   // Milestones lead the subject line: a closing in 3 days is the one thing
   // that has to survive being read on a phone lock screen.
