@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   const today = ctToday();
   const content = reminderMode
     ? composeOfferReminder(await fetchAll((from, to) => supabase.from("deals")
-        .select("id, stage, call_for_offers_on, assigned_analyst, properties(address), tasks(title, due_date, status)")
+        .select("id, stage, call_for_offers_on, offer_round, assigned_analyst, properties(address), tasks(title, due_date, status)")
         .eq("deal_type", "acquisition")
         .not("stage", "in", "(closed,archived)").order("id").range(from, to)) as any[], today)
     : await composeDigest();

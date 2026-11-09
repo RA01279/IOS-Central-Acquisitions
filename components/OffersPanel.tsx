@@ -10,6 +10,7 @@ import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OFFER_STATUSES, OFFER_STATUS_LABELS, bidAskGap } from "@/lib/offer-status";
 import { Badge, type BadgeTone } from "@/components/ui";
+import { nextRoundAction, offerRoundLabel } from "@/lib/call-for-offers";
 
 type Offer = {
   id: string;
@@ -21,6 +22,7 @@ type Offer = {
   status?: string | null;
   counter_price?: number | null;
   responded_on?: string | null;
+  round?: number | null;
 };
 
 const STATUS_TONE: Record<string, BadgeTone> = {
@@ -55,16 +57,23 @@ export default function OffersPanel({
   dealId,
   offers,
   lotSf,
+  round = 1,
+  dueOn = null,
 }: {
   dealId: string;
   offers: Offer[];
   lotSf: number | null;
+  /** deals.offer_round: 1 = call for offers, 2 = best & final, 3+ numbered. */
+  round?: number;
+  /** deals.call_for_offers_on: the current round's due date. */
+  dueOn?: string | null;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [responding, setResponding] = useState<string | null>(null);
+  const [roundForm, setRoundForm] = useState<"next" | "edit" | null>(null);
 
   // Newest first; two offers on one day fall back to when they were logged.
   const sorted = [...offers].sort(
@@ -127,6 +136,27 @@ export default function OffersPanel({
     }
   }
 
+  async function handleRound(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const form = new FormData(e.currentTarget);
+    try {
+      const res = await fetch(`/api/deals/${dealId}/offer-round`, {
+        method: roundForm === "next" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dueOn: form.get("dueOn") || null }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't save the round");
+      setRoundForm(null);
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRemove(o: Offer) {
     if (!window.confirm(`Remove the ${fmtUsd(o.price)} offer from ${fmtDate(o.offered_at)}? This can't be undone.`)) return;
     setBusy(true);
@@ -150,6 +180,8 @@ export default function OffersPanel({
   const latestCounter = sorted.find((o) => o.counter_price);
   const gap = latestCounter ? bidAskGap(latestCounter.price, latestCounter.counter_price) : null;
   const latest = sorted[0];
+  const showRounds = round > 1 || sorted.some((o) => (o.round ?? 1) > 1);
+  const cols = (lotSf ? 8 : 7) + (showRounds ? 1 : 0);
 
   return (
     <section className="panel">
@@ -157,7 +189,17 @@ export default function OffersPanel({
         <h2>
           Offers
           {sorted.length > 0 && <span className="count" style={{ marginLeft: 8 }}>{sorted.length}</span>}
+          {round > 1 && (
+            <span style={{ marginLeft: 8 }}>
+              <Badge tone="warning">{offerRoundLabel(round)}</Badge>
+            </span>
+          )}
         </h2>
+        {!adding && !roundForm && sorted.length > 0 && (
+          <button type="button" className="fin-head-action" onClick={() => setRoundForm("next")}>
+            {nextRoundAction(round)}
+          </button>
+        )}
         {!adding && (
           <button type="button" className="fin-head-action" onClick={() => setAdding(true)}>
             + Log offer
@@ -165,9 +207,31 @@ export default function OffersPanel({
         )}
       </div>
 
+      {round > 1 && !roundForm && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          {offerRoundLabel(round)} due <strong>{fmtDate(dueOn)}</strong>.{" "}
+          <button type="button" className="link-caps" onClick={() => setRoundForm("edit")} disabled={busy}>
+            Change date
+          </button>
+        </p>
+      )}
+      {roundForm && (
+        <form onSubmit={handleRound} className="fin-inline-form" style={{ marginBottom: 12 }}>
+          <label>
+            {roundForm === "next" ? `${offerRoundLabel(round + 1)} due` : `${offerRoundLabel(round)} due`}
+            <input name="dueOn" type="date" required defaultValue={roundForm === "edit" ? dueOn ?? "" : ""} autoFocus />
+          </label>
+          <button type="submit" disabled={busy}>{busy ? "Saving…" : roundForm === "next" ? nextRoundAction(round) : "Save"}</button>
+          <button type="button" className="secondary" onClick={() => { setRoundForm(null); setError(null); }}>Cancel</button>
+          {roundForm === "next" && (
+            <span className="hint">Shows on the deal tiles, the daily brief and the day-before reminder. Offers you log from now on count toward this round.</span>
+          )}
+        </form>
+      )}
+
       {latest && (
         <div className="fin-stats fin-stats-tight">
-          <Stat label="Latest offer" value={fmtUsd(latest.price)} sub={fmtDate(latest.offered_at)} />
+          <Stat label="Latest offer" value={fmtUsd(latest.price)} sub={showRounds ? `${offerRoundLabel(latest.round)} · ${fmtDate(latest.offered_at)}` : fmtDate(latest.offered_at)} />
           <Stat label="Status" value={OFFER_STATUS_LABELS[latest.status ?? "sent"] ?? "Sent"} />
           {latestCounter && <Stat label="Seller at" value={fmtUsd(latestCounter.counter_price)} />}
           {gap && <Stat label="Gap" value={fmtUsd(gap.dollars)} sub={`${(gap.pct * 100).toFixed(1)}% over our offer`} />}
@@ -182,6 +246,7 @@ export default function OffersPanel({
             <thead>
               <tr>
                 <th>Date</th>
+                {showRounds && <th className="fin-text">Round</th>}
                 <th>Offer</th>
                 {lotSf ? <th>$/SF land</th> : null}
                 <th className="fin-text">Status</th>
@@ -200,6 +265,7 @@ export default function OffersPanel({
                   <Fragment key={o.id}>
                     <tr className={o.notes || responding === o.id ? "fin-has-sub" : undefined}>
                       <td className="fin-text">{fmtDate(o.offered_at)}</td>
+                      {showRounds && <td className="fin-text">{offerRoundLabel(o.round)}</td>}
                       <td><strong>{fmtUsd(o.price)}</strong></td>
                       {lotSf ? <td>{psf !== null ? `$${psf.toFixed(2)}` : "—"}</td> : null}
                       <td className="fin-text">
@@ -230,7 +296,7 @@ export default function OffersPanel({
                     </tr>
                     {(o.notes || responding === o.id) && (
                       <tr className="fin-subrow">
-                        <td colSpan={lotSf ? 8 : 7}>
+                        <td colSpan={cols}>
                           {o.notes && <div className="muted">{o.notes}</div>}
                           {responding === o.id && (
                             <form onSubmit={(e) => handleRespond(e, o.id)} className="fin-inline-form">

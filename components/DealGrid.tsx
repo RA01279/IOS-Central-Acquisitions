@@ -77,7 +77,7 @@ export default function DealGrid({ cards }: { cards: DealCardData[] }) {
               </a>
               <FlagStrip flags={d.flags} />
               {d.callForOffersOn && <a href={`/deals/${d.id}`} style={{ padding: "8px 14px", textDecoration: "none" }}>
-                <CallForOffersDate date={d.callForOffersOn} />
+                <CallForOffersDate date={d.callForOffersOn} round={d.offerRound} />
               </a>}
               <div className="dcard-foot">
                 <Badge tone={STAGE_TONES[d.stage] ?? "neutral"}>{d.stageLabel}</Badge>

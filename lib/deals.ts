@@ -275,10 +275,15 @@ export async function recordOffer(
     }
   }
 
+  // Tag the offer with the round the deal is in (call for offers, best & final...).
+  const { data: dealRow } = await supabase.from("deals").select("offer_round").eq("id", dealId).maybeSingle();
+  const round = Number(dealRow?.offer_round) || 1;
+
   const { data: offer, error } = await supabase
     .from("offers")
     .insert({
       deal_id: dealId,
+      round,
       offered_at: offeredAt,
       price,
       notes: input.notes ?? null,

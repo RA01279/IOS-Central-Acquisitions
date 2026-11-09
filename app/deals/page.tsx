@@ -235,7 +235,7 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
                             <a href={`/deals/${c.id}`} className="pipeline-card">
                               <span className="address">{c.name}</span>
                               <span className="market muted">{c.market ?? ""}</span>
-                              <CallForOffersDate date={c.callForOffersOn} />
+                              <CallForOffersDate date={c.callForOffersOn} round={c.offerRound} />
                               <span className={c.days >= 14 ? "stage-age stage-age-old" : "stage-age"}>
                                 {s === "closed" ? `closed ${deal?.closed_on ?? ""}` : c.days === 0 ? "today" : `${c.days}d in stage`}
                               </span>

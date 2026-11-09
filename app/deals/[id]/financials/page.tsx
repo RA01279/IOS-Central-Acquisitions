@@ -104,7 +104,7 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
       </div>
 
       <h2 className="fin-group">Negotiation</h2>
-      <OffersPanel dealId={deal.id} offers={deal.offers ?? []} lotSf={deal.properties?.lot_sf ?? null} />
+      <OffersPanel dealId={deal.id} offers={deal.offers ?? []} lotSf={deal.properties?.lot_sf ?? null} round={Number(deal.offer_round) || 1} dueOn={deal.call_for_offers_on ?? null} />
       {["uw", "offered", "moving_to_psa", "due_diligence"].includes(deal.stage) && (
         <LoiPanel dealId={deal.id} defaults={loiDefaults(deal, dealContacts as any[])} />
       )}

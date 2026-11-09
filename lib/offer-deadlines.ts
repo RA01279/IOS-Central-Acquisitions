@@ -1,10 +1,11 @@
 import { addDays, daysBetween } from "./summary";
-import { callForOffersDate, type CfoTask } from "./call-for-offers";
+import { callForOffersDate, offerRoundLabel, type CfoTask } from "./call-for-offers";
 
 export interface OfferDeadlineDeal {
   id: string;
   stage: string;
   call_for_offers_on?: string | null;
+  offer_round?: number | null;
   tasks?: CfoTask[] | null;
   assigned_analyst?: string | null;
   properties?: { address?: string | null } | null;
@@ -29,7 +30,7 @@ function esc(s: string) {
 
 export function offerDeadlineLine(d: ReturnType<typeof offerDeadlines>[number]) {
   const when = d.daysAway === 0 ? "TODAY" : d.daysAway === 1 ? "TOMORROW" : `in ${d.daysAway} days`;
-  return `<li><a href="https://ios-central-acquisitions.vercel.app/deals/${encodeURIComponent(d.id)}" style="color:#0E5AA7;">${esc(d.properties?.address ?? "Untitled")}</a> &mdash; ${d.date}, <strong>${when}</strong>${d.assigned_analyst ? ` &middot; ${esc(d.assigned_analyst)}` : ""}</li>`;
+  return `<li><a href="https://ios-central-acquisitions.vercel.app/deals/${encodeURIComponent(d.id)}" style="color:#0E5AA7;">${esc(d.properties?.address ?? "Untitled")}</a>${(d.offer_round ?? 1) > 1 ? ` (${esc(offerRoundLabel(d.offer_round))})` : ""} &mdash; ${d.date}, <strong>${when}</strong>${d.assigned_analyst ? ` &middot; ${esc(d.assigned_analyst)}` : ""}</li>`;
 }
 
 export function composeOfferReminder(deals: OfferDeadlineDeal[], today: string) {

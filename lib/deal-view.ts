@@ -12,7 +12,7 @@ import { acres, dealRef, fmtAcres, fmtMoney, fmtSf } from "./format";
 import { callForOffersDate } from "./call-for-offers";
 
 export const DEAL_CARD_SELECT =
-  "id, ref, stage, asset_class, investment_review, deal_analysis_versions(kind,version,created_at), created_at, asking_price, call_for_offers_on, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, assigned_analyst, deal_portfolio_id, deal_portfolios(name), properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status), offers(price, offered_at), tasks(title, due_date, status), deal_events(event_type, created_at)";
+  "id, ref, stage, asset_class, investment_review, deal_analysis_versions(kind,version,created_at), created_at, asking_price, call_for_offers_on, offer_round, dd_end_on, closing_on, closed_on, closed_price, contract_price, ic_on, loi_response_due_on, mla_status, assigned_analyst, deal_portfolio_id, deal_portfolios(name), properties(address, city, market, submarket, latitude, longitude, geocode_precision, lot_sf, building_sf, occupancy_status), offers(price, offered_at), tasks(title, due_date, status), deal_events(event_type, created_at)";
 
 const DAY_MS = 86400000;
 
@@ -68,6 +68,8 @@ export interface DealCardData {
   createdAt: string;
   icOn: string | null;
   callForOffersOn: string | null;
+  /** Current bid round (1 = call for offers, 2 = best & final). */
+  offerRound: number;
   lat: number | null;
   lng: number | null;
   geocodePrecision: string | null;
@@ -119,6 +121,7 @@ export function toDealCard(deal: any, signals: SignalRow[] | undefined): DealCar
     createdAt: deal.created_at,
     icOn: deal.ic_on ?? null,
     callForOffersOn: callForOffersDate(deal),
+    offerRound: Number(deal.offer_round) || 1,
     lat: p.latitude != null ? Number(p.latitude) : null,
     lng: p.longitude != null ? Number(p.longitude) : null,
     geocodePrecision: p.geocode_precision ?? null,

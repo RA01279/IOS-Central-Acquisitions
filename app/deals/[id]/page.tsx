@@ -27,6 +27,7 @@ import { listTeam, nameOf } from "@/lib/team";
 import { getServiceClient } from "@/lib/supabase";
 import { IC_OUTCOME_LABELS, icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
 import { DemandBars, KpiCard } from "@/components/ui";
+import { offerRoundLabel } from "@/lib/call-for-offers";
 
 function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
@@ -84,6 +85,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
 
   const today = ctToday();
   const dateRows: DateRow[] = [
+    ...((Number(deal.offer_round) || 1) > 1 && deal.call_for_offers_on ? [{ label: `${offerRoundLabel(deal.offer_round)} due`, date: deal.call_for_offers_on as string }] : []),
     { label: "LOI response due", date: deal.loi_response_due_on ?? null },
     { label: "IC presentation", date: deal.ic_on ?? null },
     { label: "Phase I ordered", date: deal.phase1_ordered_on ?? null, empty: "Pending", event: true },

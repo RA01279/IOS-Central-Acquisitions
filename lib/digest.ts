@@ -49,7 +49,7 @@ export async function composeDigest() {
     fetchAll((from, to) => supabase
       .from("deals")
       .select(
-        "id, deal_type, stage, asset_class, assigned_analyst, created_at, follow_up_on, pursuit_score, call_for_offers_on, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), tasks(title, due_date, status), deal_events(created_at)"
+        "id, deal_type, stage, asset_class, assigned_analyst, created_at, follow_up_on, pursuit_score, call_for_offers_on, offer_round, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address), offers(price, offered_at), tasks(title, due_date, status), deal_events(created_at)"
       )
       .eq("deal_type", "acquisition")
       .order("id")
