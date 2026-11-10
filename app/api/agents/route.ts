@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { userContext, json, reap } from "@/lib/agents/server";
+import { userContext, json, reap, MAX_ACTIVE_RUNS } from "@/lib/agents/server";
 import { AGENTS, UUID, isAgentId, buildPrompt } from "@/lib/agents/catalog";
 import { loadEvidence } from "@/lib/agents/context";
 import { MAX_SOURCING_SITES } from "@/lib/agents/sourcing";
@@ -60,13 +60,16 @@ export async function POST(req: NextRequest) {
   if (he) throw he;
   if (!helper?.agents_last_seen_at || Date.now() - Date.parse(helper.agents_last_seen_at) > 45000) return json({ error: "Start the updated Hopper helper on your computer." }, 409);
   await reap(db, email);
+  // Several runs can queue at once (the helper works them in parallel), up to a cap.
+  const { count: active, error: activeError } = await db.from("agent_runs").select("id", { count: "exact", head: true }).eq("owner_email", email).in("status", ["queued", "processing"]);
+  if (activeError) throw activeError;
+  if ((active ?? 0) >= MAX_ACTIVE_RUNS) return json({ error: `You have ${active} agent runs queued or running. Wait for some to finish.` }, 429);
   const evidence = await loadEvidence(body.agent, body.dealId || undefined);
   if (reviewed) evidence.push({ label: SNAPSHOT_LABEL, data: reviewed });
   const prompt = buildPrompt(body.agent, evidence, reviewed ? JSON.stringify(reviewed) : body.text, new Date().toISOString());
   if (prompt.length > 350000) return json({ error: "Evidence is too large. Narrow the selected deal or shorten the source text." }, 413);
   const { data, error } = await db.from("agent_runs").insert({ owner_email: email, helper_id: helper.id, agent: body.agent,
     deal_id: body.dealId || null, prompt, sources: evidence }).select("id").single();
-  if (error?.code === "23505") return json({ error: "A report is already running. Wait for it to finish." }, 409);
   if (error) throw error;
   return json(data, 202);
  } catch { return json({ error: "Could not prepare the report. No deal records were changed." }, 500); }
