@@ -13,6 +13,7 @@ import { hex, scoreState, signal } from "@/lib/hopper-tokens";
 import StageActions from "@/components/StageActions";
 import DealEditForm from "@/components/DealEditForm";
 import DealContactsPanel from "@/components/DealContactsPanel";
+import OutreachPanel from "@/components/OutreachPanel";
 import TargetingPanel from "@/components/TargetingPanel";
 import RestoreDealButton from "@/components/RestoreDealButton";
 import DeleteDealButton from "@/components/DeleteDealButton";
@@ -257,6 +258,8 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
           team={team}
         />
       </section>
+
+      {deal.marketing_status === "off_market" && deal.stage !== "closed" ? <OutreachPanel dealId={deal.id} /> : null}
 
       <DealContactsPanel
         dealId={deal.id}

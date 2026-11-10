@@ -428,7 +428,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                       <ul>{s.sources.map((x) => <li key={x}><SourceLine text={x} /></li>)}</ul>
                       {s.unverified.length > 0 && <><em>Unverified</em><ul>{s.unverified.map((x) => <li key={x}>{x}</li>)}</ul></>}
                     </details>
-                    {a?.dealId ? <p>Added. <Link href={`/deals/${a.dealId}`}>Open the prospect</Link></p>
+                    {a?.dealId ? <p>Added. <Link href={`/deals/${a.dealId}#outreach`}>Log the first touch</Link> · <Link href="/outreach?tab=new">Outreach queue</Link></p>
                       : <button type="button" onClick={() => addProspect(s)} disabled={a?.busy}>{a?.busy ? "Adding…" : "Add as prospect"}</button>}
                     {a?.error && <p className="error">{a.error}</p>}
                   </article>
