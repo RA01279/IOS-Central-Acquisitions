@@ -207,7 +207,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
       const d = await r.json();
       if (version !== sweepRequest.current.version) return;
       if (!r.ok) throw new Error(d.error ?? "Sweep failed.");
-      setSweep({ ...d, criteriaKey }); setSelected([]); setReport(null); setAdded({});
+      setSweep({ ...d, criteriaKey }); setSelected([]); setReport(null); setAdded({}); setSent({});
     } catch (e: any) { if (version === sweepRequest.current.version && e.name !== "AbortError") setError(e.message); }
     finally { if (version === sweepRequest.current.version) setBusy(null); }
   }
@@ -225,6 +225,22 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
       save(d.id, { market: sweep.market ?? "", buyBox, sites, searchLabel: sweep.label });
       setRun({ id: d.id, status: "queued" });
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  }
+
+  // Step 2: send picked sweep sites straight to Outreach (no agent research needed).
+  const [sent, setSent] = useState<Record<string, { busy?: boolean; dealId?: string; error?: string }>>({});
+  async function sendToOutreach(refs: string[]) {
+    if (!sweep?.sweepId || !refs.length) return;
+    setSent((m) => ({ ...m, ...Object.fromEntries(refs.map((r) => [r, { busy: true }])) }));
+    try {
+      const r = await fetch("/api/sourcing/outreach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sweepId: sweep.sweepId, refs }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Could not send to outreach.");
+      setSent((m) => ({ ...m, ...Object.fromEntries((d.results ?? []).map((x: any) => [x.ref, x.dealId ? { dealId: x.dealId } : { error: x.error }])) }));
+      setSelected((sel) => sel.filter((ref) => !(d.results ?? []).some((x: any) => x.ref === ref && x.dealId)));
+    } catch (e: any) {
+      setSent((m) => ({ ...m, ...Object.fromEntries(refs.map((r) => [r, { error: e.message }])) }));
+    }
   }
 
   async function addProspect(s: SourcedSite) {
@@ -340,7 +356,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
 
       {(sweep || report) && (
         <section className="panel">
-          <h2>{report ? "3. Qualified sites" : "2. Pick sites to qualify"}</h2>
+          <h2>{report ? "3. Qualified sites" : "2. Pick sites to send to outreach or qualify"}</h2>
           {sweep && !report && <>
             <p><strong>Reviewed search:</strong> {sweep.label}, {sweep.radiusMiles} miles. Profiles: {SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All existing yard-use profiles (previous sweep)"}. <strong>{visible.length} filtered properties</strong> / {sweep.sites.length} discovered properties. Map and filtered export use these same {visible.length} properties.</p>
             {sweep.criteriaKey && criteriaKey !== sweep.criteriaKey && <p role="status">Search criteria changed. Run Sweep to replace these results; the displayed list and export still reflect the reviewed search above.</p>}
@@ -373,7 +389,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
-                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th></tr></thead>
+                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th><th>Outreach</th></tr></thead>
                   <tbody>
                     {visible.map((s) => (
                       <tr key={s.ref} data-site-ref={s.ref}>
@@ -387,13 +403,26 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                         <td>{s.address}{s.identityStatus === "address-conflict" && <p className="hint" role="status">Listing / parcel address conflict: {s.parcel?.situsAddress}. Review location.</p>}{!s.parcel && <p className="hint">Parcel not returned; ownership and area remain unverified.</p>}</td>
                         <td>{s.distanceMi.toFixed(1)} mi</td>
                         <td>{s.known && <div><Link href={s.known.href}>{s.known.relation ?? s.known.kind}</Link> · same property ({s.known.evidence})</div>}{s.nearby?.map(k => <div key={`${k.kind}:${k.id}`}><Link href={k.href}>{k.label}</Link> · {k.match === "same_property" ? "same property" : "nearby, not a duplicate"}</div>)}{!s.known && !s.nearby?.length && "—"}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {blocksSourcing(s) ? <span className="muted">—</span>
+                            : sent[s.ref]?.dealId ? <><Link href={`/deals/${sent[s.ref].dealId}#outreach`}>In outreach</Link></>
+                            : <button type="button" className="secondary" disabled={!!sent[s.ref]?.busy || !sweep.sweepId} onClick={() => sendToOutreach([s.ref])}>{sent[s.ref]?.busy ? "Sending…" : "Send to outreach"}</button>}
+                          {sent[s.ref]?.error ? <div className="error" style={{ whiteSpace: "normal", margin: "4px 0 0", fontSize: 12 }}>{sent[s.ref].error}</div> : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <p className="hint">Selected {selected.length} of {MAX_SOURCING_SITES}. {online === false && <>Your computer helper is offline — start it (Desktop: <em>Start Hopper helper</em>) to qualify sites.</>}</p>
-              <button type="button" onClick={qualify} disabled={!selected.length || busy !== null || online === false}>{busy === "agent" ? "Starting…" : `Qualify ${selected.length || ""} site${selected.length === 1 ? "" : "s"} with the agent`}</button>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <button type="button" onClick={() => sendToOutreach(selected.filter((ref) => !sent[ref]?.dealId))} disabled={!selected.length || !sweep.sweepId || selected.every((ref) => sent[ref]?.busy || sent[ref]?.dealId)}>
+                  {`Send ${selected.length || ""} selected to outreach`}
+                </button>
+                <button type="button" className="secondary" onClick={qualify} disabled={!selected.length || busy !== null || online === false}>{busy === "agent" ? "Starting…" : `Qualify ${selected.length || ""} site${selected.length === 1 ? "" : "s"} with the agent first`}</button>
+                {Object.values(sent).some((x) => x.dealId) ? <Link href="/outreach?tab=new">Open the outreach queue ({Object.values(sent).filter((x) => x.dealId).length} sent)</Link> : null}
+              </div>
+              <p className="hint" style={{ marginBottom: 0 }}>Send to outreach now with the appraisal-roll owner, or have the agent research owners, parcels and an outreach draft first (about a minute per site).</p>
             </>
           )}
           {run && ["queued", "processing"].includes(run.status) && <p role="status">The agent is researching owners and parcels ({run.status}). About a minute per site; this page updates when it's done.</p>}
