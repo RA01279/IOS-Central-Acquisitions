@@ -6,14 +6,18 @@
 // this is what we hold. The two only meet on a deal page, where a prospect is
 // measured against the assets around it.
 import Nav from "@/components/Nav";
-import AssetsView, { type AssetDetail } from "@/components/AssetsView";
+import Link from "next/link";
+import AssetsView, { type AssetDetail, type OccupancyFilter } from "@/components/AssetsView";
 import { getServiceClient } from "@/lib/supabase";
 import { BarRows, Legend, SERIES, SERIES_SOFT } from "@/components/charts";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
 
-export default async function AssetsPage() {
+export default async function AssetsPage(props: { searchParams: Promise<{ occ?: string }> }) {
+  const sp = await props.searchParams;
+  // The tiles link here with ?occ=space / ?occ=occupied to open the table filtered.
+  const occ: OccupancyFilter = sp.occ === "space" || sp.occ === "occupied" ? sp.occ : "all";
   const supabase = getServiceClient();
   const { data } = await supabase
     .from("assets")
@@ -25,7 +29,7 @@ export default async function AssetsPage() {
 
   const assets = (data ?? []) as AssetDetail[];
   const owned = assets.filter((a) => a.status !== "sold");
-  const withSpace = owned.filter((a) => a.occupancy === "available");
+  const withSpace = owned.filter((a) => a.occupancy === "available" || a.occupancy === "partial");
   // Acreage is the number a portfolio is actually discussed in, and it's the
   // one the source page doesn't publish -- so say how much is still missing
   // rather than showing a total that quietly understates itself.
@@ -38,7 +42,7 @@ export default async function AssetsPage() {
       return {
         name,
         count: list.length,
-        available: list.filter((a) => a.occupancy === "available").length,
+        available: list.filter((a) => a.occupancy === "available" || a.occupancy === "partial").length,
         acres: list.reduce((s, a) => s + (a.site_acres ? Number(a.site_acres) : 0), 0),
         missing: list.filter((a) => a.site_acres == null).length,
       };
@@ -60,8 +64,8 @@ export default async function AssetsPage() {
           </div>
         </div>
 
-        <div className="stat-grid stat-grid-3">
-          <div className="stat-tile">
+        <div className="stat-grid">
+          <Link href="/assets#assets-table" className={occ === "all" ? "stat-tile stat-on" : "stat-tile"}>
             <span className="stat-value">{owned.length}</span>
             <span className="stat-label">Assets owned</span>
             {assets.length > owned.length && (
@@ -69,11 +73,22 @@ export default async function AssetsPage() {
                 + {assets.length - owned.length} sold, kept for history
               </span>
             )}
-          </div>
-          <div className="stat-tile">
+          </Link>
+          <Link href="/assets?occ=space#assets-table" className={occ === "space" ? "stat-tile stat-on" : "stat-tile"}>
             <span className="stat-value">{withSpace.length}</span>
             <span className="stat-label">With space available</span>
-          </div>
+            <span className="stat-delta">
+              {withSpace.filter((a) => a.occupancy === "partial").length
+                ? `${withSpace.filter((a) => a.occupancy === "partial").length} partly leased · `
+                : ""}
+              Click to see and update
+            </span>
+          </Link>
+          <Link href="/assets?occ=occupied#assets-table" className={occ === "occupied" ? "stat-tile stat-on" : "stat-tile"}>
+            <span className="stat-value">{owned.length - withSpace.length}</span>
+            <span className="stat-label">Fully occupied</span>
+            <span className="stat-delta">Tenant left? Mark it here</span>
+          </Link>
           <div className="stat-tile">
             <span className={missingAcres ? "stat-value stat-bad" : "stat-value"}>
               {totalAcres ? Math.round(totalAcres).toLocaleString() : "—"}
@@ -133,7 +148,7 @@ export default async function AssetsPage() {
           </div>
         ) : null}
 
-        <AssetsView assets={assets} />
+        <AssetsView key={occ} assets={assets} initialOccupancy={occ} />
       </main>
     </>
   );

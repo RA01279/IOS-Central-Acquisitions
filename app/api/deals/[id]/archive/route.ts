@@ -15,7 +15,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const body = await req.json();
   const out =
     body.action === "archive"
-      ? await archiveDeal(params.id, { reason: body.reason, disposition: body.disposition, pursuitScore: body.pursuitScore, followUpOn: body.followUpOn }, user.email)
+      ? await archiveDeal(params.id, { reason: body.reason, disposition: body.disposition, pursuitScore: body.pursuitScore, followUpOn: body.followUpOn, offerOutcome: body.offerOutcome }, user.email)
       : body.action === "restore"
         ? await restoreDeal(params.id, user.email)
         : ({ ok: false, status: 400, error: "Unknown action" } as const);

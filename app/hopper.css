@@ -2547,3 +2547,8 @@ details.more > summary { cursor: pointer; color: var(--brand); font-size: 13px; 
 .viz-range { position: absolute; top: 2px; height: 10px; border-radius: 4px; background: var(--series-1-soft); min-width: 4px; }
 .viz-range-mid { position: absolute; top: 0; width: 3px; height: 14px; margin-left: -1px; border-radius: 2px; background: var(--series-1); }
 @media print { .viz-range, .viz-range-mid { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+a.stat-tile.stat-on { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.occ-select { height: 28px; font-size: 12px; font-weight: 600; border-radius: 4px; padding: 0 6px; border: 1px solid var(--n300); background: #fff; }
+.occ-select.occ-available { background: var(--watch-bg); border-color: var(--watch); color: #8a5a14; }
+.occ-select.occ-partial { background: var(--blue-50); border-color: var(--sky); color: var(--brand); }
+.occ-select.occ-occupied { color: var(--n700); }

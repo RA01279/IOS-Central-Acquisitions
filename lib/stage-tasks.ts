@@ -49,3 +49,16 @@ export function tasksForStage(stage: string, today: string, openTitles: Iterable
       return { title: t.title, due_date: d.toISOString().slice(0, 10) };
     });
 }
+
+const STAGE_ORDER = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence", "closed"];
+
+/**
+ * Checklist titles a deal no longer needs once it reaches `toStage`: those of
+ * every earlier stage, or of every stage when it's archived. Moving back or
+ * sideways retires nothing.
+ */
+export function staleChecklistTitles(toStage: string): string[] {
+  const at = STAGE_ORDER.indexOf(toStage);
+  const stages = toStage === "archived" ? Object.keys(STAGE_TASKS) : at < 0 ? [] : STAGE_ORDER.slice(0, at);
+  return [...new Set(stages.flatMap((s) => (STAGE_TASKS[s] ?? []).map((t) => t.title)))];
+}

@@ -2,7 +2,9 @@
 // components/AssetsView.tsx
 //
 // The portfolio map and table, with a market filter and inline editing for the
-// figures the source page doesn't publish.
+// figures the source page doesn't publish. Occupancy is a dropdown right in the
+// table: changing it saves at once (a tenant left, a vacancy leased), and the
+// page's tiles open the table filtered to space available or occupied.
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -37,15 +39,26 @@ export interface AssetDetail {
   sold_on: string | null;
   acquisition_costs: number | null;
   selling_costs: number | null;
+  occupancy_set_by?: string | null;
+  occupancy_set_at?: string | null;
 }
+
+/** Occupancy filter: "space" is anything with room (available or partly leased). */
+export type OccupancyFilter = "all" | "space" | "occupied";
+const hasSpace = (a: AssetDetail) => a.occupancy === "available" || a.occupancy === "partial";
+const OCCUPANCY_LABELS: Record<string, string> = { occupied: "Occupied", partial: "Partly leased", available: "Space available" };
 
 function colorFor(a: AssetDetail): string {
   if (a.status === "sold") return SOLD_COLOR;
-  return a.occupancy === "available" ? AVAILABLE_COLOR : OCCUPIED_COLOR;
+  return hasSpace(a) ? AVAILABLE_COLOR : OCCUPIED_COLOR;
 }
 
-export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
+export default function AssetsView({ assets, initialOccupancy = "all" }: { assets: AssetDetail[]; initialOccupancy?: OccupancyFilter }) {
   const router = useRouter();
+  const [occFilter, setOccFilter] = useState<OccupancyFilter>(initialOccupancy);
+  // Occupancy saved from the table, shown straight away while the page refreshes.
+  const [occSaved, setOccSaved] = useState<Record<string, string>>({});
+  const [occBusy, setOccBusy] = useState<string | null>(null);
   const [market, setMarket] = useState("__all");
   const [state, setState] = useState("__all");
   const [city, setCity] = useState("__all");
@@ -81,8 +94,9 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
         .filter((a) => portfolioFilter === "all" || (portfolioFilter === "sold" ? a.status === "sold" : a.status !== "sold"))
         .filter((a) => market === "__all" || a.market === market)
         .filter((a) => state === "__all" || assetState(a) === state)
-        .filter((a) => city === "__all" || assetCity(a) === city),
-    [assets, portfolioFilter, market, state, city]
+        .filter((a) => city === "__all" || assetCity(a) === city)
+        .filter((a) => occFilter === "all" || (a.status !== "sold" && (occFilter === "space" ? hasSpace(a) : !hasSpace(a)))),
+    [assets, portfolioFilter, market, state, city, occFilter]
   );
 
   const points: MapPoint[] = useMemo(
@@ -98,7 +112,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
           lines: [
             [a.city, a.state].filter(Boolean).join(", "),
             [
-              a.status === "sold" ? "SOLD" : a.occupancy === "available" ? "Space available" : "Occupied",
+              a.status === "sold" ? "SOLD" : OCCUPANCY_LABELS[a.occupancy ?? "occupied"] ?? "Occupied",
               a.site_acres ? `${a.site_acres} AC` : null,
               a.building_sf ? `${Math.round(Number(a.building_sf)).toLocaleString()} SF` : null,
             ]
@@ -118,6 +132,28 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
       submarket: a.submarket ?? "",
       notes: a.notes ?? "",
     });
+  }
+
+  async function saveOccupancy(a: AssetDetail, occupancy: string) {
+    setOccBusy(a.id);
+    setError(null);
+    setOccSaved((m) => ({ ...m, [a.id]: occupancy }));
+    try {
+      const res = await fetch(`/api/assets/${a.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ occupancy }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not save occupancy");
+      setSavedMessage(`${a.address}: now ${(OCCUPANCY_LABELS[occupancy] ?? occupancy).toLowerCase()}.`);
+      router.refresh();
+    } catch (e: any) {
+      setOccSaved((m) => { const n = { ...m }; delete n[a.id]; return n; });
+      setError(`${a.address}: ${e.message}`);
+    } finally {
+      setOccBusy(null);
+    }
   }
 
   async function save(id: string) {
@@ -189,10 +225,11 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
               </span>
             </button>
           ))}
+          {([["all", "Any occupancy"], ["space", "Space available"], ["occupied", "Occupied"]] as const).map(([value, label]) => <button type="button" key={value} className={occFilter === value ? "chip chip-active" : "chip"} onClick={() => setOccFilter(value)}>{label}</button>)}
           {[ ["owned", "Owned"], ["sold", "Sold history"], ["all", "All assets"] ].map(([value, label]) => <button type="button" key={value} className={portfolioFilter === value ? "chip chip-active" : "chip"} onClick={() => setPortfolioFilter(value)}>{label}</button>)}
         </div>
 
-        <p className="hint" role="status">Showing {shown.length} matching asset{shown.length === 1 ? "" : "s"}. State, city, market and ownership filters apply to the map and table.</p>
+        <p className="hint" role="status">Showing {shown.length} matching asset{shown.length === 1 ? "" : "s"}. State, city, market, occupancy and ownership filters apply to the map and table.</p>
 
         <MapView
           points={points}
@@ -213,7 +250,7 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
         setTransaction(null); router.refresh();
       }} />}
 
-      <section className="panel">
+      <section className="panel" id="assets-table">
         <h2>
           Assets <span className="count">{shown.length}</span>
         </h2>
@@ -289,12 +326,29 @@ export default function AssetsView({ assets }: { assets: AssetDetail[] }) {
                       "—"
                     )}
                   </td>
-                  <td data-label="Status" className="muted">
-                    {a.status === "sold"
-                      ? "sold"
-                      : a.occupancy === "available"
-                        ? "space available"
-                        : "occupied"}
+                  <td data-label="Status">
+                    {a.status === "sold" ? (
+                      <span className="muted">sold</span>
+                    ) : (
+                      <>
+                        <select
+                          aria-label={`Occupancy of ${a.address}`}
+                          className={`occ-select occ-${occSaved[a.id] ?? a.occupancy ?? "occupied"}`}
+                          value={occSaved[a.id] ?? a.occupancy ?? "occupied"}
+                          disabled={occBusy === a.id}
+                          onChange={(e) => saveOccupancy(a, e.target.value)}
+                        >
+                          <option value="occupied">Occupied</option>
+                          <option value="partial">Partly leased</option>
+                          <option value="available">Space available</option>
+                        </select>
+                        {a.occupancy_set_at ? (
+                          <div className="muted" style={{ fontSize: 11 }} title={`Set by ${a.occupancy_set_by ?? "someone"}`}>
+                            {(a.occupancy_set_by ?? "").split("@")[0] || "set"} · {new Date(a.occupancy_set_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </td>
                   <td data-label="Purchase">{assetMoney(a.purchase_price)}{a.purchased_on && <div className="muted">{a.purchased_on}</div>}{a.acquisition_costs != null && <div className="muted">+ {assetMoney(a.acquisition_costs)} costs</div>}</td>
                   <td data-label="Sale">{a.status === "sold" ? <>{assetMoney(a.sale_price)}{a.sold_on && <div className="muted">{a.sold_on}</div>}{a.selling_costs != null && <div className="muted">− {assetMoney(a.selling_costs)} costs</div>}</> : "—"}</td>

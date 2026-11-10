@@ -1,10 +1,13 @@
 // app/api/assets/[id]/route.ts
 // Edit one owned asset.
 //
-// Narrow on purpose. The seed owns address, city, state, status and occupancy
-// -- those come from dalfen.com/ios and a re-seed refreshes them. What this
-// route writes is the things the source page DOESN'T publish and a person has
-// to supply: acreage, building size, submarket, notes, and a coordinate pin.
+// Narrow on purpose. The seed owns address, city, state and status -- those
+// come from dalfen.com/ios and a re-seed refreshes them. What this route
+// writes is the things the source page DOESN'T publish and a person has to
+// supply: acreage, building size, submarket, notes, a coordinate pin -- and
+// occupancy when it changes on the ground (a tenant leaves, a vacancy
+// leases). A hand-set occupancy is stamped with who and when, and the seed
+// leaves it alone from then on.
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
@@ -59,6 +62,18 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   if ("submarket" in body) update.submarket = str(body.submarket);
   if ("notes" in body) update.notes = str(body.notes);
   if ("market" in body) update.market = str(body.market);
+  if ("occupancy" in body) {
+    if (!["occupied", "partial", "available"].includes(body.occupancy)) {
+      return NextResponse.json({ error: "Occupancy is occupied, partial or available." }, { status: 400 });
+    }
+    const { data: cur, error: curError } = await supabase.from("assets").select("status").eq("id", params.id).maybeSingle();
+    if (curError) return NextResponse.json({ error: curError.message }, { status: 500 });
+    if (!cur) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    if (cur.status === "sold") return NextResponse.json({ error: "A sold asset has no occupancy." }, { status: 400 });
+    update.occupancy = body.occupancy;
+    update.occupancy_set_by = user.email;
+    update.occupancy_set_at = new Date().toISOString();
+  }
 
   // A pin dropped by hand, same contract as a comp's: it wins, it's marked
   // 'manual', and nothing re-geocodes over it.

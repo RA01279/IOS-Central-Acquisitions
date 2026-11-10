@@ -101,7 +101,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const skipped = found.deals.filter((d) => d.stage === "closed").map((d) => `${label(d)}: closed, kept`);
     const failed: string[] = [];
     for (const d of todo) {
-      const out = await archiveDeal(d.id, { reason: `${reason} (portfolio: ${found.pf.name})`, disposition: body.disposition, pursuitScore: body.pursuitScore, followUpOn: body.followUpOn }, user.email);
+      const out = await archiveDeal(d.id, { reason: `${reason} (portfolio: ${found.pf.name})`, disposition: body.disposition, pursuitScore: body.pursuitScore, followUpOn: body.followUpOn, offerOutcome: body.offerOutcome }, user.email);
       if (!out.ok) failed.push(`${label(d)}: ${out.error}`);
     }
     return NextResponse.json({ archived: todo.length - failed.length, skipped, failed });

@@ -121,6 +121,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         ddEndOn={deal.dd_end_on ?? null}
         closingOn={deal.closing_on ?? null}
         contractPrice={deal.contract_price ?? null}
+        openOffers={(deal.offers ?? []).filter((o: any) => !o.status || o.status === "sent" || o.status === "countered").length}
       />
 
       {deal.stage === "archived" && (

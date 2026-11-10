@@ -6,7 +6,7 @@ import { getCurrentUser, canConfirmPsa } from "@/lib/auth";
 import { canonicalMarket } from "@/lib/markets";
 import { generateSchedule, syncDealDates } from "@/lib/diligence-db";
 import { listTeam } from "@/lib/team";
-import { createStageTasks } from "@/lib/stage-tasks-db";
+import { closeStaleStageTasks, createStageTasks } from "@/lib/stage-tasks-db";
 import { icRequiredForPsa, isApproval, listIcDecisions } from "@/lib/ic-decisions";
 import { parseMoney, parseRate } from "@/lib/money";
 import { transitionError, validDate } from "@/lib/stage-rules";
@@ -45,6 +45,8 @@ async function advance(
 
   // Moving forward hands the deal that stage's checklist; corrections don't.
   if (eventType !== "stage_corrected") await createStageTasks(dealId, toStage, actor);
+  // ...and retires the earlier stages' checklist items it no longer needs.
+  await closeStaleStageTasks(dealId, toStage);
   await fireStageChangeWebhook(dealId, { from: before?.stage ?? null, to: toStage, actor });
   return { error: null };
 }

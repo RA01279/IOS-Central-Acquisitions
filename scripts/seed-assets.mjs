@@ -152,7 +152,8 @@ for (const [address, city, state, occ] of ASSETS) {
     market: prior?.market ?? MARKET[city] ?? null,
     asset_class: "ios",
     status: seededAssetStatus(prior, sold),
-    occupancy: sold || prior?.status === "sold" ? null : occ,
+    // Occupancy someone set by hand on Our Assets wins, like a hand-dropped pin.
+    occupancy: sold || prior?.status === "sold" ? null : prior?.occupancy_set_at ? prior.occupancy : occ,
     source_url: SOURCE,
     ...(geo
       ? {

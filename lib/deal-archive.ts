@@ -9,6 +9,11 @@ import { getServiceClient } from "./supabase";
 import { logDealEvent } from "./deals";
 import { fireStageChangeWebhook } from "./webhooks";
 import { canConfirmPsa } from "./auth";
+import { closeStaleStageTasks } from "./stage-tasks-db";
+import { ctToday } from "./summary";
+
+/** How an archived deal's still-open offers ended, chosen in the archive form. */
+export const OFFER_OUTCOMES = ["rejected", "expired", "withdrawn"] as const;
 
 // Restoring into one of these is the same as confirming the PSA, so it needs
 // the same sign-off.
@@ -21,6 +26,8 @@ export interface ArchiveInput {
   disposition?: string | null;
   pursuitScore?: number | string | null;
   followUpOn?: string | null;
+  /** Closes the deal's open (sent / countered) offers with this status. */
+  offerOutcome?: string | null;
 }
 
 export async function archiveDeal(dealId: string, input: ArchiveInput, actor: string): Promise<Outcome> {
@@ -44,12 +51,20 @@ export async function archiveDeal(dealId: string, input: ArchiveInput, actor: st
     update.pursuit_score = score;
   }
   if (input.followUpOn) update.follow_up_on = input.followUpOn;
+  const offerOutcome = input.offerOutcome && (OFFER_OUTCOMES as readonly string[]).includes(input.offerOutcome) ? input.offerOutcome : null;
+  if (input.offerOutcome && !offerOutcome) return { ok: false, status: 400, error: "Unknown offer outcome" };
 
   // Conditional on the stage just read, so a concurrent stage move isn't overwritten.
   const { data: moved, error } = await supabase.from("deals").update(update).eq("id", dealId).eq("stage", deal.stage).select("id");
   if (error) return { ok: false, status: 500, error: error.message };
   if (!moved?.length) return { ok: false, status: 409, error: "The deal changed. Refresh and try again." };
-  await logDealEvent(dealId, "archived", { stage: deal.stage, reason, score: update.pursuit_score ?? null, follow_up: input.followUpOn ?? null }, actor);
+  await logDealEvent(dealId, "archived", { stage: deal.stage, reason, score: update.pursuit_score ?? null, follow_up: input.followUpOn ?? null, offer_outcome: offerOutcome }, actor);
+  // An archived deal's offers are no longer outstanding: record how they ended.
+  if (offerOutcome) {
+    await supabase.from("offers").update({ status: offerOutcome, responded_on: ctToday() }).eq("deal_id", dealId).in("status", ["sent", "countered"]);
+  }
+  // Its checklist to-dos are moot too.
+  await closeStaleStageTasks(dealId, "archived");
   await fireStageChangeWebhook(dealId, { from: deal.stage, to: "archived", actor, via: "archive" });
   return { ok: true };
 }

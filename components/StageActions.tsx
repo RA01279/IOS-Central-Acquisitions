@@ -29,8 +29,11 @@ export default function StageActions({
   closingOn,
   contractPrice,
   icStatus,
+  openOffers = 0,
 }: {
   dealId: string;
+  /** Offers still sent / countered; archiving asks how they ended. */
+  openOffers?: number;
   /** Standing IC decision, for the confirm-PSA form. */
   icStatus?: { label: string; approved: boolean; required: boolean } | null;
   stage: string;
@@ -49,6 +52,7 @@ export default function StageActions({
   const [disposition, setDisposition] = useState("");
   const [pursuitScore, setPursuitScore] = useState("");
   const [followUpOn, setFollowUpOn] = useState("");
+  const [offerOutcome, setOfferOutcome] = useState("");
 
   // -> Moving to PSA
   const [showPsa, setShowPsa] = useState(false);
@@ -107,6 +111,7 @@ export default function StageActions({
           disposition: disposition || undefined,
           pursuitScore: pursuitScore === "" ? undefined : Number(pursuitScore),
           followUpOn: pursuitScore !== "0" && followUpOn ? followUpOn : undefined,
+          offerOutcome: openOffers && offerOutcome ? offerOutcome : undefined,
         }),
       });
       if (!res.ok) {
@@ -338,6 +343,17 @@ export default function StageActions({
                     <option value="0">0 — Never a target</option>
                   </select>
                 </label>
+                {openOffers > 0 && (
+                  <label>
+                    How did our offer{openOffers === 1 ? "" : "s"} end?
+                    <select value={offerOutcome} onChange={(e) => setOfferOutcome(e.target.value)}>
+                      <option value="">— leave as is —</option>
+                      <option value="rejected">Seller rejected it</option>
+                      <option value="expired">Expired / went quiet</option>
+                      <option value="withdrawn">We withdrew it</option>
+                    </select>
+                  </label>
+                )}
                 {pursuitScore !== "0" && (
                   <label>
                     Follow up on
