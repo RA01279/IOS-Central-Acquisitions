@@ -77,7 +77,11 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   const [recent, setRecent] = useState<RunInfo[]>([]);
   const [savedSweeps, setSavedSweeps] = useState<{ id: string; created_at: string; label: string }[]>([]);
   const [run, setRun] = useState<RunInfo | null>(null);
-  const [report, setReport] = useState<{ sites: SourcedSite[]; saved: Saved } | null>(null);
+  const [report, setReport] = useState<{ sites: (SourcedSite & { runId?: string })[]; saved: Saved } | null>(null);
+  // A selection bigger than one agent run (MAX_SOURCING_SITES) runs as batches,
+  // one after another: Hopper allows one active agent run per person.
+  const [batch, setBatch] = useState<{ chunks: Site[][]; next: number; sweepId: string; market: string; label: string; buyBox: BuyBox } | null>(null);
+  const merged = useRef<Set<string>>(new Set());
   const [added, setAdded] = useState<Record<string, { dealId?: string; error?: string; busy?: boolean }>>({});
   const market = MARKETS.find((m) => m.key === marketKey)!;
   const criteriaKey = JSON.stringify({ profileIds: [...profileIds].sort(), mode, geography: mode === "submarket" ? submarketKey : address.trim(), radius });
@@ -144,7 +148,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
         const d = await r.json();
         if (!live || !r.ok) return;
         setOnline(d.online);
-        setRecent((d.runs ?? []).filter((x: any) => x.agent === "off-market-sourcing").slice(0, 8));
+        setRecent((d.runs ?? []).filter((x: any) => x.agent === "off-market-sourcing").slice(0, 20));
       } catch { if (live) setOnline(false); }
     };
     void refresh();
@@ -184,7 +188,20 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
           const parsed = parseSourcing(d.result.report, saved?.sites.map(s => s.ref));
           if (!saved) setError("This report's sweep isn't saved in this browser, so its sites can't be mapped or added. Run a new sweep.");
           else if (!parsed) setError("The report couldn't be read.");
-          else setReport({ sites: parsed.sites, saved });
+          else if (!merged.current.has(run.id)) {
+            merged.current.add(run.id);
+            const tagged = parsed.sites.map((x) => ({ ...x, runId: run.id }));
+            // Batches add to what's already there; a single run replaces it.
+            setReport((cur) => batch && cur
+              ? { sites: [...cur.sites, ...tagged], saved: { ...cur.saved, sites: [...cur.saved.sites, ...saved.sites.filter((x) => !cur.saved.sites.some((y) => y.ref === x.ref))] } }
+              : { sites: tagged, saved });
+            if (batch && batch.next < batch.chunks.length) void startBatch(batch, batch.next);
+            else if (batch) setBatch(null);
+          }
+        }
+        if (d.status === "failed" && batch) {
+          setError(`Batch ${batch.next} of ${batch.chunks.length} failed: ${d.error ?? "unknown error"}. Results so far are kept; select the remaining sites and qualify again.`);
+          setBatch(null);
         }
       } catch { /* retry on next tick */ }
     };
@@ -216,15 +233,30 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
     if (!sweep) return;
     if (!sweep.sweepId) { setError("Run a new sweep to save the reviewed sites before qualifying."); return; }
     if (!validBuyBox(buyBox)) { setError("Check the usable-acreage range and maximum coverage."); return; }
-    const sites = sweep.sites.filter((s) => selected.includes(s.ref) && !blocksSourcing(s));
-    setBusy("agent"); setError(null); setReport(null); setAdded({});
+    const all = sweep.sites.filter((s) => selected.includes(s.ref) && !blocksSourcing(s));
+    const chunks: Site[][] = [];
+    for (let i = 0; i < all.length; i += MAX_SOURCING_SITES) chunks.push(all.slice(i, i + MAX_SOURCING_SITES));
+    if (!chunks.length) return;
+    setError(null); setReport(null); setAdded({}); merged.current = new Set();
+    const plan = { chunks, next: 0, sweepId: sweep.sweepId, market: sweep.market ?? "", label: sweep.label, buyBox };
+    await startBatch(chunks.length > 1 ? plan : null, 0, plan);
+  }
+
+  /** Starts agent run number `i` of a batch plan (or the only run when `b` is null). */
+  async function startBatch(b: typeof batch, i: number, plan = b!) {
+    const sites = plan.chunks[i];
+    setBusy("agent");
     try {
-      const r = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: "off-market-sourcing", text: "", sweepId: sweep.sweepId, refs: sites.map(s => s.ref), buyBox }) });
+      const r = await fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: "off-market-sourcing", text: "", sweepId: plan.sweepId, refs: sites.map((x) => x.ref), buyBox: plan.buyBox }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Could not start the agent.");
-      save(d.id, { market: sweep.market ?? "", buyBox, sites, searchLabel: sweep.label });
+      save(d.id, { market: plan.market, buyBox: plan.buyBox, sites, searchLabel: plan.label });
+      if (b) setBatch({ ...b, next: i + 1 });
       setRun({ id: d.id, status: "queued" });
-    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+    } catch (e: any) {
+      setError(b ? `Batch ${i + 1} of ${b.chunks.length} couldn't start: ${e.message}. Results so far are kept.` : e.message);
+      setBatch(null);
+    } finally { setBusy(null); }
   }
 
   // Step 2: send picked sweep sites straight to Outreach (no agent research needed).
@@ -232,25 +264,30 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   async function sendToOutreach(refs: string[]) {
     if (!sweep?.sweepId || !refs.length) return;
     setSent((m) => ({ ...m, ...Object.fromEntries(refs.map((r) => [r, { busy: true }])) }));
-    try {
-      const r = await fetch("/api/sourcing/outreach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sweepId: sweep.sweepId, refs }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? "Could not send to outreach.");
-      setSent((m) => ({ ...m, ...Object.fromEntries((d.results ?? []).map((x: any) => [x.ref, x.dealId ? { dealId: x.dealId } : { error: x.error }])) }));
-      setSelected((sel) => sel.filter((ref) => !(d.results ?? []).some((x: any) => x.ref === ref && x.dealId)));
-    } catch (e: any) {
-      setSent((m) => ({ ...m, ...Object.fromEntries(refs.map((r) => [r, { error: e.message }])) }));
+    // The endpoint takes 25 sites per request.
+    for (let i = 0; i < refs.length; i += 25) {
+      const chunk = refs.slice(i, i + 25);
+      try {
+        const r = await fetch("/api/sourcing/outreach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sweepId: sweep.sweepId, refs: chunk }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error ?? "Could not send to outreach.");
+        setSent((m) => ({ ...m, ...Object.fromEntries((d.results ?? []).map((x: any) => [x.ref, x.dealId ? { dealId: x.dealId } : { error: x.error }])) }));
+        setSelected((sel) => sel.filter((ref) => !(d.results ?? []).some((x: any) => x.ref === ref && x.dealId)));
+      } catch (e: any) {
+        setSent((m) => ({ ...m, ...Object.fromEntries(chunk.map((r) => [r, { error: e.message }])) }));
+      }
     }
   }
 
-  async function addProspect(s: SourcedSite) {
+  async function addProspect(s: SourcedSite & { runId?: string }) {
     if (!run || !report) return;
+    const runId = s.runId ?? run.id;
     const site = report.saved.sites.find((x) => x.ref === s.ref);
     if (!site) return;
     setAdded((a) => ({ ...a, [s.ref]: { busy: true } }));
     try {
       const r = await fetch("/api/sourcing/prospect", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: run.id, ref: s.ref }) });
+        body: JSON.stringify({ runId, ref: s.ref }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Could not add the prospect.");
       setAdded((a) => ({ ...a, [s.ref]: { dealId: d.dealId } }));
@@ -298,7 +335,12 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
     ];
   }, [sweep, visible, selected, report]);
 
-  const toggle = (ref: string) => setSelected((cur) => cur.includes(ref) ? cur.filter((r) => r !== ref) : cur.length >= MAX_SOURCING_SITES ? cur : [...cur, ref]);
+  const toggle = (ref: string) => setSelected((cur) => cur.includes(ref) ? cur.filter((r) => r !== ref) : [...cur, ref]);
+  // Every site currently shown that can be picked (not already active in Hopper or sent).
+  const selectable = visible.filter((s) => !blocksSourcing(s) && !sent[s.ref]?.dealId).map((s) => s.ref);
+  const allSelected = selectable.length > 0 && selectable.every((r) => selected.includes(r));
+  const toggleAll = () => setSelected(allSelected ? selected.filter((r) => !selectable.includes(r)) : [...new Set([...selected, ...selectable])]);
+  const batches = Math.ceil(selected.length / MAX_SOURCING_SITES);
 
   return (
     <>
@@ -356,7 +398,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
 
       {(sweep || report) && (
         <section className="panel">
-          <h2>{report ? "3. Qualified sites" : "2. Pick sites to send to outreach or qualify"}</h2>
+          <h2>{report ? `3. Qualified sites${batch ? ` (${report.sites.length} so far)` : ""}` : "2. Pick sites to send to outreach or qualify"}</h2>
           {sweep && !report && <>
             <p><strong>Reviewed search:</strong> {sweep.label}, {sweep.radiusMiles} miles. Profiles: {SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All existing yard-use profiles (previous sweep)"}. <strong>{visible.length} filtered properties</strong> / {sweep.sites.length} discovered properties. Map and filtered export use these same {visible.length} properties.</p>
             {sweep.criteriaKey && criteriaKey !== sweep.criteriaKey && <p role="status">Search criteria changed. Run Sweep to replace these results; the displayed list and export still reflect the reviewed search above.</p>}
@@ -389,11 +431,11 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
-                  <thead><tr><th></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th><th>Outreach</th></tr></thead>
+                  <thead><tr><th><input type="checkbox" aria-label="Select all shown sites" title="Select all shown" checked={allSelected} onChange={toggleAll} disabled={!selectable.length} /></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th><th>Outreach</th></tr></thead>
                   <tbody>
                     {visible.map((s) => (
                       <tr key={s.ref} data-site-ref={s.ref}>
-                        <td>{!blocksSourcing(s) && <input type="checkbox" aria-label={`Select ${s.ref}`} checked={selected.includes(s.ref)} onChange={() => toggle(s.ref)} disabled={!selected.includes(s.ref) && selected.length >= MAX_SOURCING_SITES} />}</td>
+                        <td>{!blocksSourcing(s) && <input type="checkbox" aria-label={`Select ${s.ref}`} checked={selected.includes(s.ref)} onChange={() => toggle(s.ref)} />}</td>
                         <td>{s.ref}</td>
                         <td>{s.operators.map((o) => <div key={o.placeId} data-place-id={o.placeId} data-profile-ids={o.profileIds?.join(",")}><strong>{o.name}</strong><br /><span className="hint">Matched profiles: {(o.categories ?? [o.category]).join(", ")}</span><br />{o.phone && <>Business phone: {o.phone}<br /></>}{o.website && <><a href={o.website} target="_blank" rel="noopener noreferrer">Business website</a>{" · "}</>}<a href={o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`} target="_blank" rel="noopener noreferrer">Google business source</a></div>)}<span className="hint">Business contacts are not verified owner contacts.</span></td>
                         <td>{s.parcel?.owner ?? "Owner unverified"}{s.ownerUser && <span className="hint"> · possible owner-user (name similarity only)</span>}{s.parcel && s.parcel.ownerClass !== "private" && <span className="hint"> · {s.parcel.ownerClass}</span>}</td>
@@ -414,23 +456,24 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                   </tbody>
                 </table>
               </div>
-              <p className="hint">Selected {selected.length} of {MAX_SOURCING_SITES}. {online === false && <>Your computer helper is offline — start it (Desktop: <em>Start Hopper helper</em>) to qualify sites.</>}</p>
+              <p className="hint" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}><span>Selected {selected.length} of {selectable.length} shown.</span> <button type="button" className="link-button" onClick={toggleAll} disabled={!selectable.length}>{allSelected ? "Clear selection" : `Select all ${selectable.length}`}</button>{selected.length > MAX_SOURCING_SITES ? <span>The agent will run in {batches} batches of up to {MAX_SOURCING_SITES} (about a minute per site, so roughly {selected.length >= 60 ? `${(selected.length / 60).toFixed(1)} hours` : `${selected.length} minutes`}).</span> : null} {online === false && <>Your computer helper is offline — start it (Desktop: <em>Start Hopper helper</em>) to qualify sites.</>}</p>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <button type="button" onClick={() => sendToOutreach(selected.filter((ref) => !sent[ref]?.dealId))} disabled={!selected.length || !sweep.sweepId || selected.every((ref) => sent[ref]?.busy || sent[ref]?.dealId)}>
                   {`Send ${selected.length || ""} selected to outreach`}
                 </button>
-                <button type="button" className="secondary" onClick={qualify} disabled={!selected.length || busy !== null || online === false}>{busy === "agent" ? "Starting…" : `Qualify ${selected.length || ""} site${selected.length === 1 ? "" : "s"} with the agent first`}</button>
+                <button type="button" className="secondary" onClick={qualify} disabled={!selected.length || busy !== null || online === false}>{busy === "agent" ? "Starting…" : `Qualify ${selected.length || ""} site${selected.length === 1 ? "" : "s"} with the agent first${batches > 1 ? ` (${batches} runs)` : ""}`}</button>
                 {Object.values(sent).some((x) => x.dealId) ? <Link href="/outreach?tab=new">Open the outreach queue ({Object.values(sent).filter((x) => x.dealId).length} sent)</Link> : null}
               </div>
               <p className="hint" style={{ marginBottom: 0 }}>Send to outreach now with the appraisal-roll owner, or have the agent research owners, parcels and an outreach draft first (about a minute per site).</p>
             </>
           )}
+          {batch && <p role="status"><strong>Batch {batch.next} of {batch.chunks.length}</strong> is researching ({batch.chunks.reduce((n, c) => n + c.length, 0)} sites in all). Results appear below as each batch finishes and the next one starts on its own. Keep this page open until the last batch is done.</p>}
           {run && ["queued", "processing"].includes(run.status) && <p role="status">The agent is researching owners and parcels ({run.status}). About a minute per site; this page updates when it's done.</p>}
           {run?.status === "failed" && <p className="error">The agent run failed: {run.error ?? "unknown error"}</p>}
           {report && (
             <>
               <button type="button" className="secondary" disabled={exporting || !report.sites.length} onClick={() => exportSites(report.saved.sites.filter((s) => report.sites.some((r) => r.ref === s.ref)), report.saved.searchLabel ?? report.saved.market, report.sites)}>Export qualified sites to Excel ({report.sites.length})</button>
-              <p className="hint">Agent research from public records. Verify the owner and parcel against the appraisal district before reaching out. Buy box: {report.saved.buyBox.minAcres}–{report.saved.buyBox.maxAcres} usable acres, ≤{report.saved.buyBox.maxCoveragePct}% coverage. <button type="button" className="link-button" onClick={() => { setReport(null); setRun(null); }}>Back to sweep</button></p>
+              <p className="hint">Agent research from public records. Verify the owner and parcel against the appraisal district before reaching out. Buy box: {report.saved.buyBox.minAcres}–{report.saved.buyBox.maxAcres} usable acres, ≤{report.saved.buyBox.maxCoveragePct}% coverage. <button type="button" className="link-button" onClick={() => { setReport(null); setRun(null); setBatch(null); }}>{batch ? "Stop batches and go back to the sweep" : "Back to sweep"}</button></p>
               {report.sites.map((s) => {
                 const site = report.saved.sites.find((x) => x.ref === s.ref);
                 const a = added[s.ref];
