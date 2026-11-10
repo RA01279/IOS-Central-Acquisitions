@@ -12,6 +12,7 @@
 
 import { haversineMiles } from "./match";
 import { isUsableForDistance } from "../geocode";
+import { findDuplicate } from "./review";
 
 export type RadiusType = "lease" | "sale" | "both";
 export type RadiusClass = "all" | "ios" | "industrial";
@@ -75,4 +76,43 @@ export function parseRadiusQuery(q: { address?: string | null; miles?: string | 
   const type: RadiusType = q.type === "lease" || q.type === "sale" ? q.type : "both";
   const assetClass: RadiusClass = q.class === "ios" || q.class === "industrial" ? q.class : "all";
   return { ok: true, address, miles, type, assetClass };
+}
+
+/** How many fields a comp has filled in -- the more complete copy wins a merge. */
+function filled(c: Record<string, unknown>): number {
+  return Object.values(c).filter((v) => v !== null && v !== undefined && v !== "").length;
+}
+
+/**
+ * Collapses repeats of the same lease or sale (the same broker workbook
+ * imported twice, an email and a workbook describing one deal) using the
+ * same rule comp intake flags duplicates with (lib/comps/review.ts
+ * findDuplicate). The most complete copy is kept, newest breaking ties; any
+ * field it lacks is taken from the copies it absorbed. Each kept row carries
+ * how many records were merged into it. Order is preserved.
+ */
+export function dedupeComps<T extends Record<string, any>>(rows: T[]): (T & { mergedFrom: string[] })[] {
+  const ranked = [...rows].sort((a, b) => filled(b) - filled(a) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+  const kept: (T & { mergedFrom: string[] })[] = [];
+  // A suite or project name filled in on one copy and blank on the other is
+  // the same deal described in more or less detail (the second import of a
+  // workbook adds "Bldg A"); only two DIFFERENT names keep comps apart.
+  const sameDeal = (c: T, e: T) =>
+    !!findDuplicate(
+      { ...c, suite: c.suite ?? e.suite, project_name: c.project_name ?? e.project_name } as any,
+      [{ ...e, suite: e.suite ?? c.suite, project_name: e.project_name ?? c.project_name }] as any
+    );
+  for (const c of ranked) {
+    const into = kept.find((e) => sameDeal(c, e)) ?? null;
+    if (!into) {
+      kept.push({ ...c, mergedFrom: [] });
+      continue;
+    }
+    into.mergedFrom.push(c.id);
+    for (const [k, v] of Object.entries(c)) {
+      if ((into[k] === null || into[k] === undefined || into[k] === "") && v !== null && v !== undefined && v !== "") (into as any)[k] = v;
+    }
+  }
+  const order = new Map(rows.map((r, i) => [r.id, i]));
+  return kept.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }

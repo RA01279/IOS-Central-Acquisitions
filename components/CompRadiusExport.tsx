@@ -45,7 +45,9 @@ export default function CompRadiusExport() {
       URL.revokeObjectURL(url);
       const parts = [type !== "sale" ? `${leases} lease` : null, type !== "lease" ? `${sales} sale` : null].filter(Boolean).join(" and ");
       const approx = res.headers.get("X-Matched-Approximate") === "1" ? " (Google could only place it approximately, so distances are from that point)" : "";
-      setResult(`${parts} comp${leases + sales === 1 ? "" : "s"} within ${miles} mi of ${matched}${approx}. Downloaded ${name}.`);
+      const merged = Number(res.headers.get("X-Merged") ?? 0);
+      const dupes = merged ? ` ${merged} duplicate record${merged === 1 ? " was" : "s were"} merged.` : "";
+      setResult(`${parts} comp${leases + sales === 1 ? "" : "s"} within ${miles} mi of ${matched}${approx}.${dupes} Downloaded ${name}.`);
     } catch (err: any) {
       setError(err.message);
     } finally {
