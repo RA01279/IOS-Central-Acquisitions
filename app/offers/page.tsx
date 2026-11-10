@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
-import { ctToday, isRangeKey, RANGE_KEYS, RANGE_LABELS, rangeStart } from "@/lib/summary";
+import { ctToday, RANGE_KEYS, RANGE_LABELS } from "@/lib/summary";
+import { offerWindow, windowBuckets } from "@/lib/offer-window";
 import Nav from "@/components/Nav";
 import AutoRefresh from "@/components/AutoRefresh";
 import { BarRows, Columns, Legend, SERIES, SERIES_SOFT, Stat } from "@/components/charts";
@@ -27,8 +28,6 @@ function fmtUsd(v: number | null | undefined) {
   return v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`;
 }
 const short = (v: number) => (v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v > 0 ? `$${Math.round(v / 1e3).toLocaleString()}K` : "$0");
-const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
-const fmtDay = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", ...opts });
 
 // Offer status chart colours: our offer still out is the brand blue; the
 // seller's answers are labelled, so the bars can share one neutral.
@@ -38,16 +37,17 @@ const STATUS_COLOR: Record<string, string> = { sent: "var(--series-1)", countere
 
 export default async function OffersPage(
   props: {
-    searchParams: Promise<{ asset?: string; range?: string; all?: string }>;
+    searchParams: Promise<{ asset?: string; range?: string; from?: string; to?: string; all?: string }>;
   }
 ) {
   const searchParams = await props.searchParams;
   const assetParam = searchParams.asset;
   const asset =
     assetParam && (ASSET_CLASSES as readonly string[]).includes(assetParam) ? assetParam : "all";
-  const range = isRangeKey(searchParams.range) ? searchParams.range : "ytd";
   const today = ctToday();
-  const start = rangeStart(range, today);
+  // A preset (7 days / MTD / YTD) or a custom from-to (lib/offer-window.ts).
+  const win = offerWindow(searchParams, today);
+  const { range, start, end } = win;
 
   const supabase = getServiceClient();
   // Paged: a YTD offer log passes 1000 rows within the year.
@@ -57,6 +57,7 @@ export default async function OffersPage(
       "id, price, offered_at, notes, source, status, counter_price, responded_on, created_by, created_at, deals(id, deal_type, stage, asset_class, properties(address, city, market, lot_sf))"
     )
     .gte("offered_at", start)
+    .lte("offered_at", end)
     .order("offered_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .order("id")
@@ -89,19 +90,8 @@ export default async function OffersPage(
   const classes = asset === "all" ? [...ASSET_CLASSES] : [asset];
   const classColor = (ac: string) => SERIES[Math.max(0, (ASSET_CLASSES as readonly string[]).indexOf(ac))] ?? SERIES[0];
 
-  // Offers over time: days for a week, weeks for a month, months for a year.
-  const buckets: { key: string; from: string; to: string; label: string; sub?: string }[] = [];
-  if (range === "7d") {
-    for (let i = 0; i < 7; i++) { const d = addDays(start, i); buckets.push({ key: d, from: d, to: d, label: fmtDay(d, { weekday: "short" }), sub: fmtDay(d, { month: "short", day: "numeric" }) }); }
-  } else if (range === "mtd") {
-    for (let d = start; d <= today; d = addDays(d, 7)) { const to = addDays(d, 6); buckets.push({ key: d, from: d, to, label: fmtDay(d, { month: "short", day: "numeric" }) }); }
-  } else {
-    for (let m = 1; m <= Number(today.slice(5, 7)); m++) {
-      const mm = String(m).padStart(2, "0");
-      const from = `${today.slice(0, 4)}-${mm}-01`;
-      buckets.push({ key: from, from, to: `${today.slice(0, 4)}-${mm}-31`, label: fmtDay(from, { month: "short" }) });
-    }
-  }
+  // Offers over time: by day, week or month, whichever suits the window's length.
+  const { unit, buckets } = windowBuckets({ start, end });
   const timeCols = buckets.map((b) => {
     const inB = rows.filter((o: any) => o.offered_at && o.offered_at >= b.from && o.offered_at <= b.to);
     return {
@@ -128,11 +118,14 @@ export default async function OffersPage(
   const logRows = showAll ? rows : rows.slice(0, LOG_PAGE);
   const qs = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams();
-    const cur: Record<string, string | null> = { range, asset: asset !== "all" ? asset : null, ...patch };
+    const custom: Record<string, string> = range === "custom" ? { from: start, to: end } : { range };
+    const cur: Record<string, string | null> = { ...custom, asset: asset !== "all" ? asset : null, ...patch };
+    // Picking a preset drops the custom dates, and vice versa.
+    if (patch.range) { delete cur.from; delete cur.to; }
     for (const [k, v] of Object.entries(cur)) if (v) p.set(k, v);
     return `/offers?${p.toString()}`;
   };
-  const csvHref = `/api/offers/csv?range=${range}${asset !== "all" ? `&asset=${asset}` : ""}`;
+  const csvHref = `/api/offers/csv?${range === "custom" ? `from=${start}&to=${end}` : `range=${range}`}${asset !== "all" ? `&asset=${asset}` : ""}`;
 
   return (
     <>
@@ -143,8 +136,7 @@ export default async function OffersPage(
           <div>
             <h1>Offer log</h1>
             <p className="muted" style={{ margin: "4px 0 0" }}>
-              Every offer submitted, logged automatically when an LOI is generated. {start} to{" "}
-              {today}.
+              Every offer submitted, logged automatically when an LOI is generated. {win.label}{range === "custom" ? "" : ` (${start} to ${end})`}.
             </p>
           </div>
           <div className="header-actions">
@@ -157,11 +149,18 @@ export default async function OffersPage(
         <div className="filter-row">
           <div className="filter-chips" style={{ margin: 0 }}>
             {RANGE_KEYS.map((k) => (
-              <Link key={k} href={qs({ range: k })} className={k === range ? "chip chip-active" : "chip"}>
+              <Link key={k} href={qs({ range: k, all: null })} className={k === range ? "chip chip-active" : "chip"}>
                 {RANGE_LABELS[k]}
               </Link>
             ))}
           </div>
+          <form method="get" action="/offers" className={range === "custom" ? "date-range on" : "date-range"}>
+            {asset !== "all" ? <input type="hidden" name="asset" value={asset} /> : null}
+            <label>From <input type="date" name="from" defaultValue={range === "custom" ? start : ""} max={today} required /></label>
+            <label>To <input type="date" name="to" defaultValue={range === "custom" ? end : today} max={today} /></label>
+            <button type="submit" className="secondary">Apply</button>
+            {range === "custom" ? <Link href={qs({ range: "ytd", all: null })} className="muted">Clear</Link> : null}
+          </form>
           <div className="filter-chips" style={{ margin: 0 }}>
             <Link href={qs({ asset: null })} className={asset === "all" ? "chip chip-active" : "chip"}>
               All asset classes
@@ -188,7 +187,7 @@ export default async function OffersPage(
         {rows.length > 0 ? (
           <>
             <section className="panel">
-              <h2>Offers {range === "7d" ? "by day" : range === "mtd" ? "by week" : "by month"}</h2>
+              <h2>Offers by {unit}</h2>
               <Legend items={classes.map((ac) => ({ label: `${ASSET_CLASS_LABELS[ac]} · ${rows.filter((o: any) => o.deals.asset_class === ac).length} · ${short(sum(rows.filter((o: any) => o.deals.asset_class === ac)))}`, color: classColor(ac) }))} />
               <Columns cols={timeCols} height={150} />
             </section>

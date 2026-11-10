@@ -6,7 +6,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, STAGE_LABELS } from "@/lib/deals";
-import { ctToday, isRangeKey, rangeStart } from "@/lib/summary";
+import { ctToday } from "@/lib/summary";
+import { offerWindow } from "@/lib/offer-window";
+import { fetchAll } from "@/lib/fetch-all";
 
 export const dynamic = "force-dynamic";
 
@@ -26,20 +28,28 @@ export async function GET(req: NextRequest) {
   const assetParam = req.nextUrl.searchParams.get("asset");
   const asset =
     assetParam && (ASSET_CLASSES as readonly string[]).includes(assetParam) ? assetParam : "all";
-  const rangeParam = req.nextUrl.searchParams.get("range");
-  const range = isRangeKey(rangeParam) ? rangeParam : "ytd";
   const today = ctToday();
-  const start = rangeStart(range, today);
+  // Same window as the page: a preset or ?from=&to= (lib/offer-window.ts).
+  const sp = req.nextUrl.searchParams;
+  const { range, start, end } = offerWindow({ range: sp.get("range"), from: sp.get("from"), to: sp.get("to") }, today);
 
   const supabase = getServiceClient();
-  const { data, error } = await supabase
+  // Paged, so a long custom window isn't cut off at the first 1000 offers.
+  let data: any[];
+  try {
+    data = await fetchAll((f, t) => supabase
     .from("offers")
     .select(
       "id, price, offered_at, notes, source, status, counter_price, responded_on, created_by, deals(id, deal_type, stage, asset_class, properties(address, city, market, submarket, lot_sf, building_sf))"
     )
     .gte("offered_at", start)
-    .order("offered_at", { ascending: false, nullsFirst: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    .lte("offered_at", end)
+    .order("offered_at", { ascending: false, nullsFirst: false })
+    .order("id")
+    .range(f, t));
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message ?? "Could not load offers" }, { status: 500 });
+  }
 
   const rows = (data ?? []).filter((o: any) => {
     if (!o.deals || o.deals.deal_type === "lease") return false;
@@ -98,7 +108,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const fileName = `offer-log-${asset}-${range}-${today}.csv`;
+  const fileName = `offer-log-${asset}-${range === "custom" ? `${start}-to-${end}` : `${range}-${today}`}.csv`;
   // Leading BOM so Excel opens this as UTF-8 rather than mangling accented
   // names in the broker/owner columns.
   return new NextResponse("\uFEFF" + lines.join("\r\n"), {
