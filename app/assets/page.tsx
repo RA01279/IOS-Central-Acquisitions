@@ -8,6 +8,7 @@
 import Nav from "@/components/Nav";
 import AssetsView, { type AssetDetail } from "@/components/AssetsView";
 import { getServiceClient } from "@/lib/supabase";
+import { BarRows, Legend, SERIES, SERIES_SOFT } from "@/components/charts";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -30,6 +31,21 @@ export default async function AssetsPage() {
   // rather than showing a total that quietly understates itself.
   const missingAcres = owned.filter((a) => a.site_acres == null).length;
   const totalAcres = owned.reduce((s, a) => s + (a.site_acres ? Number(a.site_acres) : 0), 0);
+  // Owned assets per market: how many, how many have space, and the acres on record.
+  const byMarket = [...new Set(owned.map((a) => a.market?.trim() || "No market"))]
+    .map((name) => {
+      const list = owned.filter((a) => (a.market?.trim() || "No market") === name);
+      return {
+        name,
+        count: list.length,
+        available: list.filter((a) => a.occupancy === "available").length,
+        acres: list.reduce((s, a) => s + (a.site_acres ? Number(a.site_acres) : 0), 0),
+        missing: list.filter((a) => a.site_acres == null).length,
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+  // An acreage chart only means something once most assets have acres entered.
+  const showAcres = owned.length > 0 && missingAcres <= owned.length / 2;
 
   return (
     <>
@@ -81,6 +97,41 @@ export default async function AssetsPage() {
             portfolio until they&apos;re entered. Use Edit on a row to add them.
           </div>
         )}
+
+        {byMarket.length > 0 ? (
+          <div className={showAcres ? "two-col" : undefined}>
+            <section className="panel">
+              <h2>Assets by market</h2>
+              <Legend items={[{ label: "Leased / in use", color: SERIES[0] }, { label: "Space available", color: SERIES_SOFT }]} />
+              <BarRows
+                labelWidth={120}
+                rows={byMarket.map((m) => ({
+                  key: m.name,
+                  label: m.name,
+                  title: `${m.name}: ${m.count} owned, ${m.available} with space available`,
+                  segments: [
+                    { value: m.count - m.available, color: SERIES[0], title: `${m.count - m.available} leased / in use` },
+                    { value: m.available, color: SERIES_SOFT, title: `${m.available} with space available` },
+                  ],
+                  value: <>{m.count}{m.available ? <span className="muted"> · {m.available} open</span> : null}</>,
+                }))}
+              />
+            </section>
+            {showAcres ? <section className="panel">
+              <h2>Acres by market</h2>
+              <BarRows
+                labelWidth={120}
+                rows={[...byMarket].sort((a, b) => b.acres - a.acres).map((m) => ({
+                  key: m.name,
+                  label: m.name,
+                  title: m.missing ? `${m.missing} asset${m.missing === 1 ? "" : "s"} here with no acreage yet` : undefined,
+                  segments: [{ value: m.acres, color: SERIES[0] }],
+                  value: <>{m.acres ? `${Math.round(m.acres).toLocaleString()} ac` : "—"}{m.missing ? <span className="muted"> · {m.missing} unknown</span> : null}</>,
+                }))}
+              />
+            </section> : null}
+          </div>
+        ) : null}
 
         <AssetsView assets={assets} />
       </main>

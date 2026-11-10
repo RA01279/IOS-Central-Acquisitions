@@ -2543,3 +2543,7 @@ details.more > summary { cursor: pointer; color: var(--brand); font-size: 13px; 
 .summary-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-bottom: 14px; }
 .log-table .num { text-align: right; }
+.viz-range-track { position: relative; height: 14px; background: linear-gradient(var(--n200), var(--n200)) center / 100% 1px no-repeat; }
+.viz-range { position: absolute; top: 2px; height: 10px; border-radius: 4px; background: var(--series-1-soft); min-width: 4px; }
+.viz-range-mid { position: absolute; top: 0; width: 3px; height: 14px; margin-left: -1px; border-radius: 2px; background: var(--series-1); }
+@media print { .viz-range, .viz-range-mid { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }

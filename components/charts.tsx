@@ -113,3 +113,37 @@ export function Stat({ label, value, sub, href, bad }: { label: string; value: R
   );
   return href ? <Link href={href} className="stat-tile">{body}</Link> : <div className="stat-tile">{body}</div>;
 }
+
+/**
+ * Ranges on one shared scale: a bar from `lo` to `hi` (e.g. the middle half)
+ * with a tick at `mid` (the median). Rows missing a range show only the tick.
+ */
+export function RangeRows({
+  rows,
+  labelWidth = 130,
+}: {
+  rows: { key: string; label: ReactNode; href?: string; lo: number | null; mid: number | null; hi: number | null; value: ReactNode; title?: string }[];
+  labelWidth?: number;
+}) {
+  const vals = rows.flatMap((r) => [r.lo, r.mid, r.hi]).filter((v): v is number => v != null);
+  if (!vals.length) return null;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = max - min || 1;
+  const pos = (v: number) => `${((v - min) / span) * 100}%`;
+  return (
+    <div className="viz-rows" style={{ gridTemplateColumns: `minmax(0, ${labelWidth}px) minmax(80px, 1fr) auto` }}>
+      {rows.map((r) => (
+        <div key={r.key} className="viz-row" title={r.title}>
+          <span className="viz-row-label">{r.href ? <Link href={r.href}>{r.label}</Link> : r.label}</span>
+          <span className="viz-range-track">
+            {r.lo != null && r.hi != null ? (
+              <span className="viz-range" style={{ left: pos(r.lo), width: `calc(${pos(r.hi)} - ${pos(r.lo)})` }} />
+            ) : null}
+            {r.mid != null ? <span className="viz-range-mid" style={{ left: pos(r.mid) }} /> : null}
+          </span>
+          <span className="viz-row-value">{r.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}

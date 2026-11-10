@@ -8,6 +8,7 @@ import { ContactTypeSelect, ContactDeleteButton } from "@/components/ContactRowA
 import ContactSplitter, { type SplitProposal } from "@/components/ContactSplitter";
 import { splitContact } from "@/lib/contact-split";
 import { getServiceClient } from "@/lib/supabase";
+import { BarRows, SERIES, SERIES_SOFT, Stat } from "@/components/charts";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -37,10 +38,11 @@ function PersonLine({ c }: { c: any }) {
 
 export default async function ContactsPage(
   props: {
-    searchParams: Promise<{ q?: string; type?: string }>;
+    searchParams: Promise<{ q?: string; type?: string; all?: string }>;
   }
 ) {
   const searchParams = await props.searchParams;
+  const showAllGroups = searchParams.all === "1";
   const q = searchParams.q?.trim()?.toLowerCase() || undefined;
   const typeFilter = searchParams.type || undefined;
   const [contacts, companies, { data: linkRows }] = await Promise.all([
@@ -97,6 +99,24 @@ export default async function ContactsPage(
       (!q || p.name.toLowerCase().includes(q))
   );
 
+  // Summary: who's in the book, by type, and who we work with most.
+  const people = contacts as any[];
+  const typeOf = (p: any) => p.contact_type ?? (p.companies ? COMPANY_TO_CONTACT_TYPE[p.companies.company_type] : null) ?? "unclassified";
+  const byType = [...TYPE_ORDER, "unclassified"]
+    .map((t) => ({ t, n: people.filter((p) => typeOf(p) === t).length }))
+    .filter((x) => x.n);
+  const onDeals = people.filter((p) => (dealCount.get(p.id) ?? 0) > 0).length;
+  const noEmail = people.filter((p) => !p.email).length;
+  const mostLinked = people
+    .map((p) => ({ p, n: dealCount.get(p.id) ?? 0 }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 8);
+  const filtering = !!(q || typeFilter);
+  const GROUP_PAGE = 40;
+  const MEMBER_PAGE = 5;
+  const groupsShown = showAllGroups || filtering || groups.length <= GROUP_PAGE + 10 ? groups : groups.slice(0, GROUP_PAGE);
+
   const chips = [
     { value: "", label: "All" },
     ...TYPE_ORDER.map((t) => ({ value: t, label: CONTACT_TYPE_LABELS[t] })),
@@ -113,7 +133,7 @@ export default async function ContactsPage(
     <>
       <Nav active="contacts" />
       <AutoRefresh />
-      <main>
+      <main className="wide">
         <div className="page-header">
           <div>
             <h1>Contacts</h1>
@@ -136,6 +156,48 @@ export default async function ContactsPage(
         </div>
 
         <ContactSplitter proposals={splitProposals} companies={(companies as any[]).map((c) => ({ id: c.id, name: c.name }))} />
+
+        {!filtering ? (
+          <>
+            <div className="stat-grid-auto">
+              <Stat label="People" value={people.length} sub={`${companies.length} companies`} />
+              <Stat label="Brokers" value={byType.find((x) => x.t === "broker")?.n ?? 0} href="/contacts/brokers" sub="Open the scorecard" />
+              <Stat label="On at least one deal" value={onDeals} sub={people.length ? `${Math.round((onDeals / people.length) * 100)}% of people` : undefined} />
+              <Stat label="Missing an email" value={noEmail} />
+            </div>
+            <div className="two-col">
+              <section className="panel">
+                <h2>People by type</h2>
+                <BarRows
+                  labelWidth={140}
+                  rows={byType.map(({ t, n }) => ({
+                    key: t,
+                    label: t === "unclassified" ? "Unclassified" : CONTACT_TYPE_LABELS[t] ?? t,
+                    href: t === "unclassified" ? undefined : chipHref(t),
+                    segments: [{ value: n, color: t === "unclassified" ? "var(--n400)" : SERIES[0] }],
+                    value: n,
+                  }))}
+                />
+              </section>
+              <section className="panel">
+                <h2>On the most deals</h2>
+                {mostLinked.length ? (
+                  <BarRows
+                    labelWidth={150}
+                    rows={mostLinked.map(({ p, n }) => ({
+                      key: p.id,
+                      label: p.name,
+                      href: `/contacts/${p.id}`,
+                      title: p.companies?.name ? `${p.name} · ${p.companies.name}` : p.name,
+                      segments: [{ value: n, color: SERIES_SOFT }],
+                      value: <>{n} <span className="muted">{p.companies?.name ? `· ${p.companies.name}` : ""}</span></>,
+                    }))}
+                  />
+                ) : <p className="hint">No one is linked to a deal yet.</p>}
+              </section>
+            </div>
+          </>
+        ) : null}
 
         <div className="filter-chips">
           {chips.map((chip) => (
@@ -171,7 +233,7 @@ export default async function ContactsPage(
             </p>
           ) : (
             <>
-              {groups.map(({ company, members }) => (
+              {groupsShown.map(({ company, members }) => (
                 <div key={company.id} className="company-group">
                   <div className="company-head">
                     <Link href={`/companies/${company.id}`} className="company-name">
@@ -188,13 +250,26 @@ export default async function ContactsPage(
                   </div>
                   {members.length > 0 && (
                     <div className="company-people">
-                      {members.map((m: any) => (
+                      {members.slice(0, MEMBER_PAGE).map((m: any) => (
                         <PersonLine key={m.id} c={m} />
                       ))}
+                      {members.length > MEMBER_PAGE ? (
+                        <details className="more">
+                          <summary>{members.length - MEMBER_PAGE} more at {company.name}</summary>
+                          {members.slice(MEMBER_PAGE).map((m: any) => (
+                            <PersonLine key={m.id} c={m} />
+                          ))}
+                        </details>
+                      ) : null}
                     </div>
                   )}
                 </div>
               ))}
+              {groupsShown.length < groups.length ? (
+                <p style={{ textAlign: "center", margin: "12px 0" }}>
+                  <Link href={`/contacts?all=1`} className="tchip">Show all {groups.length} companies</Link>
+                </p>
+              ) : null}
 
               {loosePeople.length > 0 && (
                 <div className="company-group">

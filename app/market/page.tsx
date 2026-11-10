@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServiceClient } from "@/lib/supabase";
 import Nav from "@/components/Nav";
+import { RangeRows } from "@/components/charts";
 import { readAllCompPages } from "@/lib/comps/mapData";
 import { marketView, monthsBefore, type MarketClass, type MarketComp, type MarketRow } from "@/lib/comps/market";
 import type { CompType } from "@/lib/comps/match";
@@ -241,6 +242,31 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
           {view.rows.length === 0 ? (
             <p className="muted">No confirmed {assetClass === "ios" ? "IOS" : "industrial"} {compType} property comps with a rate. {portfolioCount} portfolio transactions are kept separately and excluded from property statistics.</p>
           ) : (
+            <>
+            {view.rows.some((r) => r.current.median != null) ? (
+              <div style={{ margin: "4px 0 18px" }}>
+                <div className="viz-legend">
+                  <span className="viz-legend-item"><span className="viz-swatch" style={{ background: "var(--series-1-soft)" }} />Middle half of comps, last 12 months</span>
+                  <span className="viz-legend-item"><span className="viz-swatch" style={{ background: "var(--series-1)", width: 3 }} />Median</span>
+                </div>
+                <RangeRows
+                  labelWidth={140}
+                  rows={[...view.rows]
+                    .filter((r) => r.current.median != null)
+                    .sort((a, b) => (b.current.median ?? 0) - (a.current.median ?? 0))
+                    .map((r) => ({
+                      key: r.label,
+                      label: r.label,
+                      href: market ? undefined : href({ market: r.label }),
+                      lo: r.current.p25,
+                      mid: r.current.median,
+                      hi: r.current.p75,
+                      title: `${r.label}: median ${fmtRate(r.current.median, unit)}, middle half ${fmtRate(r.current.p25, unit)} – ${fmtRate(r.current.p75, unit)}, ${r.current.count} comps`,
+                      value: <>{fmtRate(r.current.median, unit)} {r.change != null ? fmtChange(r.change) : null}</>,
+                    }))}
+                />
+              </div>
+            ) : null}
             <div className="table-scroll">
               <table className="summary-table">
                 <thead>
@@ -269,6 +295,7 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
                 </tbody>
               </table>
             </div>
+            </>
           )}
           <p className="hint" style={{ marginTop: 10 }}>
             Medians need at least 3 comps; a dash means fewer. Comps far outside the rest of their group

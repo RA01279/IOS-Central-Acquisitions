@@ -12,6 +12,7 @@ import BackButton from "@/components/BackButton";
 import TruncatedList from "@/components/TruncatedList";
 import { loadBrokerScorecard } from "@/lib/broker-scorecard-db";
 import { fmtAcres, fmtMoney, fmtShortDate } from "@/lib/format";
+import { BarRows, Columns, SERIES, SERIES_SOFT, Stat } from "@/components/charts";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -39,6 +40,18 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
   const [user, companies, scorecard] = await Promise.all([getCurrentUser(), listCompanies(), loadBrokerScorecard()]);
   const asBroker = scorecard.people.find((p) => p.key === contact.id) ?? null;
   const openTasks = tasks.filter((t: any) => t.status === "open");
+  // Logged calls, emails and meetings per month, the last twelve months.
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthsBack = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(`${thisMonth}-01T12:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - (11 - i));
+    return d.toISOString().slice(0, 7);
+  });
+  const activityCols = monthsBack.map((ym) => {
+    const n = activities.filter((a: any) => String(a.occurred_at ?? "").slice(0, 7) === ym).length;
+    const label = new Date(`${ym}-01T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short" });
+    return { key: ym, label, muted: n === 0, title: `${label}: ${n} logged`, segments: [{ value: n, color: SERIES[0] }] };
+  });
 
   return (
     <>
@@ -89,25 +102,58 @@ export default async function ContactDetailPage(props: { params: Promise<{ id: s
           </div>
         </section>
 
+        {asBroker ? (
+          <section className="panel">
+            <div className="card-head">
+              <h2 style={{ margin: 0 }}>Track record as a broker</h2>
+              <Link href="/contacts/brokers" className="panel-link">Broker scorecard</Link>
+            </div>
+            <div className="stat-grid-auto" style={{ marginTop: 12 }}>
+              <Stat label="Deals sent or represented" value={asBroker.deals} sub={asBroker.active ? `${asBroker.active} live` : undefined} />
+              <Stat label="We offered on" value={asBroker.offered} sub={asBroker.deals ? `${Math.round((asBroker.offered / asBroker.deals) * 100)}% of their deals` : undefined} />
+              <Stat label="Closed" value={asBroker.closed} sub={asBroker.psa ? `${asBroker.psa} reached PSA` : undefined} />
+              <Stat label="Asking volume" value={asBroker.volume ? fmtMoney(asBroker.volume) : "—"} sub={asBroker.acres ? `${asBroker.acres.toFixed(1)} ac of land` : undefined} />
+              {asBroker.comps ? <Stat label={`Comps from ${asBroker.firm ?? "their firm"}`} value={asBroker.comps} /> : null}
+            </div>
+            <div className="two-col">
+              <div>
+                <h3 className="report-sub" style={{ marginTop: 4 }}>How far their deals got</h3>
+                <BarRows
+                  labelWidth={90}
+                  max={Math.max(1, asBroker.deals)}
+                  rows={[
+                    { key: "deals", label: "Deals", n: asBroker.deals },
+                    { key: "offered", label: "Offered", n: asBroker.offered },
+                    { key: "loi", label: "LOI", n: asBroker.lois },
+                    { key: "psa", label: "PSA", n: asBroker.psa },
+                    { key: "closed", label: "Closed", n: asBroker.closed },
+                  ].map((s, i) => ({ key: s.key, label: s.label, segments: [{ value: s.n, color: i === 0 ? SERIES_SOFT : SERIES[0] }], value: s.n }))}
+                />
+                <p className="hint" style={{ marginBottom: 0 }}>
+                  {asBroker.ios || asBroker.industrial ? `${asBroker.ios} IOS · ${asBroker.industrial} industrial` : null}
+                  {(asBroker.ios || asBroker.industrial) && (asBroker.offMarket || asBroker.marketed) ? " · " : null}
+                  {asBroker.offMarket || asBroker.marketed ? `${asBroker.offMarket} off-market · ${asBroker.marketed} marketed` : null}
+                </p>
+              </div>
+              <div>
+                <h3 className="report-sub" style={{ marginTop: 4 }}>Markets</h3>
+                {asBroker.markets.length ? (
+                  <BarRows labelWidth={110} rows={asBroker.markets.slice(0, 6).map((m) => ({ key: m.name, label: m.name, segments: [{ value: m.deals, color: SERIES_SOFT }], value: m.deals }))} />
+                ) : <p className="hint">No markets recorded on their deals.</p>}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {activityCols.some((c) => c.segments[0].value > 0) ? (
+          <section className="panel">
+            <h2>Touches over the last 12 months</h2>
+            <Columns cols={activityCols} height={90} />
+          </section>
+        ) : null}
+
         <section className="panel">
           <h2>Deals</h2>
-          {asBroker && (
-            <p className="hint" style={{ marginTop: 0 }}>
-              As broker: {asBroker.deals} deal{asBroker.deals === 1 ? "" : "s"} · {asBroker.offered} offered · {asBroker.lois} LOI ·{" "}
-              {asBroker.psa} to PSA · {asBroker.closed} closed{asBroker.comps ? ` · ${asBroker.comps} comps from ${asBroker.firm}` : ""} ·{" "}
-              <Link href="/contacts/brokers">scorecard</Link>
-              {(asBroker.volume > 0 || asBroker.markets.length > 0) && (
-                <>
-                  <br />
-                  {asBroker.volume > 0 ? `${fmtMoney(asBroker.volume)} asking` : null}
-                  {asBroker.acres > 0 ? ` · ${asBroker.acres.toFixed(1)} ac` : null}
-                  {asBroker.offMarket || asBroker.marketed ? ` · ${asBroker.offMarket} off-market, ${asBroker.marketed} marketed` : null}
-                  {asBroker.ios || asBroker.industrial ? ` · ${asBroker.ios} IOS, ${asBroker.industrial} industrial` : null}
-                  {asBroker.markets.length ? ` · ${asBroker.markets.map((m) => `${m.name} (${m.deals})`).join(", ")}` : null}
-                </>
-              )}
-            </p>
-          )}
           {deals.length === 0 ? (
             <p className="muted">Not linked to any deals yet.</p>
           ) : (
