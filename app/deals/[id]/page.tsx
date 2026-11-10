@@ -80,7 +80,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
   const refreshedAt = site.flags.map((f) => f.at).filter(Boolean).sort().pop() ?? null;
 
   const stageIdx = (ACQUISITION_STAGES as readonly string[]).indexOf(deal.stage);
-  const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : null;
+  const prevStage = stageIdx > 0 ? ACQUISITION_STAGES[stageIdx - 1] : deal.stage === "prospect" && deal.marketing_status === "off_market" ? "outreach" : null;
   const userCanConfirmPsa = user ? canConfirmPsa(user.email) : false;
   const p = deal.properties ?? {};
 
@@ -259,7 +259,7 @@ export default async function DealSummaryPage(props: { params: Promise<{ id: str
         />
       </section>
 
-      {deal.marketing_status === "off_market" && deal.stage !== "closed" ? <OutreachPanel dealId={deal.id} /> : null}
+      {deal.stage === "outreach" ? <OutreachPanel dealId={deal.id} /> : null}
 
       <DealContactsPanel
         dealId={deal.id}

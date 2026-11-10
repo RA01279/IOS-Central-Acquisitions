@@ -1,11 +1,12 @@
 // components/OutreachPanel.tsx
 //
-// On an off-market deal's Summary: where owner outreach stands, the next
+// On an Outreach-stage deal's Summary: where owner outreach stands, the next
 // follow-up, the log-a-touch form (components/TouchForm) and recent touches.
 // Server component; the same data the Outreach page shows for this deal.
 
 import { getServiceClient } from "@/lib/supabase";
 import TouchForm from "./TouchForm";
+import OutreachMoves from "./OutreachMoves";
 import { OUTCOME_LABELS, STATUS_LABELS, STATUS_TONE, TOUCH_LABELS, outreachStatus } from "@/lib/outreach";
 import { ctToday } from "@/lib/summary";
 
@@ -42,6 +43,9 @@ export default async function OutreachPanel({ dealId }: { dealId: string }) {
           </span>
         ) : <span className="muted">No follow-up set</span>}
       </p>
+      <div style={{ marginBottom: 14 }}>
+        <OutreachMoves dealId={dealId} today={today} emphasis={status === "interested" || status === "talking"} defaultFollowUp={nextOn} />
+      </div>
       <div className="outreach-detail" style={{ padding: 0 }}>
         <TouchForm dealId={dealId} today={today} />
         {list.length ? (

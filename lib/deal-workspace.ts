@@ -76,6 +76,7 @@ export const getEvidence = cache(async () => {
       .select("id, stage, asset_class, properties!inner(address, city, market, latitude, longitude)")
       .neq("stage", "archived")
       .neq("stage", "closed")
+      .neq("stage", "outreach")
       .not("properties.latitude", "is", null)
       .limit(1000),
   ]);

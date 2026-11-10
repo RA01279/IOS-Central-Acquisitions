@@ -59,7 +59,9 @@ export default async function DealsPage(props: { searchParams: Promise<Params> }
       .from("deals")
       .select(DEAL_CARD_SELECT)
       .eq("deal_type", "acquisition")
-      .neq("stage", "archived");
+      .neq("stage", "archived")
+      // Outreach deals aren't in the pipeline yet (app/outreach).
+      .neq("stage", "outreach");
     // Portfolio sites of the other class come too: a portfolio card stands for
     // the whole package, and Project Empire's three warehouses are Industrial.
     if (asset !== "all") query = query.or(`asset_class.eq.${asset},deal_portfolio_id.not.is.null`);

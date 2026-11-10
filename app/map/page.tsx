@@ -28,7 +28,7 @@ export default async function PortfolioMapPage(props: { searchParams: Promise<{ 
       .from("deals")
       .select(DEAL_CARD_SELECT)
       .eq("deal_type", "acquisition")
-      .not("stage", "in", "(archived,closed)");
+      .not("stage", "in", "(archived,closed,outreach)");
     if (asset !== "all") q = q.eq("asset_class", asset);
     return q.order("id").range(f, t);
   });

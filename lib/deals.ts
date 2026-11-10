@@ -45,6 +45,7 @@ export const ACQUISITION_STAGES = [
 export const IN_CONTRACT_STAGES = ["moving_to_psa", "due_diligence"] as const;
 
 export const STAGE_LABELS: Record<string, string> = {
+  outreach: "Outreach",
   uw: "UW",
   uw_v1: "UW v1", // legacy -- display only
   offered: "Offered",
@@ -93,8 +94,16 @@ export function assetClassFromAssetType(assetType?: string | null): AssetClass {
   return "industrial";
 }
 
+/**
+ * Before the pipeline: sites picked from Sourcing that are being worked on the
+ * Outreach page. Not a board column and not in pipeline counts; a deal joins
+ * the pipeline (Prospect) once the owner will entertain an offer.
+ */
+export const PRE_PIPELINE_STAGE = "outreach";
+
+/** A stage an acquisition can be set to: the pipeline, or Outreach before it. */
 export function isValidAcqStage(stage: string): boolean {
-  return (ACQUISITION_STAGES as readonly string[]).includes(stage);
+  return stage === PRE_PIPELINE_STAGE || (ACQUISITION_STAGES as readonly string[]).includes(stage);
 }
 
 export interface NewDealInput {

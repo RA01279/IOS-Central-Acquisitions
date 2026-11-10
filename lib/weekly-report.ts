@@ -17,6 +17,8 @@ import { decisionReport } from "./decision-report";
 const OPEN_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
 const MOVE_EVENTS: Record<string, string> = {
   deal_created: "New deal",
+  // A sourced site entering the pipeline from Outreach is new to the pipeline.
+  moved_to_pipeline: "New deal",
   advanced_to_uw: "To UW",
   marked_offered: "To Offered",
   confirmed_psa: "To Moving to PSA",
@@ -100,6 +102,8 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
 
   const moves = events
     .filter((e: any) => e.event_type !== "archived")
+    // Creating a deal in Outreach isn't a new pipeline deal; its move_to_pipeline is.
+    .filter((e: any) => e.event_type !== "deal_created" || (byId.get(e.deal_id) as any)?.entered_pipeline_at && Math.abs(Date.parse((byId.get(e.deal_id) as any).entered_pipeline_at) - Date.parse((byId.get(e.deal_id) as any).created_at)) < 10 * 60 * 1000)
     .map((e: any) => ({
       ...ref(e.deal_id),
       date: String(e.created_at).slice(0, 10),
@@ -118,14 +122,14 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
 
   const upcoming: WeeklyReport["upcoming"] = [];
   for (const d of deals as any[]) {
-    if (d.stage === "archived" || d.stage === "closed") continue;
+    if (d.stage === "archived" || d.stage === "closed" || d.stage === "outreach") continue;
     for (const [date, what] of [[d.dd_end_on, "DD expires"], [d.closing_on, "Closing"], [d.ic_on, "IC"], [d.call_for_offers_on,"Call for offers"], [d.follow_up_on,"Follow-up"]] as const) {
       if (date && date >= today && date <= horizon) upcoming.push({ ...ref(d.id), date, what });
     }
   }
   for (const m of milestones as any[]) {
     const d: any = byId.get(m.deal_id);
-    if (!d || d.stage === "archived" || d.stage === "closed") continue;
+    if (!d || d.stage === "archived" || d.stage === "closed" || d.stage === "outreach") continue;
     upcoming.push({ ...ref(m.deal_id), date: m.due_on, what: m.label });
   }
   upcoming.sort((a, b) => a.date.localeCompare(b.date));

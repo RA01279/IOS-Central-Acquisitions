@@ -53,6 +53,7 @@ async function advance(
 
 // PATCH /api/deals/[id]
 // body:
+//   { action: "move_to_pipeline" }                         -- Outreach -> Prospect
 //   { action: "mark_offered" }
 //   { action: "confirm_psa" }                              -- gated by canConfirmPsa()
 //   { action: "move_to_due_diligence", ddEndOn, closingOn } -- PSA executed
@@ -81,6 +82,13 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   if (body.action === "start_underwriting") {
     const { error } = await advance(params.id, "uw", "advanced_to_uw", { via: "manual_stage_action" }, user.email);
     if (error) return NextResponse.json({ error }, { status: 400 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // Owner will entertain an offer: the deal joins the pipeline as a Prospect.
+  if (body.action === "move_to_pipeline") {
+    const { error } = await advance(params.id, "prospect", "moved_to_pipeline", { from: "outreach" }, user.email);
+    if (error) return NextResponse.json({ error }, { status: 409 });
     return NextResponse.json({ ok: true });
   }
 

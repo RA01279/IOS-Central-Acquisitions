@@ -260,7 +260,7 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
     fetchAll((f, t) => supabase
       .from("deals")
       .select(
-        "id, stage, asset_class, created_at, updated_at, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address, market), offers(price, offered_at)"
+        "id, stage, asset_class, created_at, entered_pipeline_at, updated_at, dd_end_on, closing_on, closed_on, contract_price, closed_price, properties(address, market), offers(price, offered_at)"
       )
       .eq("deal_type", "acquisition")
       .order("id")
@@ -299,7 +299,7 @@ export async function buildSummary(range: RangeKey): Promise<Summary> {
   for (const d of deals) {
     const ac = assetClassOf(d);
 
-    if (ctDate(d.created_at) >= start) addToSplit(summary.newProspects, ac);
+    if (d.entered_pipeline_at && ctDate(d.entered_pipeline_at) >= start) addToSplit(summary.newProspects, ac);
 
     if (d.stage === "prospect") addToSplit(summary.standing.prospect, ac);
     else if (d.stage === "uw" || d.stage === "uw_v1") addToSplit(summary.standing.uw, ac);

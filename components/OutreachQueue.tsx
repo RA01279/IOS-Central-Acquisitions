@@ -1,13 +1,14 @@
 "use client";
 // components/OutreachQueue.tsx
 //
-// The Outreach page's work queue: off-market prospects in tabs (due now, not
+// The Outreach page's work queue: deals in the Outreach stage, in tabs (due now, not
 // contacted yet, upcoming, no next step, warm, not selling), each row showing
 // the owner with click-to-call / email, where outreach stands, the last touch
 // and the next one. "Log touch" opens the touch form and the history inline.
 
 import { useMemo, useState } from "react";
 import TouchForm from "./TouchForm";
+import OutreachMoves from "./OutreachMoves";
 import { OUTCOME_LABELS, STATUS_LABELS, STATUS_TONE, TOUCH_LABELS } from "@/lib/outreach";
 import type { OutreachRow } from "@/lib/outreach-db";
 
@@ -123,8 +124,10 @@ export default function OutreachQueue({ rows, today, initialTab }: { rows: Outre
                 {open === r.dealId ? (
                   <div className="outreach-detail">
                     <TouchForm dealId={r.dealId} today={today} onDone={() => setOpen(null)} />
+                    <div className="outreach-history">
+                      <OutreachMoves dealId={r.dealId} today={today} emphasis={r.status === "interested" || r.status === "talking"} defaultFollowUp={r.nextOn} />
                     {r.touches.length ? (
-                      <div className="outreach-history">
+                      <div>
                         <h3 className="report-sub" style={{ marginTop: 0 }}>History</h3>
                         <ul>
                           {r.touches.slice(0, 8).map((t) => (
@@ -139,6 +142,7 @@ export default function OutreachQueue({ rows, today, initialTab }: { rows: Outre
                         {r.touches.length > 8 ? <a href={`/deals/${r.dealId}`} className="muted">All {r.touches.length} on the deal</a> : null}
                       </div>
                     ) : null}
+                    </div>
                   </div>
                 ) : null}
               </li>

@@ -1,5 +1,6 @@
 // POST { runId, ref, site: { lat, lng, address, operators }, market? }
-// Turns one qualified sweep site into a Prospect deal: off-market,
+// Turns one qualified sweep site into a deal in the Outreach stage (worked on
+// the Outreach page, off the pipeline until the owner is interested): off-market,
 // sale-leaseback when the owner is the operator, owner of record as the seller
 // contact, and the agent's research (sources, signals, outreach draft) on the
 // deal's history. Uses only the requester's own completed sourcing run.
@@ -81,6 +82,12 @@ export async function POST(req: NextRequest) {
   }
   if (!result?.deal) {
     return NextResponse.json({ error: "Hopper already has a deal at this address.", duplicates: result?.duplicates ?? [] }, { status: 409 });
+  }
+  // Picked sites start in Outreach, off the pipeline until the owner is interested.
+  {
+    const { error: stageError } = await db.from("deals").update({ stage: "outreach", entered_pipeline_at: null }).eq("id", result.deal.id).eq("stage", "prospect");
+    if (stageError) return NextResponse.json({ error: `Added, but couldn't move it to Outreach: ${stageError.message}`, dealId: result.deal.id }, { status: 500 });
+    await logDealEvent(result.deal.id, "sent_to_outreach", { via: "sourcing" }, user.email);
   }
   const operators = site.operators.map(o => o.name);
   // Owner: the market's coverer, else the analyst who ran the sweep. Never fatal.

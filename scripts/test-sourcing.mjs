@@ -102,12 +102,13 @@ let user = { email: "Owner@Example.com" };
 const runFilters = [];
 let runRow;
 let previousDeal = null;
+const updates = [];
 const reviewed = { version: 2, sweepId: "00000000-0000-4000-8000-000000000002", market: "Houston", searchLabel: "Test", buyBox: { minAcres: 2, maxAcres: 10, maxCoveragePct: 30 }, sites: [sites[0]] };
 const sourceRows = [{ label: snapshot.SNAPSHOT_LABEL, data: reviewed }];
 function strictReport(report) { for (const s of report.sites) { s.fieldSources = Object.fromEntries(Object.entries(s).filter(([k,v]) => ["parcelAddress","city","county","parcelId","owner","ownerMailingAddress","acres","buildingSf","yearBuilt","ownedSince","occupant","zoning"].includes(k) && v != null).map(([k]) => [k, "https://hcad.org/"])); if (s.ownerType === "owner-user") s.fieldSources.ownerRelationship = "https://hcad.org/"; } return report; }
 runRow = { sources: sourceRows, result: { report: JSON.stringify(strictReport({ ...good, sites: [site("S1")] })) } };
 const db = { from: (table) => {
-  const b = { insert: () => b, single: async () => ({ data: { id: reviewed.sweepId }, error: null }), select: () => b, not: () => b, order: () => b, eq: (k, v) => { if (table === "agent_runs") runFilters.push([k, v]); return b; },
+  const b = { insert: () => b, update: (v) => { updates.push([table, v]); return b; }, is: () => b, single: async () => ({ data: { id: reviewed.sweepId }, error: null }), select: () => b, not: () => b, order: () => b, eq: (k, v) => { if (table === "agent_runs") runFilters.push([k, v]); return b; },
     range: async (from) => ({ data: from === 0 && table === "properties" ? [{ id: "p1", address: "100 Yard Rd", latitude: 30.001, longitude: -95.001, deals: [{ id: "d9", stage: "archived" }] }] : [], error: null }),
     maybeSingle: async () => ({ data: table === "deals" ? previousDeal : runFilters.some(([k, v]) => k === "owner_email" && v === "owner@example.com") ? runRow : null, error: null }) };
   return b;
@@ -154,14 +155,16 @@ try {
   previousDeal = { id: "new-deal" };
   assert.equal((await prospectRoute.POST(req(body))).body.dealId, "new-deal", "promotion retry returns the original deal");
   assert.equal(created.length, 1); previousDeal = null;
-  assert.equal(events[0][1], "sourcing_research");
-  assert(events[0][2].outreachDraft && events[0][2].sources.length, "research and outreach draft attached to the deal");
+  assert(updates.some(([t, v]) => t === "deals" && v.stage === "outreach" && v.entered_pipeline_at === null), "a picked site starts in Outreach, off the pipeline");
+  assert(events.some((e) => e[1] === "sent_to_outreach"), "the move to Outreach is on the deal history");
+  const research = events.find((e) => e[1] === "sourcing_research");
+  assert(research && research[2].outreachDraft && research[2].sources.length, "research and outreach draft attached to the deal");
   // An agent that found no owner falls back to the appraisal roll, looked up server-side.
   runRow = { sources: sourceRows, result: { report: JSON.stringify(strictReport({ ...good, sites: [site("S1", { owner: null, parcelAddress: null, acres: null })] })) } };
   await prospectRoute.POST(req(body));
   assert.equal(created[1].currentOwnerName, "ROLL OWNER LLC");
   assert.equal(created[1].address, "100 YARD RD");
-  assert.equal(events[1][2].appraisalRoll.owner, "ROLL OWNER LLC");
+  assert.equal(events.filter((e) => e[1] === "sourcing_research").at(-1)[2].appraisalRoll.owner, "ROLL OWNER LLC");
   runRow = { sources: sourceRows, result: { report: JSON.stringify(strictReport({ ...good, sites: [site("S1")] })) } };
   dupe = true;
   assert.equal((await prospectRoute.POST(req(body))).status, 409, "existing address is not duplicated");

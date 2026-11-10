@@ -69,7 +69,7 @@ export default async function DashboardPage() {
     fetchAll((f, t) => supabase
       .from("deals")
       .select(
-        "id, stage, asset_class, created_at, updated_at, closed_on, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(event_type, created_at)"
+        "id, stage, asset_class, created_at, entered_pipeline_at, updated_at, closed_on, death_stage, death_reason, disposition, pursuit_score, follow_up_on, properties(address, market), deal_events(event_type, created_at)"
       )
       .eq("deal_type", "acquisition")
       .order("id")
@@ -94,7 +94,7 @@ export default async function DashboardPage() {
   const archived = deals.filter((d: any) => d.stage === "archived");
   const closed = deals.filter((d: any) => d.stage === "closed");
   // Live pipeline: neither dead (archived) nor done (closed).
-  const acq = deals.filter((d: any) => d.stage !== "archived" && d.stage !== "closed");
+  const acq = deals.filter((d: any) => d.stage !== "archived" && d.stage !== "closed" && d.stage !== "outreach");
 
   // One funnel per pipeline -- IOS and Industrial are run as separate books, so
   // a single blended funnel hid which one was actually moving.
@@ -113,13 +113,16 @@ export default async function DashboardPage() {
   // window and the "vs the 12 before" comparison.
   const chartSince = new Date(Date.now() - 2 * 366 * DAY_MS).toISOString().slice(0, 10);
   const clsOf = (c: unknown): "ios" | "industrial" => (c === "industrial" ? "industrial" : "ios");
-  const intakePoints = deals
-    .map((d: any) => ({ date: ctDate(d.created_at), cls: clsOf(d.asset_class) }))
+  // Intake is the day a deal entered the pipeline (a sourced site counts when it
+  // leaves Outreach, not when it was found); sites still in Outreach don't count.
+  const pipelineDeals = deals.filter((d: any) => d.entered_pipeline_at);
+  const intakePoints = pipelineDeals
+    .map((d: any) => ({ date: ctDate(d.entered_pipeline_at), cls: clsOf(d.asset_class) }))
     .filter((x) => x.date >= chartSince);
   const offerPoints = allOffers
     .filter((o: any) => o.offered_at && o.offered_at >= chartSince)
     .map((o: any) => ({ date: o.offered_at as string, amount: o.price ?? 0, cls: clsOf(o.deals?.asset_class) }));
-  const newThisWeek = deals.filter((d: any) => daysAgo(d.created_at) < 7).length;
+  const newThisWeek = pipelineDeals.filter((d: any) => daysAgo(d.entered_pipeline_at) < 7).length;
   const offersThisWeek = allOffers.filter(
     (o: any) => o.offered_at && daysAgo(o.offered_at) < 7
   ).length;

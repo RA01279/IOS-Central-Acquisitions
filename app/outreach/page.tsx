@@ -1,7 +1,7 @@
 // app/outreach/page.tsx
 //
-// Off-market owner outreach: every open off-market prospect (added from the
-// Sourcing tool or by hand) as a work queue -- who's due a follow-up today,
+// Owner outreach: every deal in the Outreach stage (sites picked in Sourcing,
+// before the pipeline) as a work queue -- who's due a follow-up today,
 // who hasn't been contacted, who's warm -- with click-to-call owner details
 // and a log-a-touch form that sets the next reminder (components/OutreachQueue).
 // Data: lib/outreach-db.ts loadOutreach.
@@ -63,14 +63,14 @@ export default async function OutreachPage(props: { searchParams: Promise<{ tab?
           <div>
             <h1>Outreach</h1>
             <p className="hint" style={{ margin: 0 }}>
-              Off-market owners to work: log every call, email or letter and set the next touch. Add prospects from{" "}
-              <Link href="/sourcing">Sourcing</Link> or mark any deal off-market.
+              Sites you picked in <Link href="/sourcing">Sourcing</Link>, before the pipeline. Log every call, email or letter and set the next touch;
+              when an owner will entertain an offer, move the site to the pipeline. Not selling? Park it as a target.
             </p>
           </div>
         </div>
 
         <div className="stat-grid-auto">
-          <Stat label="Off-market prospects" value={rows.length} />
+          <Stat label="Sites in outreach" value={rows.length} />
           <Stat label="Follow-ups due" value={due} bad={due > 0} href="/outreach?tab=due#queue" />
           <Stat label="Not contacted yet" value={fresh} href="/outreach?tab=new#queue" />
           <Stat label="Touches this week" value={touchesThisWeek} />
@@ -106,7 +106,7 @@ export default async function OutreachPage(props: { searchParams: Promise<{ tab?
         ) : (
           <section className="panel">
             <p className="hint">
-              No off-market prospects yet. Run a sweep in <Link href="/sourcing">Sourcing</Link> and use &ldquo;Add as prospect&rdquo;, or set a deal&apos;s marketing to off-market.
+              Nothing in outreach yet. Run a sweep in <Link href="/sourcing">Sourcing</Link> and use &ldquo;Send to outreach&rdquo; on the sites worth pursuing.
             </p>
           </section>
         )}

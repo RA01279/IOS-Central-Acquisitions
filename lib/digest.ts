@@ -125,7 +125,7 @@ export async function composeDigest() {
       d.follow_up_on <= today &&
       d.pursuit_score !== 0
   );
-  const active = deals.filter((d: any) => d.stage !== "archived");
+  const active = deals.filter((d: any) => d.stage !== "archived" && d.stage !== "outreach");
   const callsForOffers = offerDeadlines(deals as any[], today);
   const offersTomorrow = callsForOffers.filter(d => d.daysAway === 1);
 

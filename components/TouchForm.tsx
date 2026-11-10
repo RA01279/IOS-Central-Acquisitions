@@ -15,7 +15,7 @@ const SUGGESTED_DAYS: Partial<Record<Outcome, number | null>> = {
   no_answer: 3, left_message: 7, spoke: 14, interested: 3, not_now: 91, not_selling: 182, wrong_contact: null,
 };
 
-export default function TouchForm({ dealId, today, onDone }: { dealId: string; today: string; onDone?: () => void }) {
+export default function TouchForm({ dealId, today, onDone, moveable = true }: { dealId: string; today: string; onDone?: () => void; moveable?: boolean }) {
   const router = useRouter();
   const [type, setType] = useState<TouchType>("call");
   const [outcome, setOutcome] = useState<Outcome | "">("");
@@ -25,6 +25,26 @@ export default function TouchForm({ dealId, today, onDone }: { dealId: string; t
   const [picked, setPicked] = useState<number | "custom" | "none">(7);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // After logging "Interested in selling": offer the move into the pipeline.
+  const [askMove, setAskMove] = useState(false);
+  const [moving, setMoving] = useState(false);
+
+  async function moveToPipeline() {
+    setMoving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/deals/${dealId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move_to_pipeline" }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Could not move it");
+      setAskMove(false);
+      onDone?.();
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setMoving(false);
+    }
+  }
 
   function pick(days: number | "none") {
     setPicked(days);
@@ -49,15 +69,31 @@ export default function TouchForm({ dealId, today, onDone }: { dealId: string; t
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Could not save");
+      const interested = outcome === "interested";
       setNote("");
       setOutcome("");
-      onDone?.();
+      if (interested && moveable) setAskMove(true);
+      else onDone?.();
       router.refresh();
     } catch (err: any) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  if (askMove) {
+    return (
+      <div className="touch-move-prompt">
+        <strong>Logged. The owner is interested.</strong>
+        <span>Move this site into the pipeline as a Prospect now?</span>
+        <div className="outreach-moves-row">
+          <button type="button" onClick={moveToPipeline} disabled={moving}>{moving ? "Moving…" : "Move to pipeline"}</button>
+          <button type="button" className="secondary" onClick={() => { setAskMove(false); onDone?.(); }}>Not yet</button>
+        </div>
+        {error ? <span className="error" style={{ margin: 0 }}>{error}</span> : null}
+      </div>
+    );
   }
 
   return (

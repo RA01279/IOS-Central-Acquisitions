@@ -63,8 +63,10 @@ export async function archiveDeal(dealId: string, input: ArchiveInput, actor: st
   if (offerOutcome) {
     await supabase.from("offers").update({ status: offerOutcome, responded_on: ctToday() }).eq("deal_id", dealId).in("status", ["sent", "countered"]);
   }
-  // Its checklist to-dos are moot too.
+  // Its checklist to-dos and any outreach reminder are moot too (a parked
+  // Target's next look is its follow-up date, on the Targets page).
   await closeStaleStageTasks(dealId, "archived");
+  await supabase.from("tasks").update({ status: "done", completed_at: new Date().toISOString() }).eq("deal_id", dealId).eq("kind", "outreach").eq("status", "open");
   await fireStageChangeWebhook(dealId, { from: deal.stage, to: "archived", actor, via: "archive" });
   return { ok: true };
 }

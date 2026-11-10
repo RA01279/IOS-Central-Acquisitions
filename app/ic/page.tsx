@@ -19,7 +19,7 @@ export default async function IcHubPage() {
   const supabase = getServiceClient();
   const today = ctToday();
   const [{ data: rows }, { data: exports }, { data: decisions }] = await Promise.all([
-    supabase.from("deals").select(DEAL_CARD_SELECT).eq("deal_type", "acquisition").not("stage", "in", "(archived,closed)"),
+    supabase.from("deals").select(DEAL_CARD_SELECT).eq("deal_type", "acquisition").not("stage", "in", "(archived,closed,outreach)"),
     supabase
       .from("deal_events")
       .select("id, deal_id, actor, created_at, detail, deals(properties(address))")

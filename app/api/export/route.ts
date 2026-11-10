@@ -189,7 +189,7 @@ export async function GET(req: NextRequest) {
   const closed = deals.filter((d: any) => d.stage === "closed");
   // "Active" = live pipeline. Closed deals are done, archived deals are dead;
   // neither belongs in a pipeline count.
-  const active = deals.filter((d: any) => d.stage !== "archived" && d.stage !== "closed");
+  const active = deals.filter((d: any) => d.stage !== "archived" && d.stage !== "closed" && d.stage !== "outreach");
 
   // -- Aggregates -----------------------------------------------------------
   const byStage = Object.fromEntries(

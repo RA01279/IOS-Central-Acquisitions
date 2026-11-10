@@ -82,13 +82,13 @@ export type OutreachRow = {
   nextBy: string | null;
 };
 
-/** Open off-market prospects (not archived or closed), with their outreach. */
+/** Deals in the Outreach stage (before the pipeline), with their outreach. */
 export async function loadOutreach(): Promise<OutreachRow[]> {
   const db = getServiceClient();
   const deals = await fetchAll((f, t) =>
     db.from("deals")
       .select("id, stage, created_at, assigned_analyst, follow_up_on, properties(address, city, market, lot_sf), deal_contacts(role, contacts(id, name, phone, email))")
-      .eq("deal_type", "acquisition").eq("marketing_status", "off_market").not("stage", "in", "(archived,closed)")
+      .eq("deal_type", "acquisition").eq("stage", "outreach")
       .order("id").range(f, t));
   if (!deals.length) return [];
   const ids = new Set(deals.map((d: any) => d.id));

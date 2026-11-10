@@ -129,6 +129,17 @@ export default function StageActions({
 
   return (
     <div className="stage-actions">
+      {stage === "outreach" && (
+        <>
+          <button onClick={() => callAction("move_to_pipeline")} disabled={busy !== null}>
+            {busy === "move_to_pipeline" ? "Moving…" : "Owner interested: move to pipeline"}
+          </button>
+          <p className="hint" style={{ margin: 0 }}>
+            In outreach, not on the pipeline yet. Log touches below; move it once the owner will entertain an offer.
+          </p>
+        </>
+      )}
+
       {stage === "prospect" && (
         <p className="hint" style={{ margin: 0 }}>
           Upload an underwriting model below to move this deal into UW.

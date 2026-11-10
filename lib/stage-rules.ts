@@ -1,4 +1,5 @@
-const STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence", "closed"];
+// Outreach comes first: Outreach -> Prospect is a forward step (supabase transition_deal agrees).
+const STAGES = ["outreach", "prospect", "uw", "offered", "moving_to_psa", "due_diligence", "closed"];
 export function transitionError(from: string, to: string, correction: boolean): string | null {
   const fromIndex = STAGES.indexOf(from), toIndex = STAGES.indexOf(to);
   if (fromIndex < 0 || toIndex < 0) return "Restore archived deals before changing stage";

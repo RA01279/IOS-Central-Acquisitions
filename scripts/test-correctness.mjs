@@ -9,6 +9,8 @@ for(const input of ['-100','1,23','4.2MM','NaN',0,{},'1e6','four million']) asse
 const {transitionError,validDate}=module('lib/stage-rules.ts');
 assert.equal(transitionError('closed','due_diligence',true),null);
 assert.ok(transitionError('prospect','closed',true));assert.ok(transitionError('offered','closed',false));
+// Outreach sits before the pipeline: forward to Prospect only, and a Prospect can be corrected back.
+assert.equal(transitionError('outreach','prospect',false),null);assert.ok(transitionError('outreach','uw',false));assert.equal(transitionError('prospect','outreach',true),null);assert.ok(transitionError('outreach','prospect',true));
 assert.equal(transitionError('offered','moving_to_psa',false),null);
 assert.ok(transitionError('archived','prospect',true));
 assert.equal(validDate('2026-02-30'),false);assert.equal(validDate('2028-02-29'),true);
