@@ -5,6 +5,7 @@ import { isUsableForDistance } from "@/lib/geocode";
 import { rateSummary } from "@/lib/comps/rates";
 import Nav from "@/components/Nav";
 import CompIntakeForm from "@/components/CompIntakeForm";
+import CompRadiusExport from "@/components/CompRadiusExport";
 import CompEditor, { type CompRow } from "@/components/CompEditor";
 import CompsMap, { type CompMapRow } from "@/components/CompsMap";
 import CompReviewQueue, { type ReviewRow } from "@/components/CompReviewQueue";
@@ -178,6 +179,8 @@ export default async function CompsPage(pageProps: { searchParams: Promise<{ om?
         )}
 
         <CompReviewQueue rows={reviewRows} originals={originals} />
+
+        <CompRadiusExport />
 
         <p className="hint">{sales.filter((c:any)=>c.is_portfolio).length} portfolio transactions. Each transaction is counted once; constituent pins show only property-level allocations. Portfolio aggregates and linked component rows are excluded from single-property underwriting statistics.</p>
         <CompsMap comps={mapProperties as CompMapRow[]} />
