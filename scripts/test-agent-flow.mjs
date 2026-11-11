@@ -12,9 +12,9 @@ function load(file, deps = {}) {
 }
 const tables = { outlook_helpers: [], outlook_helper_jobs: [], agent_runs: [], deals: [], sourcing_sweeps: [] };
 function builder(table) {
- let filters = [], op = "select", payload, selection = false, max = Infinity;
+ let filters = [], op = "select", payload, selection = false, max = Infinity, counting = false;
  const b = {
- select() { selection = true; return b; },
+ select(_c,o) { selection = true; if (o?.count) counting = true; return b; },
  eq(k,v) { filters.push(r=>r[k]===v); return b; }, gt(k,v) { filters.push(r=>r[k]>v); return b; },
  lt(k,v) { filters.push(r=>r[k]<v); return b; }, in(k,v) { filters.push(r=>v.includes(r[k])); return b; },
  order() { return b; }, limit(n) { max=n; return b; },
@@ -25,7 +25,7 @@ function builder(table) {
  async function execute(single) {
    let rows = tables[table].filter(r=>filters.every(f=>f(r))).slice(0,max);
    if(op==="insert"||op==="upsert") {
-     if(["outlook_helper_jobs","agent_runs"].includes(table)&&tables[table].some(r=>r.helper_id===payload.helper_id&&["queued","processing"].includes(r.status)))
+     if(table==="outlook_helper_jobs"&&tables[table].some(r=>r.helper_id===payload.helper_id&&["queued","processing"].includes(r.status)))
        return {error:{code:"23505"},data:null};
      let row=op==="upsert"?tables[table].find(r=>r.owner_email===payload.owner_email):null;
      if(row)Object.assign(row,payload);
@@ -37,7 +37,7 @@ function builder(table) {
      tables[table]=tables[table].filter(r=>!rows.includes(r));
      if(table==="outlook_helpers")tables.outlook_helper_jobs=tables.outlook_helper_jobs.filter(r=>!rows.some(h=>h.id===r.helper_id));
    }
-   return {data:single?(rows[0]?structuredClone(rows[0]):null):structuredClone(rows),error:null};
+   return {data:single?(rows[0]?structuredClone(rows[0]):null):structuredClone(rows),error:null,...(counting?{count:rows.length}:{})};
  }
  return b;
 }
@@ -65,9 +65,12 @@ assert.equal((await worker.GET(req())).status,401);
 await worker.GET(req(null,{token}));
 const created=await browser.POST(req({agent:"deal-intake",text:"Synthetic source: 123 Example Road, five acres."})); assert.equal(created.status,202);
 const id=created.body.id;
-assert.equal((await browser.POST(req({agent:"deal-intake",text:"Another source"}))).status,409);
+// Several runs queue at once (the helper works them in parallel), claimed oldest first.
+const second=await browser.POST(req({agent:"deal-intake",text:"Another source"})); assert.equal(second.status,202);
 const claimed=await worker.GET(req(null,{token})); assert.equal(claimed.body.job.id,id);
+assert.equal((await worker.GET(req(null,{token}))).body.job.id,second.body.id);
 assert.equal((await worker.GET(req(null,{token}))).body.job,null);
+tables.agent_runs.find(r=>r.id===second.body.id).status="completed";
 assert.equal((await worker.POST(req({id,result:{report:"",model:"test",limitations:[]}},{token}))).status,400);
 assert.equal((await worker.POST(req({id,result:{report:"Synthetic report",model:"test",limitations:["Unverified"]},usage:{input_tokens:10,output_tokens:3}},{token}))).status,200);
 assert.equal((await browser.GET(req(null,{path:"?id="+id}))).body.result.report,"Synthetic report");
@@ -76,8 +79,20 @@ email="other@example.com";
 assert.equal((await browser.GET(req(null,{path:"?id="+id}))).status,404);
 email="owner@example.com";
 const next=await browser.POST(req({agent:"pipeline-follow-up",text:""})); assert.equal(next.status,202);
-tables.agent_runs.find(r=>r.id===next.body.id).created_at=new Date(Date.now()-21*60000).toISOString();
-await lib.reap(db,email); assert.equal(tables.agent_runs.find(r=>r.id===next.body.id).status,"failed");
+// A queued run waits for the helper for hours; a run stuck mid-way expires after 40 minutes.
+const nextRow=tables.agent_runs.find(r=>r.id===next.body.id);
+nextRow.created_at=new Date(Date.now()-21*60000).toISOString();
+await lib.reap(db,email); assert.equal(nextRow.status,"queued","a queued run is not expired after 21 minutes");
+Object.assign(nextRow,{status:"processing",started_at:new Date(Date.now()-41*60000).toISOString()});
+await lib.reap(db,email); assert.equal(nextRow.status,"failed","a run processing for over 40 minutes is expired");
+const waiting=await browser.POST(req({agent:"pipeline-follow-up",text:""}));
+const waitingRow=tables.agent_runs.find(r=>r.id===waiting.body.id);
+waitingRow.created_at=new Date(Date.now()-9*3600000).toISOString();
+await lib.reap(db,email); assert.equal(waitingRow.status,"failed","a run nobody picked up for 8 hours is expired");
+// The cap on active runs per person.
+for(let i=0;i<lib.MAX_ACTIVE_RUNS;i++) tables.agent_runs.push({id:crypto.randomUUID(),owner_email:email,status:"queued",created_at:new Date().toISOString()});
+const capped=await browser.POST(req({agent:"pipeline-follow-up",text:""})); assert.equal(capped.status,429);
+tables.agent_runs=tables.agent_runs.filter(r=>r.status!=="queued");
 // Qualification uses the owner's saved review, never browser-supplied facts.
 const sweepId=crypto.randomUUID();
 const reviewedSite=(ref,ownerClass)=>({ref,lat:29.87,lng:-95.55,address:'100 Reviewed Yard Rd',known:null,parcel:ownerClass?{ownerClass}:null,operators:[],categories:[]});
