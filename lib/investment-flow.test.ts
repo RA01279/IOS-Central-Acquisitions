@@ -39,6 +39,14 @@ it("requires authentication and retains model identity conflicts until a recorde
  const saved=await POST(request({action:"resolve_model",versionId:"v1",expectedResolutionAt:null,outcome:"accepted",reason:"Copied header reconciled against attached original rent schedules"}),{params:Promise.resolve({id})});expect(saved.status).toBe(200);state.tables.deals[0].uw_versions=state.tables.uw_versions;
  expect((await buildWeeklyReport()).decisions[0].modelIrr).toBe(.22);expect(state.events[0][1]).toBe("model_identity_resolved");
 });
+it("refreshes deal moves, offers and named owner touches from recorded activity",async()=>{
+ const before=await buildWeeklyReport();expect(before.moves).toHaveLength(0);expect(before.offers).toHaveLength(0);expect(before.outreach.touches).toHaveLength(0);
+ state.tables.deal_events=[{deal_id:id,event_type:"advanced_to_uw",created_at:"2026-10-13T00:30:00Z",actor:"analyst@test.local",detail:{from:"prospect",to:"uw"}},{deal_id:id,event_type:"advanced_to_uw",created_at:"2026-10-06T12:00:00Z",detail:{}}];
+ state.tables.offers=[{deal_id:id,offered_at:"2026-10-13",price:4200000,status:"sent"},{deal_id:id,offered_at:"2026-10-14",price:5000000,status:"sent"}];
+ state.tables.activities=[{id:"touch-1",deal_id:id,contact_id:"owner-1",contacts:{name:"Pat Owner"},activity_type:"call",outcome:"no_answer",occurred_at:"2026-10-13T15:00:00Z",created_by:"analyst@test.local",body:"Left a message"}];
+ const after=await buildWeeklyReport();expect(after.moves).toHaveLength(1);expect(after.moves[0]).toMatchObject({address:"4732 Darien St",date:"2026-10-12",detail:"Prospect → UW"});expect(after.offers).toHaveLength(1);expect(after.offers[0].price).toBe(4200000);expect(after.outreach.touches[0]).toMatchObject({owner:"Pat Owner",address:"4732 Darien St",outcome:"No answer"});
+ const response=await GET(new Request("http://localhost/api/reports/weekly") as any);const wb=new ExcelJS.Workbook();await wb.xlsx.load(Buffer.from(await response.arrayBuffer()) as any);expect(JSON.stringify(wb.getWorksheet("Outreach")!.getSheetValues())).toContain("Pat Owner");
+});
 it("applies the additive migration in an isolated Postgres engine without changing existing rows",async()=>{
  const db=new PGlite();try{await db.exec("create table public.deals(id int primary key, stage text);insert into public.deals values(1,'uw');");await db.exec(readFileSync(new URL("../supabase/migrations/20261029221056_investment_decision_controls.sql",import.meta.url),"utf8"));expect((await db.query("select * from deals")).rows).toEqual([{id:1,stage:"uw",investment_review:null}]);}finally{await db.close();}
 },30000);

@@ -17,6 +17,9 @@ export function addWeeklyOutreachSheet(wb: ExcelJS.Workbook, outreach: WeeklyOut
   section(["Activity by Person", "Touches", "Calls", "Emails", "Letters", "Other", "Reached an owner", "Overdue follow-ups"]);
   for (const p of outreach.byPerson) ws.addRow([p.person, p.touches, p.calls, p.emails, p.letters, p.other, p.reached, p.overdue]);
   if (!outreach.byPerson.length) ws.addRow(["No owner touches or overdue follow-ups."]);
+  section(["Owners Contacted This Week", "Owner / contact", "Date", "Method", "Outcome", "By", "Notes", "Next follow-up"]);
+  for (const t of outreach.touches) ws.addRow([t.address, t.owner ?? "Owner not recorded", t.on, t.method, t.outcome ?? "Outcome not recorded", t.by, t.note, t.nextOn]);
+  if (!outreach.touches.length) ws.addRow(["No owner touches logged this week."]);
   section(["Warm Owners", "City", "Owner", "Status", "Last touch date", "Last touch", "Notes", "Next touch"]);
   for (const w of outreach.warm) ws.addRow([w.address, w.city, w.owner, w.statusLabel, w.lastTouch?.on, w.lastTouch?.what, w.lastTouch?.note, w.nextOn]);
   if (!outreach.warm.length) ws.addRow(["No owners in conversation or interested right now."]);

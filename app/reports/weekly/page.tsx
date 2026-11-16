@@ -338,6 +338,25 @@ export default async function WeeklyReportPage() {
               ) : <p className="hint">None this week.</p>}
             </div>
           </div>
+          {r.outreach.touches.length ? (
+            <details className="more">
+              <summary>Owners contacted this week ({r.outreach.touches.length} touches)</summary>
+              <ul className="feed">
+                {r.outreach.touches.map((t) => (
+                  <li key={t.id} style={{ alignItems: "flex-start" }}>
+                    <span className="badge2 neutral">{t.method}</span>
+                    <span className="feed-main" style={{ whiteSpace: "normal" }}>
+                      <Link href={`/deals/${t.dealId}`}>{t.address}</Link>
+                      <span className="muted"> · {t.owner ? (t.contactId ? <Link href={`/contacts/${t.contactId}`}>{t.owner}</Link> : t.owner) : "Owner not recorded"}{t.outcome ? ` · ${t.outcome}` : " · Outcome not recorded"}</span>
+                      {t.note ? <div className="muted" style={{ fontSize: 12 }}>{t.note}</div> : null}
+                      {t.nextOn ? <div className="muted" style={{ fontSize: 12 }}>Next follow-up {day(t.nextOn)}</div> : null}
+                    </span>
+                    <span className="muted feed-meta">{day(t.on)} · {t.by}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
           <h3 className="report-sub">Warm owners ({r.outreach.warm.length})</h3>
           {r.outreach.warm.length ? (
             <ul className="feed">

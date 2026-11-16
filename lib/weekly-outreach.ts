@@ -16,6 +16,7 @@ import { fetchAll } from "./fetch-all";
 import { OUTCOME_LABELS, TOUCH_LABELS, outreachStatus, STATUS_LABELS, type OutreachStatus } from "./outreach";
 
 export type WeeklyOutreach = {
+  touches: { id: string; dealId: string; address: string; owner: string | null; contactId: string | null; on: string; method: string; outcome: string | null; note: string | null; by: string; nextOn: string | null }[];
   byPerson: { person: string; touches: number; calls: number; emails: number; letters: number; other: number; reached: number; overdue: number }[];
   warm: { id: string; address: string; city: string | null; owner: string | null; status: OutreachStatus; statusLabel: string; lastTouch: { what: string; on: string; note: string | null } | null; nextOn: string | null }[];
   moved: { id: string; address: string; on: string; by: string }[];
@@ -23,7 +24,7 @@ export type WeeklyOutreach = {
   totals: { touches: number; reached: number; overdue: number };
 };
 
-type Touch = { deal_id: string; activity_type: string; outcome: string | null; occurred_at: string; created_by: string; body: string | null };
+type Touch = { id?: string; deal_id: string; contact_id?: string | null; contacts?: { name: string } | null; activity_type: string; outcome: string | null; occurred_at: string; created_by: string; body: string | null };
 type OutreachDeal = { id: string; address: string; city: string | null; owner: string | null };
 type Task = { deal_id: string; assigned_to: string | null; due_date: string };
 type Event = { deal_id: string; event_type: string; created_at: string; actor: string | null; detail: any };
@@ -42,7 +43,7 @@ export function buildWeeklyOutreach(input: {
   /** moved_to_pipeline and archived events from this week. */
   events: Event[];
   /** Address and follow-up date of deals named by events. */
-  dealInfo: Map<string, { address: string; followUpOn: string | null }>;
+  dealInfo: Map<string, { address: string; followUpOn: string | null; owner?: string | null }>;
   nameOf: (email: string | null) => string;
 }): WeeklyOutreach {
   const { weekStart, today } = input;
@@ -93,6 +94,16 @@ export function buildWeeklyOutreach(input: {
   const byPerson = [...people.values()].sort((a, b) => b.touches - a.touches || b.overdue - a.overdue);
   return {
     byPerson, warm, moved, parked,
+    touches: week.map((t, i) => ({
+      id: t.id ?? `${t.deal_id}-${i}`, dealId: t.deal_id,
+      address: info(t.deal_id)?.address ?? "Deal",
+      owner: t.contacts?.name ?? (t.contact_id ? null : info(t.deal_id)?.owner) ?? null,
+      contactId: t.contact_id ?? null, on: ctDay(t.occurred_at),
+      method: TOUCH_LABELS[t.activity_type] ?? t.activity_type,
+      outcome: t.outcome ? OUTCOME_LABELS[t.outcome] ?? t.outcome : null,
+      note: t.body, by: input.nameOf(t.created_by),
+      nextOn: nextOn.get(t.deal_id) ?? info(t.deal_id)?.followUpOn ?? null,
+    })),
     totals: { touches: week.length, reached: week.filter((t) => t.outcome === "spoke" || t.outcome === "interested").length, overdue: input.reminders.filter((t) => t.due_date < today).length },
   };
 }
@@ -111,7 +122,7 @@ export async function loadWeeklyOutreach(weekStart: string, today: string, nameO
   const acquisitionIds = new Set(deals.map((d: any) => d.id));
   const outreachIds = new Set(outreachDeals.map((d: any) => d.id));
   // Owner touches: anything logged with an outcome (the touch form), plus touches on deals in Outreach.
-  const touches = (await fetchAll((f, t) => db.from("activities").select("deal_id, activity_type, outcome, occurred_at, created_by, body")
+  const touches = (await fetchAll((f, t) => db.from("activities").select("id, deal_id, contact_id, contacts(name), activity_type, outcome, occurred_at, created_by, body")
     .not("deal_id", "is", null).in("activity_type", ["call", "email", "letter", "text", "site_visit", "meeting"])
     .order("occurred_at", { ascending: false }).order("id").range(f, t)))
     .filter((a: any) => acquisitionIds.has(a.deal_id) && (a.outcome || outreachIds.has(a.deal_id))) as Touch[];
@@ -119,6 +130,6 @@ export async function loadWeeklyOutreach(weekStart: string, today: string, nameO
     weekStart, today, touches, reminders: reminders.filter((t: any) => outreachIds.has(t.deal_id)) as Task[],
     events: events.filter((e: any) => acquisitionIds.has(e.deal_id)) as Event[], nameOf,
     outreachDeals: outreachDeals.map((d: any) => ({ id: d.id, address: d.properties?.address ?? "Untitled", city: d.properties?.city ?? null, owner: d.deal_contacts?.find((l: any) => l.role === "seller")?.contacts?.name ?? null })),
-    dealInfo: new Map(deals.map((d: any) => [d.id, { address: d.properties?.address ?? "Deal", followUpOn: d.follow_up_on ?? null }])),
+    dealInfo: new Map(deals.map((d: any) => [d.id, { address: d.properties?.address ?? "Deal", followUpOn: d.follow_up_on ?? null, owner: d.deal_contacts?.find((l: any) => l.role === "seller")?.contacts?.name ?? null }])),
   });
 }

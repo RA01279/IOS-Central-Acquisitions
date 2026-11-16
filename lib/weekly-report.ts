@@ -53,7 +53,8 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
   const today = ctToday();
   const weekStart = addDays(today, -6);
   const horizon = addDays(today, 14);
-  const since = `${weekStart}T00:00:00-06:00`;
+  const since = `${weekStart}T00:00:00Z`;
+  const eventDay = (timestamp: string) => new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 
   const [deals, events, offers, milestones, team] = await Promise.all([
     fetchAll((f, t) =>
@@ -103,23 +104,26 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
     return { count: list.length, value: list.reduce((t: number, d: any) => t + value(d), 0) };
   };
 
-  const moves = events
+  const weeklyEvents = events.filter((e: any) => byId.has(e.deal_id) && eventDay(e.created_at) >= weekStart && eventDay(e.created_at) <= today)
+    .sort((a: any, b: any) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const moves = weeklyEvents
     .filter((e: any) => e.event_type !== "archived")
     // Creating a deal in Outreach isn't a new pipeline deal; its move_to_pipeline is.
     .filter((e: any) => e.event_type !== "deal_created" || (byId.get(e.deal_id) as any)?.entered_pipeline_at && Math.abs(Date.parse((byId.get(e.deal_id) as any).entered_pipeline_at) - Date.parse((byId.get(e.deal_id) as any).created_at)) < 10 * 60 * 1000)
     .map((e: any) => ({
       ...ref(e.deal_id),
-      date: String(e.created_at).slice(0, 10),
+      date: eventDay(e.created_at),
       what: MOVE_EVENTS[e.event_type] ?? e.event_type,
-      actor: String(e.actor ?? "").split("@")[0],
-      detail: e.event_type === "stage_corrected" && e.detail?.to ? `to ${STAGE_LABELS[e.detail.to] ?? e.detail.to}` : null,
+      actor: nameOf(team, e.actor) ?? "",
+      detail: e.detail?.from && e.detail?.to ? `${STAGE_LABELS[e.detail.from] ?? e.detail.from} → ${STAGE_LABELS[e.detail.to] ?? e.detail.to}`
+        : e.event_type === "stage_corrected" && e.detail?.to ? `to ${STAGE_LABELS[e.detail.to] ?? e.detail.to}` : null,
     }));
   // A site parked from Outreach was never in the pipeline: it is in the outreach section, not a loss.
-  const losses = events
+  const losses = weeklyEvents
     .filter((e: any) => e.event_type === "archived" && e.detail?.stage !== "outreach")
     .map((e: any) => ({
       ...ref(e.deal_id),
-      date: String(e.created_at).slice(0, 10),
+      date: eventDay(e.created_at),
       stage: STAGE_LABELS[e.detail?.stage] ?? e.detail?.stage ?? "—",
       reason: e.detail?.reason ?? (byId.get(e.deal_id) as any)?.death_reason ?? null,
     }));
@@ -164,7 +168,8 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
     snapshot,
     closed: { mtd: closedSince(`${today.slice(0, 7)}-01`), ytd: closedSince(`${today.slice(0, 4)}-01-01`) },
     moves,
-    offers: offers.map((o: any) => ({
+    offers: offers.filter((o: any) => byId.has(o.deal_id) && o.offered_at >= weekStart && o.offered_at <= today)
+      .sort((a: any, b: any) => String(b.offered_at).localeCompare(String(a.offered_at))).map((o: any) => ({
       ...ref(o.deal_id),
       date: o.offered_at,
       price: o.price != null ? Number(o.price) : null,

@@ -29,6 +29,17 @@ describe("weekly outreach", () => {
       touches: [touch("2026-07-01T04:59:59Z"), touch("2026-07-01T05:00:00Z")] });
     expect(r.totals.touches).toBe(1);
   });
+  it("lists attempted outreach with the actual contact, property, outcome and next step", () => {
+    const r = build({ touches: [{ ...touch("2026-11-12T15:00:00Z", "no_answer"), id: "touch-1", contact_id: "contact-1", contacts: { name: "Pat Owner" } }],
+      dealInfo: new Map([["a", { address: "1 Main", followUpOn: "2026-11-20", owner: "Different Seller" }]]) });
+    expect(r.touches).toEqual([{ id: "touch-1", dealId: "a", address: "1 Main", owner: "Pat Owner", contactId: "contact-1", on: "2026-11-12", method: "Call", outcome: "No answer", note: "Owner wants to talk", by: "Alex", nextOn: "2026-11-20" }]);
+    expect(r.totals.reached).toBe(0);
+  });
+  it("does not attribute a missing explicit contact to a different seller", () => {
+    const r = build({ touches: [{ ...touch("2026-11-12T15:00:00Z"), contact_id: "deleted-contact" }],
+      dealInfo: new Map([["a", { address: "1 Main", followUpOn: null, owner: "Different Seller" }]]) });
+    expect(r.touches[0].owner).toBeNull();
+  });
   it("limits movements to the week and separates parked outreach from pipeline losses", () => {
     const event = (event_type: string, created_at: string, stage = "outreach") => ({ deal_id: "a", event_type, created_at, actor: "Alex", detail: { stage, reason: "Not now", follow_up: "2027-02-01" } });
     const r = build({ events: [event("moved_to_pipeline", "2026-11-12T15:00:00Z"), event("moved_to_pipeline", "2026-11-09T15:00:00Z"), event("archived", "2026-11-13T15:00:00Z"), event("archived", "2026-11-13T15:00:00Z", "uw")], dealInfo: new Map([["a", { address: "1 Main", followUpOn: null }]]) });
@@ -45,6 +56,8 @@ describe("weekly outreach", () => {
     loaded.getWorksheet("Outreach")!.eachRow((row) => rows.push(row.values));
     expect(JSON.stringify(rows)).toContain("1 Main");
     expect(JSON.stringify(rows)).toContain("Alex");
+    expect(JSON.stringify(rows)).toContain("Owners Contacted This Week");
+    expect(JSON.stringify(rows)).toContain("Spoke with owner");
     expect(loaded.getWorksheet("Outreach")!.getCell("B3").value).toBe(1);
   });
 });
