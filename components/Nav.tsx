@@ -15,6 +15,7 @@ import NavSearch from "./NavSearch";
 import { getCurrentUser } from "@/lib/auth";
 import { NAV_GROUPS } from "./nav-links";
 import { ResumeList, SyncStatus, MobileTabs, SignOutLink } from "./ShellClient";
+import RentCalculator from "./RentCalculator";
 
 // Older pages pass the keys of the old top nav.
 const ALIASES: Record<string, string> = { pipeline: "deals" };
@@ -49,6 +50,7 @@ export default async function Nav({ active }: { active?: string }) {
         ))}
         <ResumeList />
         <div className="hs-spacer" />
+        <nav className="hs-group" aria-label="Tools"><RentCalculator /></nav>
         <SyncStatus />
         <div className="hs-user">
           <span className="avatar">{initials}</span>

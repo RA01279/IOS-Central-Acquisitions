@@ -2612,3 +2612,20 @@ a.stat-tile.stat-on { border-color: var(--brand); box-shadow: inset 0 0 0 1px va
 .multi-deal-notes { margin: 0; font-size: 12px; color: var(--n600); background: var(--canvas); border-radius: 4px; padding: 8px; white-space: pre-wrap; }
 .multi-deal-flags { margin: 0; padding-left: 18px; font-size: 12px; color: #8a5a14; }
 .multi-deal-broker { display: flex; flex-direction: column; gap: 4px; max-width: 520px; margin-bottom: 14px; font-size: 11px; font-weight: 600; color: var(--n600); }
+
+/* ---------- Rent calculator (components/RentCalculator) ---------- */
+button.hs-link.hs-tool { width: 100%; background: none; border: 0; cursor: pointer; text-align: left; }
+button.hs-link.hs-tool:hover { background: rgba(255, 255, 255, 0.06); }
+.calc-backdrop { position: fixed; inset: 0; background: rgba(10, 37, 64, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.calc-dialog { background: #fff; border-radius: 10px; box-shadow: var(--shadow-lg); width: min(440px, 100%); padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; }
+.calc-head { display: flex; justify-content: space-between; align-items: center; }
+.calc-head h2 { margin: 0; font: 600 18px/1.2 var(--font-display); color: var(--navy); }
+.calc-close { background: none; border: 0; font-size: 22px; line-height: 1; color: var(--n500); cursor: pointer; padding: 2px 6px; }
+.calc-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.calc-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--n600); }
+.calc-input { display: flex; align-items: center; gap: 6px; border: 1px solid var(--n300); border-radius: 4px; padding: 0 0 0 10px; }
+.calc-input:focus-within { border-color: var(--brand); box-shadow: 0 0 0 2px var(--blue-50); }
+.calc-input > span { color: var(--n500); font-weight: 400; }
+.calc-input input { flex: 1; min-width: 0; border: 0; outline: 0; font: 500 18px/1 var(--font-mono); padding: 10px 0; color: var(--ink); background: transparent; }
+.calc-copy { border: 0; border-left: 1px solid var(--n200); background: var(--canvas); color: var(--brand); font: 600 12px/1 var(--font-body); padding: 0 12px; align-self: stretch; cursor: pointer; border-radius: 0 4px 4px 0; }
+.calc-copy:disabled { color: var(--n400); cursor: default; }
