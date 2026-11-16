@@ -134,3 +134,56 @@ export async function narrativeEvidence(marketIn: string, submarketIn: string | 
   const labels = [...sources.map((s) => s.label), "Hopper comps"];
   return { market, submarket, reports, sources, labels, text: JSON.stringify(evidence).slice(0, 95000) };
 }
+
+/** A market-report read that finished but was never saved (the upload box had closed or given up). */
+export type PendingRead = {
+  runId: string;
+  readAt: string;
+  file: { path: string; name: string; pages: number | null };
+  report: MarketReport;
+  /** A saved report with the same publisher, title, period and market -- probably the same PDF uploaded again. */
+  duplicateOf: string | null;
+};
+
+/**
+ * This person's finished market-report reads from the last 30 days that were
+ * neither saved (no saved report has their PDF) nor discarded (reviewed_at).
+ */
+export async function listPendingReads(email: string, parse: (report: string) => MarketReport | null): Promise<PendingRead[]> {
+  const db = getServiceClient();
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const { data: runs, error } = await db.from("agent_runs").select("id, meta, result, finished_at")
+    .eq("owner_email", email.toLowerCase()).eq("agent", "market-report").eq("status", "completed").is("reviewed_at", null)
+    .not("meta", "is", null).gte("created_at", since).order("finished_at", { ascending: false }).limit(20);
+  if (error) throw new Error(`Loading pending reads: ${error.message}`);
+  if (!runs?.length) return [];
+  const paths = runs.map((r: any) => String(r.meta?.path ?? "")).filter(Boolean);
+  const [{ data: savedByPath }, { data: savedAll }] = await Promise.all([
+    db.from("market_reports").select("storage_path").in("storage_path", paths),
+    db.from("market_reports").select("id, publisher, title, period, market").limit(1000),
+  ]);
+  const saved = new Set((savedByPath ?? []).map((r: any) => r.storage_path));
+  const key = (r: { publisher?: string | null; title?: string | null; period?: string | null; market?: string | null }) =>
+    [r.publisher, r.title, r.period, r.market].map((x) => String(x ?? "").trim().toLowerCase()).join("|");
+  const savedKeys = new Map((savedAll ?? []).map((r: any) => [key(r), r.id as string]));
+  const out: PendingRead[] = [];
+  for (const r of runs as any[]) {
+    const path = String(r.meta?.path ?? "");
+    if (!path || saved.has(path)) continue;
+    const report = parse(String(r.result?.report ?? ""));
+    if (!report) continue;
+    out.push({
+      runId: r.id, readAt: r.finished_at,
+      file: { path, name: String(r.meta?.fileName ?? path.split("/").pop()), pages: Number.isInteger(r.meta?.pages) ? r.meta.pages : null },
+      report, duplicateOf: savedKeys.get(key(report)) ?? null,
+    });
+  }
+  return out;
+}
+
+/** Hides a pending read (discarded, or saved under another upload of the same PDF). Owner-scoped. */
+export async function dismissRead(runId: string, email: string) {
+  const { error } = await getServiceClient().from("agent_runs").update({ reviewed_at: new Date().toISOString() })
+    .eq("id", runId).eq("owner_email", email.toLowerCase()).eq("agent", "market-report");
+  if (error) throw new Error(error.message);
+}

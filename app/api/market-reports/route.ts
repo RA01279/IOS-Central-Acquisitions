@@ -3,6 +3,8 @@
 // Broker market reports.
 // POST { action: "upload-url", fileName }                        -> signed upload slot (PDF)
 // POST { action: "save", path, fileName, pages, report }          -> save a reviewed report + its statistics
+//   (runId: the read it came from, which then drops off "waiting for your review")
+// POST { action: "dismiss", runId }                              -> discard a finished read without saving it
 // POST { action: "evidence", market, submarket? }                 -> the narrative agent's evidence pack
 // POST { action: "save-narrative", market, submarket?, report }   -> store the agent's narrative
 // GET  ?doc=<reportId>                                            -> the PDF (5-minute signed link)
@@ -12,7 +14,7 @@ import { getServiceClient } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { parseMarketReport } from "@/lib/agents/market-report";
 import { parseMarketNarrative } from "@/lib/agents/market-narrative";
-import { narrativeEvidence, saveReport } from "@/lib/market-reports";
+import { dismissRead, narrativeEvidence, saveReport } from "@/lib/market-reports";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PATH = /^market-reports\/[0-9a-f-]{36}-[A-Za-z0-9._-]+\.pdf$/i;
@@ -41,7 +43,14 @@ export async function POST(req: NextRequest) {
       const { data: listed } = await db.storage.from("documents").list(folder, { search: base, limit: 2 });
       if (!listed?.some((o: any) => o.name === base)) return NextResponse.json({ error: "The PDF didn't arrive. Upload it again." }, { status: 400 });
       const id = await saveReport(report, { path, name: String(body.fileName ?? base).slice(0, 200), pages: Number.isInteger(body.pages) ? body.pages : null }, user.email);
+      if (typeof body.runId === "string" && UUID.test(body.runId)) await dismissRead(body.runId, user.email).catch(() => {});
       return NextResponse.json({ ok: true, id }, { status: 201 });
+    }
+
+    if (body.action === "dismiss") {
+      if (typeof body.runId !== "string" || !UUID.test(body.runId)) return NextResponse.json({ error: "Which read?" }, { status: 400 });
+      await dismissRead(body.runId, user.email);
+      return NextResponse.json({ ok: true });
     }
 
     if (body.action === "evidence") {

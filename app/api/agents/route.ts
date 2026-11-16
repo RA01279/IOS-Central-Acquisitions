@@ -47,6 +47,14 @@ export async function POST(req: NextRequest) {
   const agent = AGENTS.find(a => a.id === body.agent)!;
   if (agent.needsDeal && !body.dealId) return json({ error: "Select a deal first." }, 400);
   if ((body.agent === "deal-intake" || body.agent === "deal-import" || body.agent === "comp-import" || body.agent === "portfolio-import" || body.agent === "market-report" || body.agent === "market-narrative") && !body.text.trim()) return json({ error: "Paste the broker email or offering text." }, 400);
+  // A market-report read records the uploaded PDF it reads, so a read that
+  // finishes after the upload box gave up can still be reviewed and saved.
+  let meta: Record<string, unknown> | null = null;
+  if (body.agent === "market-report" && body.meta && typeof body.meta === "object") {
+    const path = String(body.meta.path ?? "");
+    if (!/^market-reports\/[0-9a-f-]{36}-[A-Za-z0-9._-]+\.pdf$/i.test(path)) return json({ error: "Upload the report first." }, 400);
+    meta = { path, fileName: String(body.meta.fileName ?? "").slice(0, 200), pages: Number.isInteger(body.meta.pages) ? body.meta.pages : null };
+  }
   let reviewed: ReviewedSourcing | null = null;
   if (body.agent === "off-market-sourcing") {
     if (!UUID.test(body.sweepId ?? "") || !validBuyBox(body.buyBox)) return json({ error: "Run a saved sweep and check the usable-acreage and coverage limits." }, 400);
@@ -76,7 +84,7 @@ export async function POST(req: NextRequest) {
   const prompt = buildPrompt(body.agent, evidence, reviewed ? JSON.stringify(reviewed) : body.text, new Date().toISOString());
   if (prompt.length > 350000) return json({ error: "Evidence is too large. Narrow the selected deal or shorten the source text." }, 413);
   const { data, error } = await db.from("agent_runs").insert({ owner_email: email, helper_id: helper.id, agent: body.agent,
-    deal_id: body.dealId || null, prompt, sources: evidence }).select("id").single();
+    deal_id: body.dealId || null, prompt, sources: evidence, ...(meta ? { meta } : {}) }).select("id").single();
   if (error) throw error;
   return json(data, 202);
  } catch { return json({ error: "Could not prepare the report. No deal records were changed." }, 500); }

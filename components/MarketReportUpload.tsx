@@ -5,6 +5,11 @@
 // read in the browser, the Hopper helper extracts the statistics and
 // takeaways (market-report agent), and the result is shown for review --
 // market, submarkets, period, every statistic -- before it is saved.
+//
+// The upload box waits as long as the helper has the read (in line or
+// reading) and says which. A read that finishes after the box was closed is
+// not lost: it is listed under "Read, waiting for your review" (`pending`,
+// lib/market-reports listPendingReads) to review and save, or discard.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -12,10 +17,11 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { pdfText } from "@/lib/pdf-text";
 import { runAgent, helperOnline } from "@/lib/agent-client";
 import { MARKET_METRICS, METRIC_LABELS, parseMarketReport, type MarketMetric, type MarketReport } from "@/lib/agents/market-report";
+import type { PendingRead } from "@/lib/market-reports";
 
 const BASIS_LABELS: Record<string, string> = { current: "Current", average: "Average", prior_period: "Prior period", year_ago: "Year ago", forecast: "Forecast", peak: "Peak" };
 
-export default function MarketReportUpload() {
+export default function MarketReportUpload({ pending = [] }: { pending?: PendingRead[] }) {
   const router = useRouter();
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +30,9 @@ export default function MarketReportUpload() {
   const [draft, setDraft] = useState<MarketReport | null>(null);
   const [keep, setKeep] = useState<boolean[]>([]);
   const [saved, setSaved] = useState<string | null>(null);
+  // The read this draft came from, so saving it clears it from "waiting for your review".
+  const [runId, setRunId] = useState<string | null>(null);
+  const [busyRun, setBusyRun] = useState<string | null>(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -36,6 +45,7 @@ export default function MarketReportUpload() {
     setError(null);
     setSaved(null);
     setDraft(null);
+    setRunId(null);
     try {
       if (!/\.pdf$/i.test(f.name)) throw new Error("Choose the report as a PDF.");
       setStep("Uploading…");
@@ -47,8 +57,15 @@ export default function MarketReportUpload() {
       setStep("Reading the PDF…");
       const pdf = await pdfText(await f.arrayBuffer(), 95000, 60);
       if (pdf.scanned) throw new Error("This PDF is scanned images with no text layer, so it can't be read.");
-      setStep("Reading the report with the Hopper helper… (usually under a minute)");
-      const report = parseMarketReport(await runAgent("market-report", `MARKET REPORT (${f.name}, ${pdf.pages} pages):\n${pdf.text}`, { alive: () => alive.current }));
+      setStep("Sending the report to the Hopper helper…");
+      const report = parseMarketReport(await runAgent("market-report", `MARKET REPORT (${f.name}, ${pdf.pages} pages):\n${pdf.text}`, {
+        alive: () => alive.current,
+        meta: { path: s.path, fileName: f.name, pages: pdf.pages },
+        onQueued: (id) => setRunId(id),
+        onStatus: (st) => setStep(st === "queued"
+          ? "Waiting in line for the Hopper helper… It reads this as soon as a slot frees up. You can leave this page; the result will wait here for your review."
+          : "Reading the report… (usually a few minutes). You can leave this page; the result will wait here for your review."),
+      }));
       if (!report) throw new Error("Couldn't read a market and statistics from that report.");
       setFile({ path: s.path, name: f.name, pages: pdf.pages });
       setDraft(report);
@@ -68,18 +85,42 @@ export default function MarketReportUpload() {
       const res = await fetch("/api/market-reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save", path: file.path, fileName: file.name, pages: file.pages, report: { ...draft, metrics: draft.metrics.filter((_, i) => keep[i]) } }),
+        body: JSON.stringify({ action: "save", path: file.path, fileName: file.name, pages: file.pages, runId, report: { ...draft, metrics: draft.metrics.filter((_, i) => keep[i]) } }),
       });
       const b = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(b.error ?? "Save failed");
       setSaved(`${draft.publisher} ${draft.period} — ${draft.submarkets.join(", ") || draft.market} saved with ${keep.filter(Boolean).length} statistics.`);
       setDraft(null);
       setFile(null);
+      setRunId(null);
       router.refresh();
     } catch (e: any) {
       setError(e.message);
     } finally {
       setStep(null);
+    }
+  }
+
+  function review(p: PendingRead) {
+    setError(null);
+    setSaved(null);
+    setFile({ path: p.file.path, name: p.file.name, pages: p.file.pages ?? 0 });
+    setDraft(p.report);
+    setKeep(p.report.metrics.map(() => true));
+    setRunId(p.runId);
+  }
+  async function discard(p: PendingRead) {
+    setBusyRun(p.runId);
+    setError(null);
+    try {
+      const res = await fetch("/api/market-reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "dismiss", runId: p.runId }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn't discard it");
+      if (runId === p.runId) { setDraft(null); setFile(null); setRunId(null); }
+      router.refresh();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusyRun(null);
     }
   }
 
@@ -95,6 +136,26 @@ export default function MarketReportUpload() {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f); e.target.value = ""; }} />
       </label>
       {online === false && <p className="error">The Hopper helper is offline. Start it from your desktop, then upload.</p>}
+      {pending.length > 0 && !draft && (
+        <div className="pending-reads">
+          <strong>Read, waiting for your review ({pending.length})</strong>
+          <ul>
+            {pending.map((p) => (
+              <li key={p.runId}>
+                <span>
+                  {p.report.publisher} · {p.report.title || p.report.market} · {p.report.period}
+                  <span className="muted"> · {p.report.metrics.length} statistics · read {new Date(p.readAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                  {p.duplicateOf ? <span className="badge2 warning" style={{ marginLeft: 6 }}>Already saved</span> : null}
+                </span>
+                <span className="pending-actions">
+                  <button type="button" className={p.duplicateOf ? "secondary" : undefined} onClick={() => review(p)} disabled={step !== null || busyRun !== null}>Review &amp; save</button>
+                  <button type="button" className="secondary" onClick={() => discard(p)} disabled={step !== null || busyRun !== null}>{busyRun === p.runId ? "Discarding…" : "Discard"}</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {step && <p className="hint">{step}</p>}
       {saved && <p className="hint"><strong>Saved:</strong> {saved}</p>}
       {error && <p className="error">{error}</p>}

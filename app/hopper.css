@@ -2635,3 +2635,7 @@ button.hs-link.hs-tool:hover { background: rgba(255, 255, 255, 0.06); }
 .calc-results dd { margin: 2px 0 0; font: 600 16px/1.2 var(--font-mono); color: var(--navy); word-break: break-all; }
 @media (max-width: 560px) { .calc-dialog { padding: 16px; } .calc-input input { font-size: 16px; } }
 .qualify-banner { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; margin: 0 0 12px; border-radius: 6px; background: var(--blue-50); border: 1px solid var(--blue-200); color: var(--navy); font-size: 13px; }
+.pending-reads { border: 1px solid var(--watch); background: var(--watch-bg); border-radius: 6px; padding: 10px 12px; font-size: 13px; }
+.pending-reads ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pending-reads li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pending-actions { display: inline-flex; gap: 6px; }

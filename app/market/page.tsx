@@ -8,7 +8,9 @@ import type { CompType } from "@/lib/comps/match";
 import MarketReportUpload from "@/components/MarketReportUpload";
 import MarketNarrativePanel, { type Area, type SavedNarrative } from "@/components/MarketNarrativePanel";
 import MarketReportDelete from "@/components/MarketReportDelete";
-import { listMetrics, listReports } from "@/lib/market-reports";
+import { listMetrics, listPendingReads, listReports } from "@/lib/market-reports";
+import { parseMarketReport } from "@/lib/agents/market-report";
+import { getCurrentUser } from "@/lib/auth";
 
 // Live, per-request, auth-gated data -- never statically prerender this.
 export const dynamic = "force-dynamic";
@@ -74,6 +76,9 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
       return (data ?? []) as SavedNarrative[];
     }),
   ]);
+  // Reads that finished while nobody was waiting on the upload box.
+  const viewer = await getCurrentUser();
+  const pending = viewer ? await listPendingReads(viewer.email, parseMarketReport).catch(() => []) : [];
   const reportMetrics = await listMetrics(reports.map((r: any) => r.id));
   const areaMap = new Map<string, Area>();
   for (const r of reports as any[]) {
@@ -164,7 +169,7 @@ export default async function MarketPage(props: { searchParams: Promise<Params> 
 
         <section className="panel">
           <h2>Broker market reports ({reports.length})</h2>
-          <MarketReportUpload />
+          <MarketReportUpload pending={pending} />
           {reports.length > 0 && (
             <div style={{ overflowX: "auto" }}>
               <table className="summary-table">
