@@ -52,6 +52,7 @@ const checked = { report: JSON.stringify({ version: 2, sites: [{ ref: "S1", owne
   const out = await runAgent(job("off-market-sourcing"), undefined, settings, run);
   assert.equal(calls.length, 2);
   assert(calls.every((c) => c.opts.web === true && c.opts.settings.reasoning === "high"));
+  assert.equal(calls[0].opts.minutes, 25, "a 10-site sourcing batch gets a longer first pass");
   assert(calls[1].prompt.includes("PROMPT") && calls[1].prompt.includes("ACME LLC"), "the checker sees the task and the draft");
   assert.equal(JSON.parse(out.result.report).sites[0].owner, "ACME HOLDINGS LLC");
   assert.deepEqual(out.usage, { input_tokens: 20, output_tokens: 2 });

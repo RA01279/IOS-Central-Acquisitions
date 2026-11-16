@@ -37,6 +37,8 @@ const BRIDGE = fileURLToPath(new URL("./hopper-mcp.mjs", import.meta.url)).repla
 export const VERIFY = new Set(["off-market-sourcing", "site-research", "ic-narrative", "market-narrative", "deal-intake", "comp-analyst", "underwriting-review"]);
 const REASONING = new Set(["low", "medium", "high", "xhigh"]);
 const DRAFT_MINUTES = 15, CHECK_MINUTES = 12;
+/** Longer first pass for agents that research many sites in one job (10 per sourcing batch). Draft + check stays under Hopper's 40-minute limit. */
+const DRAFT_MINUTES_FOR = { "off-market-sourcing": 25 };
 /** Above this the task plus the draft won't fit a second pass comfortably; the draft goes out unchecked (and says so). */
 const VERIFY_MAX_PROMPT = 250000;
 
@@ -166,7 +168,7 @@ export async function runAgent(job, launcher, settings = agentSettings(), run = 
   if (!allowed.has(job.agent) || typeof job.prompt !== "string" || job.prompt.length > 350000) throw new Error("Invalid agent job.");
   const web = WEB_SEARCH.has(job.agent);
   const tools = settings.tools !== false && hopper?.token && HOPPER_TOOLS.has(job.agent) ? { base: hopper.base, token: hopper.token, jobId: job.id } : null;
-  const draft = await run(job.prompt, { web, minutes: DRAFT_MINUTES, settings, launcher, tools });
+  const draft = await run(job.prompt, { web, minutes: DRAFT_MINUTES_FOR[job.agent] ?? DRAFT_MINUTES, settings, launcher, tools });
   if (!settings.verify || !VERIFY.has(job.agent)) return draft;
   if (job.prompt.length > VERIFY_MAX_PROMPT) {
     return { ...draft, result: { ...draft.result, limitations: [...draft.result.limitations, "Not fact-checked: the source material was too large for a second pass."] } };

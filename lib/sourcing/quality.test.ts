@@ -65,10 +65,27 @@ describe("qualification evidence and fit", () => {
  it("requires exact unique references and linked dated evidence for every fact", () => {
   expect(parse([base])).not.toBeNull();
   expect(parse([])).toBeNull(); expect(parse([base, base])).toBeNull(); expect(parse([base], ["S1", "S2"])).toBeNull();
-  expect(parse([{ ...base, owner: "Owner LLC", sources: ["County records"] }])).toBeNull();
-  expect(parse([{ ...base, owner: "Owner LLC", sources: [`${url} accessed 2026-10-29`] }])).toBeNull();
-  expect(parse([{ ...base, owner: "Owner LLC", sources: [`${url} accessed 2026-10-29`], fieldSources: { owner: url } }])).not.toBeNull();
-  expect(parse([{ ...base, ownerType: "owner-user" }])).toBeNull();
+  // A fact without a linked, dated source is blanked and flagged -- never shown, never sinks the batch.
+  const noLink = parse([{ ...base, owner: "Owner LLC", sources: ["County records"] }])!.sites[0];
+  expect(noLink.owner).toBeNull();
+  expect(noLink.sources).toEqual([]);
+  expect(noLink.unverified.join(" ")).toMatch(/Owner "Owner LLC" not shown/);
+  expect(noLink.unverified.join(" ")).toMatch(/Source set aside/);
+  const unlinkedField = parse([{ ...base, owner: "Owner LLC", sources: [`${url} accessed 2026-10-29`] }])!.sites[0];
+  expect(unlinkedField.owner).toBeNull();
+  const undated = parse([{ ...base, owner: "Owner LLC", sources: [url], fieldSources: { owner: url } }])!.sites[0];
+  expect(undated.owner).toBeNull();
+  const hopperCited = parse([{ ...base, owner: "Owner LLC", sources: ["Hopper: parcel_lookup"], fieldSources: { owner: "Hopper: parcel_lookup" } }])!.sites[0];
+  expect(hopperCited.owner).toBeNull();
+  const good = parse([{ ...base, owner: "Owner LLC", sources: [`${url} accessed 2026-10-29`], fieldSources: { owner: url } }])!.sites[0];
+  expect(good.owner).toBe("Owner LLC");
+  expect(good.unverified).toEqual([]);
+  const ownerUser = parse([{ ...base, ownerType: "owner-user" }])!.sites[0];
+  expect(ownerUser.ownerType).toBe("unknown");
+  expect(ownerUser.unverified.join(" ")).toMatch(/Owner-user/);
+  // One bad site does not sink the others.
+  const two = parse([{ ...base, owner: "No Source LLC" }, { ...base, ref: "S2", owner: "Owner LLC", sources: [`${url} accessed 2026-10-29`], fieldSources: { owner: url } }], ["S1", "S2"])!;
+  expect(two.sites.map((x) => x.owner)).toEqual([null, "Owner LLC"]);
  });
  it("does not use gross acres or floor area to claim strong fit", () => {
   const box = { minAcres: 2, maxAcres: 10, maxCoveragePct: 20 };

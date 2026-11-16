@@ -90,8 +90,10 @@ const site = (ref, extra = {}) => ({ ref, parcelAddress: "100 Yard Rd", city: "T
 const good = { version: sourcing.SOURCING_VERSION, sites: [site("S1"), site("S2", { owner: null, parcelId: null, acres: null, sources: [] })] };
 assert.equal(sourcing.parseSourcing(JSON.stringify(good)).sites.length, 2);
 assert.equal(sourcing.parseSourcing(JSON.stringify(good), ["S1"]), null, "refs must be ones that were supplied");
-assert.equal(sourcing.parseSourcing(JSON.stringify({ ...good, sites: [site("S1", { sources: [] })] })), null, "owner facts need a source");
-assert.equal(sourcing.parseSourcing(JSON.stringify({ ...good, sites: [site("S1", { ownerType: "landlord" })] })), null, "enumerations are enforced");
+{ const unsourced = sourcing.parseSourcing(JSON.stringify({ ...good, sites: [site("S1", { sources: [] })] })).sites[0];
+  assert.equal(unsourced.owner, null, "owner facts need a source"); assert.equal(unsourced.parcelId, null); assert.equal(unsourced.acres, null);
+  assert.match(unsourced.unverified.join(" "), /not shown/); }
+assert.equal(sourcing.parseSourcing(JSON.stringify({ ...good, sites: [site("S1", { ownerType: "landlord" })] })).sites[0].ownerType, "unknown", "an unknown owner type falls back to unknown");
 assert.equal(sourcing.parseSourcing(JSON.stringify({ ...good, sites: Array.from({ length: 11 }, (_, i) => site("S" + (i + 1))) })), null, "at most 10 sites");
 assert.match(sourcing.SOURCING_INSTRUCTIONS, /never sent automatically/);
 assert.match(sourcing.SOURCING_INSTRUCTIONS, /must come from the appraisal district or deed records/);
