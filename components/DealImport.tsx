@@ -35,7 +35,8 @@ export default function DealImport({
 }: {
   onImported: (draft: Draft, file: ImportedFile | null, source: string) => void;
 }) {
-  const [mode, setMode] = useState<"upload" | "outlook">("upload");
+  const [mode, setMode] = useState<"upload" | "outlook" | "paste">("upload");
+  const [pasted, setPasted] = useState("");
   const [agentsOnline, setAgentsOnline] = useState<boolean | null>(null);
   const [mail, setMail] = useState<{ paired: boolean; online: boolean } | null>(null);
   const [step, setStep] = useState("");
@@ -171,10 +172,13 @@ export default function DealImport({
           <button type="button" className={mode === "outlook" ? "on" : ""} onClick={() => setMode("outlook")} style={{ fontFamily: "var(--font-body)" }}>
             From Outlook
           </button>
+          <button type="button" className={mode === "paste" ? "on" : ""} onClick={() => setMode("paste")} style={{ fontFamily: "var(--font-body)" }}>
+            Paste email
+          </button>
         </div>
       </div>
       <p className="hint" style={{ margin: 0 }}>
-        Hopper reads it and fills in the form below. Nothing is created until you check the form and click Create deal.
+        Hopper reads it and fills in the form below -- or, when an email covers several separate properties, shows each as a card to create together. Nothing is created until you check it and click Create.
       </p>
       {helperNote}
 
@@ -211,6 +215,25 @@ export default function DealImport({
             }}
           />
         </label>
+      ) : mode === "paste" ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pasted.trim()) void run(async () => { const draft = await extract(pasted); if (alive.current) onImported(draft, null, "Pasted email"); });
+          }}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        >
+          <textarea
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            placeholder="Paste the broker's email (one property or several)"
+            rows={8}
+            maxLength={98000}
+            disabled={busy || !agentsOnline}
+            style={{ font: "inherit", fontSize: 13, padding: "8px 10px", border: "1px solid #C4CFD9", borderRadius: 3, width: "100%", boxSizing: "border-box" }}
+          />
+          <div><button type="submit" disabled={busy || !agentsOnline || !pasted.trim()}>Read this email</button></div>
+        </form>
       ) : mail && !mail.paired ? (
         <p className="hint" style={{ margin: 0 }}>
           Pair the Outlook helper first from <a href="/comps">Comps</a> (one-time), then come back here.

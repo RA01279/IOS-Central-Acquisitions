@@ -1,12 +1,14 @@
 "use client";
-// New Deal: the Import panel (OM / Outlook) above the form. When an import
-// lands, the form remounts prefilled for review. A portfolio OM has its own
+// New Deal: the Import panel (OM / Outlook / pasted email) above the form. When
+// an import lands, the form remounts prefilled for review -- or, when the source
+// covers several separate properties, one card per property (MultiDealImport). A portfolio OM has its own
 // panel: one deal per site, grouped as a portfolio.
 
 import { useState } from "react";
 import DealForm from "./DealForm";
 import DealImport, { ImportReview, type ImportedFile } from "./DealImport";
 import PortfolioImport from "./PortfolioImport";
+import MultiDealImport from "./MultiDealImport";
 import type { DealImport as Draft } from "@/lib/agents/deal-import";
 
 export default function NewDealClient() {
@@ -27,8 +29,15 @@ export default function NewDealClient() {
       ) : (
         <>
           <DealImport onImported={(draft, file, source) => setImp((p) => ({ draft, file, source, n: (p?.n ?? 0) + 1 }))} />
-          {imp && <ImportReview draft={imp.draft} source={imp.source} file={imp.file} />}
-          <DealForm key={imp?.n ?? 0} prefill={imp?.draft.fields} importedFile={imp?.file ?? null} />
+          {imp?.draft.others?.length ? (
+            // Several separate properties in one email or OM: one card each, created together.
+            <MultiDealImport key={imp.n} drafts={[imp.draft, ...imp.draft.others]} file={imp.file} source={imp.source} />
+          ) : (
+            <>
+              {imp && <ImportReview draft={imp.draft} source={imp.source} file={imp.file} />}
+              <DealForm key={imp?.n ?? 0} prefill={imp?.draft.fields} importedFile={imp?.file ?? null} />
+            </>
+          )}
         </>
       )}
     </>
