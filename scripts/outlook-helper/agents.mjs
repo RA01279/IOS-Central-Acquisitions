@@ -190,8 +190,8 @@ export async function runAgent(job, launcher, settings = agentSettings(), run = 
  */
 export function startAgentLoop({ base, token, launcher, settings = agentSettings() }) {
   let stopped = false;
-  const request = async (method = "GET", body, heartbeat = false) => {
-    const response = await fetch(new URL("/api/agents/worker" + (heartbeat ? "?heartbeat=1" : ""), base), {
+  const request = async (method = "GET", body, heartbeat = false, lane = null) => {
+    const response = await fetch(new URL("/api/agents/worker" + (heartbeat ? "?heartbeat=1" : lane ? `?lane=${lane}` : ""), base), {
       method, redirect: "error", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000),
     });
@@ -201,7 +201,7 @@ export function startAgentLoop({ base, token, launcher, settings = agentSettings
     return response.json();
   };
   const pulse = setInterval(() => { if (!stopped) void request("GET", undefined, true).catch(() => {}); }, 15000);
-  console.log(`Agents: up to ${settings.concurrency} at once, reasoning ${settings.reasoning}${settings.model ? `, model ${settings.model}` : ""}, fact-check ${settings.verify ? "on" : "off"}, Hopper tools ${settings.tools ? "on" : "off"}.`);
+  console.log(`Agents: up to ${settings.concurrency} at once${settings.concurrency > 1 ? " (one kept free for quick reads)" : ""}, reasoning ${settings.reasoning}${settings.model ? `, model ${settings.model}` : ""}, fact-check ${settings.verify ? "on" : "off"}, Hopper tools ${settings.tools ? "on" : "off"}.`);
   const slot = async (n) => {
     // Stagger the slots so they don't all ask for work in the same instant.
     await new Promise(resolve => setTimeout(resolve, n * 1500));
@@ -209,7 +209,9 @@ export function startAgentLoop({ base, token, launcher, settings = agentSettings
     while (!stopped) {
       try {
         if (pending) { await request("POST", pending); pending = null; }
-        const { job } = await request();
+        // Slot 0 is reserved for quick jobs (reading an OM, comp sheet, market
+        // report...) so they never wait behind long sourcing batches.
+        const { job } = await request("GET", undefined, false, n === 0 && settings.concurrency > 1 ? "quick" : null);
         if (job) {
           console.log("Agent job started.");
           try { pending = { id: job.id, ...await runAgent(job, launcher, settings, codexRun, { base: new URL(base).origin, token }) }; }

@@ -17,6 +17,7 @@ function builder(table) {
  select(_c,o) { selection = true; if (o?.count) counting = true; return b; },
  eq(k,v) { filters.push(r=>r[k]===v); return b; }, gt(k,v) { filters.push(r=>r[k]>v); return b; },
  lt(k,v) { filters.push(r=>r[k]<v); return b; }, in(k,v) { filters.push(r=>v.includes(r[k])); return b; },
+ not(k,op,v) { filters.push(r=>!(op==="in"?String(v).replace(/[()]/g,"").split(",").includes(r[k]):r[k]===v)); return b; },
  order() { return b; }, limit(n) { max=n; return b; },
  insert(v) {op="insert";payload=v;return b;},upsert(v) {op="upsert";payload=v;return b;},
  update(v) {op="update";payload=v;return b;},delete() {op="delete";return b;},
@@ -115,6 +116,14 @@ const checked=JSON.parse(sourced.result.report).sites;
 assert.equal(checked[0].ownerType,'public');assert.equal(checked[0].fit,'poor');
 assert.equal(checked[1].fit,'unknown','an agent cannot claim strong fit without usable area and footprint');
 assert.equal((await browser.GET(req(null,{path:'?id='+job.id}))).body.sources.find(s=>s.label==='Reviewed sourcing sites v2').data.sites.length,2);
+// Quick jobs go before queued sourcing batches; the helper's quick lane never takes a batch.
+const batchRun=await browser.POST(req(sourcingRequest)); assert.equal(batchRun.status,202);
+const quickRun=await browser.POST(req({agent:'deal-intake',text:'A quick read queued after the batch'})); assert.equal(quickRun.status,202);
+assert.equal((await worker.GET(req(null,{token,path:'?lane=quick'}))).body.job.id,quickRun.body.id,'the quick lane takes the quick job first');
+assert.equal((await worker.GET(req(null,{token,path:'?lane=quick'}))).body.job,null,'the quick lane never takes a sourcing batch');
+const quick2=await browser.POST(req({agent:'market-report',text:'Another quick read'}));
+assert.equal((await worker.GET(req(null,{token}))).body.job.id,quick2.body.id,'any slot takes a quick job before an older batch');
+assert.equal((await worker.GET(req(null,{token}))).body.job.id,batchRun.body.id,'then the batch');
 tables.outlook_helpers[0].expires_at=new Date(Date.now()-1000).toISOString();
 assert.equal((await worker.GET(req(null,{token}))).status,401);
 console.log("PASS: enqueue, single claim, duplicate prevention, malformed result rejection, saved report retrieval, owner isolation, timeout and pairing expiry.");

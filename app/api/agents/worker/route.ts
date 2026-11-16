@@ -11,7 +11,7 @@ import { parseCompImport } from "@/lib/agents/comp-import";
 import { NextRequest, after } from "next/server";
 import { autoExecSummary } from "@/lib/ic-deck/auto";
 import { workerContext, json, reap } from "@/lib/agents/server";
-import { UUID } from "@/lib/agents/catalog";
+import { UUID, BATCH_AGENTS } from "@/lib/agents/catalog";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 export async function GET(req: NextRequest) {
@@ -22,8 +22,19 @@ export async function GET(req: NextRequest) {
   const heartbeat = await db.from("outlook_helpers").update({ agents_last_seen_at: new Date().toISOString() }).eq("id", helper.id).eq("token_hash", helper.token_hash);
   if (heartbeat.error) throw heartbeat.error;
   if (req.nextUrl.searchParams.has("heartbeat")) return json({ ok: true });
-  const { data, error } = await db.from("agent_runs").select("id").eq("owner_email", helper.owner_email).eq("helper_id", helper.id).eq("status", "queued").order("created_at").limit(1).maybeSingle();
-  if (error) throw error;
+  // Quick jobs (reading an OM, comp sheet, market report, deal email; a single
+  // research question) go before long research batches, so a two-minute read
+  // never waits behind an hour of sourcing. ?lane=quick is the helper's
+  // reserved slot: it only ever takes quick jobs.
+  const queued = () => db.from("agent_runs").select("id").eq("owner_email", helper.owner_email).eq("helper_id", helper.id).eq("status", "queued").order("created_at").limit(1);
+  const quick = await queued().not("agent", "in", `(${BATCH_AGENTS.join(",")})`).maybeSingle();
+  if (quick.error) throw quick.error;
+  let data = quick.data;
+  if (!data && req.nextUrl.searchParams.get("lane") !== "quick") {
+    const batch = await queued().in("agent", [...BATCH_AGENTS]).maybeSingle();
+    if (batch.error) throw batch.error;
+    data = batch.data;
+  }
   if (!data) return json({ job: null });
   const claimed = await db.from("agent_runs").update({ status: "processing", started_at: new Date().toISOString() })
     .eq("id", data.id).eq("helper_id", helper.id).eq("status", "queued").select("id,agent,prompt").maybeSingle();

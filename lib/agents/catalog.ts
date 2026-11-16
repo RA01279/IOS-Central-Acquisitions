@@ -57,6 +57,8 @@ export const WEB_SEARCH_AGENTS: readonly AgentId[] = ["site-research", "ic-narra
  * app/api/agents/tools). The helper keeps the same list (HOPPER_TOOLS in
  * scripts/outlook-helper/agents.mjs). Document readers work from the document only.
  */
+/** Long research jobs (a sourcing batch is 10 sites, 15-25 minutes). Everything else is quick and is claimed first (app/api/agents/worker). */
+export const BATCH_AGENTS = ["off-market-sourcing"] as const;
 export const TOOL_AGENTS: readonly AgentId[] = ["site-research", "ic-narrative", "off-market-sourcing", "deal-intake", "comp-analyst", "underwriting-review", "market-narrative", "pipeline-follow-up"];
 const WEB_NAMES = () => WEB_SEARCH_AGENTS.map((id) => AGENTS.find((a) => a.id === id)!.name.toLowerCase()).join(", ");
 
