@@ -103,6 +103,9 @@ email='other@example.com';assert.equal((await browser.POST(req(sourcingRequest))
 const queue=async()=>{const r=await browser.POST(req(sourcingRequest));assert.equal(r.status,202);return (await worker.GET(req(null,{token}))).body.job;};
 let job=await queue();
 assert.ok(job.prompt.includes('100 Reviewed Yard Rd'));assert.ok(!job.prompt.includes('UNTRUSTED BROWSER LOCATION'));
+// A second Qualify for sites already being qualified is refused, naming them.
+const again=await browser.POST(req(sourcingRequest));assert.equal(again.status,409);assert.equal(JSON.stringify(again.body.alreadyQueued),'["S1","S2"]');
+assert.equal((await browser.POST(req({...sourcingRequest,refs:['S2']}))).status,409,'overlap with a running batch is refused too');
 const site=ref=>({ref,ownerType:'unknown',outdoorStorage:'unverified',fit:'strong',fitReason:'Agent claim',outreach:'',signals:[],sources:[],unverified:[]});
 const complete=async(sites)=>{assert.equal((await worker.POST(req({id:job.id,result:{report:JSON.stringify({version:'sourcing-v1',sites}),model:'test',limitations:[]}},{token}))).status,200);return tables.agent_runs.find(r=>r.id===job.id);};
 assert.equal((await complete([site('S1')])).status,'failed','missing reviewed references fail qualification');

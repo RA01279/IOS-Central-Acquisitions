@@ -417,6 +417,12 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
       {(sweep || report) && (
         <section className="panel">
           <h2>{report ? `3. Qualified sites${batch && batch.done.length + batch.failed.length < batch.runIds.length ? ` (${report.sites.length} so far)` : ""}` : "2. Pick sites to send to outreach or qualify"}</h2>
+          {batch || (run && ["queued", "processing"].includes(run.status)) ? (
+            <div className="qualify-banner" role="status">
+              <strong>{batch ? `Qualifying ${batch.sites} sites: ${batch.done.length} of ${batch.runIds.length} batches done${batch.failed.length ? `, ${batch.failed.length} failed` : ""}.` : `Qualifying with the agent (${run!.status === "queued" ? "waiting for your helper" : "researching"}).`}</strong>
+              <span>Your helper works several batches at once (about a minute per site). Results appear below as each batch finishes; you can leave this page and reopen them under Recent sourcing runs.</span>
+            </div>
+          ) : null}
           {sweep && !report && <>
             <p><strong>Reviewed search:</strong> {sweep.label}, {sweep.radiusMiles} miles. Profiles: {SOURCING_PROFILES.filter((p) => sweep.profileIds?.includes(p.id)).map((p) => p.label).join(", ") || "All existing yard-use profiles (previous sweep)"}. <strong>{visible.length} filtered properties</strong> / {sweep.sites.length} discovered properties. Map and filtered export use these same {visible.length} properties.</p>
             {sweep.criteriaKey && criteriaKey !== sweep.criteriaKey && <p role="status">Search criteria changed. Run Sweep to replace these results; the displayed list and export still reflect the reviewed search above.</p>}
@@ -479,14 +485,12 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                 <button type="button" onClick={() => sendToOutreach(selected.filter((ref) => !sent[ref]?.dealId))} disabled={!selected.length || !sweep.sweepId || selected.every((ref) => sent[ref]?.busy || sent[ref]?.dealId)}>
                   {`Send ${selected.length || ""} selected to outreach`}
                 </button>
-                <button type="button" className="secondary" onClick={qualify} disabled={!selected.length || busy !== null || online === false}>{busy === "agent" ? "Starting…" : `Qualify ${selected.length || ""} site${selected.length === 1 ? "" : "s"} with the agent first${batches > 1 ? ` (${batches} runs)` : ""}`}</button>
+                <button type="button" className="secondary" onClick={qualify} disabled={!selected.length || busy !== null || online === false || !!batch || (!!run && ["queued", "processing"].includes(run.status))}>{busy === "agent" ? "Queuing…" : batch || (run && ["queued", "processing"].includes(run.status)) ? "Qualifying… (see above)" : `Qualify ${selected.length || ""} site${selected.length === 1 ? "" : "s"} with the agent first${batches > 1 ? ` (${batches} runs)` : ""}`}</button>
                 {Object.values(sent).some((x) => x.dealId) ? <Link href="/outreach?tab=new">Open the outreach queue ({Object.values(sent).filter((x) => x.dealId).length} sent)</Link> : null}
               </div>
               <p className="hint" style={{ marginBottom: 0 }}>Send to outreach now with the appraisal-roll owner, or have the agent research owners, parcels and an outreach draft first (about a minute per site).</p>
             </>
           )}
-          {batch && <p role="status"><strong>{batch.done.length} of {batch.runIds.length} batches done</strong>{batch.failed.length ? `, ${batch.failed.length} failed` : ""} ({batch.sites} sites). Your helper works several at once; results appear below as each batch finishes. You can leave this page: each batch is also under Recent sourcing runs.</p>}
-          {run && ["queued", "processing"].includes(run.status) && <p role="status">The agent is researching owners and parcels ({run.status}). About a minute per site; this page updates when it's done.</p>}
           {run?.status === "failed" && <p className="error">The agent run failed: {run.error ?? "unknown error"}</p>}
           {report && (
             <>

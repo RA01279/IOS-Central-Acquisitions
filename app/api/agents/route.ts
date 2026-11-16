@@ -3,7 +3,7 @@ import { userContext, json, reap, MAX_ACTIVE_RUNS } from "@/lib/agents/server";
 import { AGENTS, UUID, isAgentId, buildPrompt } from "@/lib/agents/catalog";
 import { loadEvidence } from "@/lib/agents/context";
 import { MAX_SOURCING_SITES } from "@/lib/agents/sourcing";
-import { SNAPSHOT_LABEL, selectReviewedSites, validBuyBox, type ReviewedSourcing } from "@/lib/sourcing/snapshot";
+import { SNAPSHOT_LABEL, reviewedSites, selectReviewedSites, validBuyBox, type ReviewedSourcing } from "@/lib/sourcing/snapshot";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
  try {
@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
     const sites = saved.data ? selectReviewedSites(saved.data.snapshot.sites, body.refs) : null;
     if (!sites) return json({ error: `Select 1 to ${MAX_SOURCING_SITES} available sites from your saved sweep.` }, 400);
     reviewed = { version: 2, sweepId: body.sweepId, market: saved.data!.snapshot.market, searchLabel: saved.data!.snapshot.label, buyBox: body.buyBox, sites };
+    // A site already queued or being qualified is not queued again (a second
+    // click on Qualify would otherwise research every site twice).
+    const { data: active, error: activeErr } = await db.from("agent_runs").select("sources").eq("owner_email", email).eq("agent", "off-market-sourcing").in("status", ["queued", "processing"]);
+    if (activeErr) throw activeErr;
+    const busy = new Set((active ?? []).flatMap((r: any) => { const rv = reviewedSites(r.sources); return rv && rv.sweepId === body.sweepId ? rv.sites.map((x) => x.ref) : []; }));
+    const repeat = sites.filter((x) => busy.has(x.ref)).map((x) => x.ref);
+    if (repeat.length) return json({ error: `Already being qualified: ${repeat.slice(0, 12).join(", ")}${repeat.length > 12 ? ` and ${repeat.length - 12} more` : ""}. Wait for those results, or pick other sites.`, alreadyQueued: repeat }, 409);
   }
   const { data: helper, error: he } = await db.from("outlook_helpers").select("id,agents_last_seen_at").eq("owner_email", email).gt("expires_at", new Date().toISOString()).maybeSingle();
   if (he) throw he;
