@@ -15,6 +15,7 @@ import SourcingProfilePicker from "./SourcingProfilePicker";
 import SourcingExportAssignment from "./SourcingExportAssignment";
 import { assignmentFor, type ExportAssignee } from "@/lib/sourcing/export-assignment";
 import { blocksSourcing } from "@/lib/sourcing/identity";
+import { screenSite, siteAcres } from "@/lib/sourcing/screen";
 import { reviewedSites, validBuyBox } from "@/lib/sourcing/snapshot";
 import { usableSummary, type UsableAcres } from "@/lib/sourcing/usable-summary";
 
@@ -280,6 +281,8 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   const [sent, setSent] = useState<Record<string, { busy?: boolean; dealId?: string; error?: string }>>({});
   async function sendToOutreach(refs: string[]) {
     if (!sweep?.sweepId || !refs.length) return;
+    const flagged = refs.map((ref) => sweep.sites.find((x) => x.ref === ref)).filter((x): x is Site => !!x && screenSite(x, buyBox).length > 0);
+    if (flagged.length && !window.confirm(`${flagged.length === refs.length && refs.length === 1 ? "This site is" : `${flagged.length} of these ${refs.length} sites are`} flagged:\n\n${flagged.slice(0, 8).map((x) => `${x.ref} ${x.address}: ${screenSite(x, buyBox).map((g) => g.label).join(", ")}`).join("\n")}${flagged.length > 8 ? `\n…and ${flagged.length - 8} more` : ""}\n\nSend to outreach anyway?`)) return;
     setSent((m) => ({ ...m, ...Object.fromEntries(refs.map((r) => [r, { busy: true }])) }));
     // The endpoint takes 25 sites per request.
     for (let i = 0; i < refs.length; i += 25) {
@@ -356,8 +359,14 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
   const toggle = (ref: string) => setSelected((cur) => cur.includes(ref) ? cur.filter((r) => r !== ref) : [...cur, ref]);
   // Every site currently shown that can be picked (not already active in Hopper or sent).
   const selectable = visible.filter((s) => !blocksSourcing(s) && !sent[s.ref]?.dealId).map((s) => s.ref);
-  const allSelected = selectable.length > 0 && selectable.every((r) => selected.includes(r));
-  const toggleAll = () => setSelected(allSelected ? selected.filter((r) => !selectable.includes(r)) : [...new Set([...selected, ...selectable])]);
+  const flagsOf = (s: Site) => screenSite(s, buyBox);
+  const flaggedRefs = new Set(visible.filter((s) => flagsOf(s).length).map((s) => s.ref));
+  // "Select all" picks the unflagged sites; flagged ones stay listed and can be added.
+  const cleanSelectable = selectable.filter((r) => !flaggedRefs.has(r));
+  const flaggedSelectable = selectable.filter((r) => flaggedRefs.has(r));
+  const allSelected = cleanSelectable.length > 0 && cleanSelectable.every((r) => selected.includes(r));
+  const toggleAll = () => setSelected(allSelected ? selected.filter((r) => !selectable.includes(r)) : [...new Set([...selected, ...cleanSelectable])]);
+  const flaggedUnselected = flaggedSelectable.filter((r) => !selected.includes(r));
   const batches = Math.ceil(selected.length / MAX_SOURCING_SITES);
 
   return (
@@ -455,15 +464,15 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table className="summary-table">
-                  <thead><tr><th><input type="checkbox" aria-label="Select all shown sites" title="Select all shown" checked={allSelected} onChange={toggleAll} disabled={!selectable.length} /></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th><th>Outreach</th></tr></thead>
+                  <thead><tr><th><input type="checkbox" aria-label="Select all shown sites" title="Select all shown" checked={allSelected} onChange={toggleAll} disabled={!cleanSelectable.length} /></th><th>Site</th><th>Operators</th><th>Owner of record</th><th>Gross acres</th><th>Net usable</th><th>Built</th><th>Address</th><th>Distance</th><th>In Hopper</th><th>Outreach</th></tr></thead>
                   <tbody>
                     {visible.map((s) => (
-                      <tr key={s.ref} data-site-ref={s.ref}>
+                      <tr key={s.ref} data-site-ref={s.ref} style={flaggedRefs.has(s.ref) ? { background: "var(--surface-2, rgba(127,127,127,.06))" } : undefined}>
                         <td>{!blocksSourcing(s) && <input type="checkbox" aria-label={`Select ${s.ref}`} checked={selected.includes(s.ref)} onChange={() => toggle(s.ref)} />}</td>
-                        <td>{s.ref}</td>
+                        <td>{s.ref}{flagsOf(s).map((g) => <div key={g.code}><span className={`badge2 ${g.code === "house" ? "danger" : "warning"}`} title={g.detail} style={{ whiteSpace: "nowrap" }}>{g.label}</span><div className="hint" style={{ minWidth: 180, fontSize: 12 }}>{g.detail}</div></div>)}</td>
                         <td>{s.operators.map((o) => <div key={o.placeId} data-place-id={o.placeId} data-profile-ids={o.profileIds?.join(",")}><strong>{o.name}</strong><br /><span className="hint">Matched profiles: {(o.categories ?? [o.category]).join(", ")}</span><br />{o.phone && <>Business phone: {o.phone}<br /></>}{o.website && <><a href={o.website} target="_blank" rel="noopener noreferrer">Business website</a>{" · "}</>}<a href={o.googleUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.name)}&query_place_id=${encodeURIComponent(o.placeId)}`} target="_blank" rel="noopener noreferrer">Google business source</a></div>)}<span className="hint">Business contacts are not verified owner contacts.</span></td>
                         <td>{s.parcel?.owner ?? "Owner unverified"}{s.ownerUser && <span className="hint"> · possible owner-user (name similarity only)</span>}{s.parcel && s.parcel.ownerClass !== "private" && <span className="hint"> · {s.parcel.ownerClass}</span>}</td>
-                        <td>{s.parcel?.acres ?? "—"}</td>
+                        <td>{siteAcres(s) ?? "—"}{s.holding && s.holding.parcels.length > 1 && <div className="hint" style={{ fontSize: 12 }}>{s.holding.parcels.length} adjoining parcels, same owner ({s.holding.parcels.map((p) => p.acres ?? "?").join(" + ")})</div>}</td>
                         <td style={{ color: sizeOf(s) != null && !inBox(s) ? "#8a8f98" : undefined }}><UsableCell u={s.usable} hasParcel={!!s.parcel} strong={inBox(s)} /></td>
                         <td>{s.parcel?.yearBuilt ?? "—"}</td>
                         <td>{s.address}{s.identityStatus === "address-conflict" && <p className="hint" role="status">Listing / parcel address conflict: {s.parcel?.situsAddress}. Review location.</p>}{!s.parcel && <p className="hint">Parcel not returned; ownership and area remain unverified.</p>}</td>
@@ -480,7 +489,7 @@ export default function SourcingWorkspace({ viewerKey }: { viewerKey: string }) 
                   </tbody>
                 </table>
               </div>
-              <p className="hint" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}><span>Selected {selected.length} of {selectable.length} shown.</span> <button type="button" className="link-button" onClick={toggleAll} disabled={!selectable.length}>{allSelected ? "Clear selection" : `Select all ${selectable.length}`}</button>{selected.length > MAX_SOURCING_SITES ? <span>The agent will queue {batches} batches of up to {MAX_SOURCING_SITES}; your helper works several at once.</span> : null} {online === false && <>Your computer helper is offline — start it (Desktop: <em>Start Hopper helper</em>) to qualify sites.</>}</p>
+              <p className="hint" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}><span>Selected {selected.length} of {selectable.length} shown.</span> <button type="button" className="link-button" onClick={toggleAll} disabled={!cleanSelectable.length}>{allSelected ? "Clear selection" : `Select all ${cleanSelectable.length}${flaggedSelectable.length ? " unflagged" : ""}`}</button>{flaggedUnselected.length ? <button type="button" className="link-button" onClick={() => setSelected((cur) => [...new Set([...cur, ...flaggedUnselected])])}>Also select {flaggedUnselected.length} flagged</button> : null}{selected.length > MAX_SOURCING_SITES ? <span>The agent will queue {batches} batches of up to {MAX_SOURCING_SITES}; your helper works several at once.</span> : null} {online === false && <>Your computer helper is offline — start it (Desktop: <em>Start Hopper helper</em>) to qualify sites.</>}</p>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <button type="button" onClick={() => sendToOutreach(selected.filter((ref) => !sent[ref]?.dealId))} disabled={!selected.length || !sweep.sweepId || selected.every((ref) => sent[ref]?.busy || sent[ref]?.dealId)}>
                   {`Send ${selected.length || ""} selected to outreach`}

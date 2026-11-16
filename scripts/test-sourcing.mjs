@@ -123,6 +123,7 @@ try {
   const sweepRoute = load("app/api/sourcing/sweep/route.ts", { "next/server": { NextResponse }, "@/lib/auth": auth, "@/lib/supabase": { getServiceClient: () => db },
     "@/lib/comps/mapData": load("lib/comps/mapData.ts"), "@/lib/geocode": { geocodeAddress: async () => null }, "@/lib/location": load("lib/location.ts"),
     "@/lib/sourcing/markets": markets, "@/lib/sourcing/profiles": profiles, "@/lib/sourcing/sweep": sweep, "@/lib/sourcing/parcels": parcels, "@/lib/comps/match": match,
+    "@/lib/sourcing/holding": load("lib/sourcing/holding.ts", { "./parcels": parcels }),
     "@/lib/sourcing/usable-acres": load("lib/sourcing/usable-acres.ts", { "./usable-summary": load("lib/sourcing/usable-summary.ts"), "./site-raster": load("lib/sourcing/site-raster.ts") }) });
   const req = (body) => ({ json: async () => body });
   const r = await sweepRoute.POST(req({ lat: 30, lng: -95, radiusMiles: 3, profileIds: ["trucking-towing"] }));

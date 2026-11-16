@@ -11,7 +11,9 @@ import type { UsableAcres } from "./usable-summary";
 export function assessSourcingFit(site: SourcedSite, box: BuyBox, measured?: UsableAcres | null): Pick<SourcedSite, "fit" | "fitReason"> {
   if (site.ownerType === "public") return { fit: "poor", fitReason: "Public ownership; requires a separate acquisition approach." };
   if (site.outdoorStorage === "not permitted") return { fit: "poor", fitReason: "Outdoor storage is not permitted according to the cited evidence." };
-  const gross = site.acres ?? measured?.grossAcres ?? null;
+  // The measured outline can span the owner's adjoining parcels; researched acres
+  // usually cover one tax parcel. The larger is the site.
+  const gross = site.acres != null && measured?.grossAcres != null ? Math.max(site.acres, measured.grossAcres) : site.acres ?? measured?.grossAcres ?? null;
   if (gross != null && gross < box.minAcres) return { fit: "poor", fitReason: `Gross parcel area (${gross} acres) is below the minimum; usable yard cannot exceed it.` };
   const partial = !!measured?.failed.length;
   const usable = measured ? measured.netAcres : site.usableAcres;

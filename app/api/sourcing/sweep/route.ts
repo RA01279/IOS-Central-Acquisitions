@@ -15,6 +15,7 @@ import { haversineMiles } from "@/lib/comps/match";
 import { selectedProfiles } from "@/lib/sourcing/profiles";
 import { lookupParcels } from "@/lib/sourcing/parcels";
 import { measureMany } from "@/lib/sourcing/usable-acres";
+import { lookupHoldings } from "@/lib/sourcing/holding";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -68,10 +69,13 @@ export async function POST(req: NextRequest) {
   const merged = attachParcels(grouped, parcels);
   // Parcel comparison is bounded; missing evidence never turns proximity into identity.
   const candidates = known.filter(k => merged.some(s => haversineMiles(s.lat, s.lng, k.lat, k.lng) < .25)).slice(0, 24);
-  // Net usable acres from each parcel outline (buildings, floodplain, wetlands), alongside the comparison lookups.
-  const [rolls, usable] = await Promise.all([lookupParcels(candidates), measureMany(merged.map((s) => s.parcel?.outline))]);
+  // Small parcels: the owner's adjoining parcels (one yard is often several tax
+  // parcels) and whether the neighbours are houses (lib/sourcing/holding.ts).
+  const holdings = await lookupHoldings(merged.map((s) => s.parcel));
+  // Net usable acres across each holding's outline (buildings, floodplain, wetlands), alongside the comparison lookups.
+  const [rolls, usable] = await Promise.all([lookupParcels(candidates), measureMany(merged.map((s, i) => holdings[i]?.outline ?? s.parcel?.outline))]);
   const enriched = new Map(candidates.map((k, i) => [`${k.kind}:${k.id}`, rolls[i]]));
-  const measured = merged.map((s, i) => ({ ...s, usable: usable[i], parcel: s.parcel ? { ...s.parcel, outline: undefined } : null }));
+  const measured = merged.map((s, i) => ({ ...s, usable: usable[i], holding: holdings[i]?.holding ?? null, parcel: s.parcel ? { ...s.parcel, outline: undefined } : null }));
   const sites = matchKnownSites(measured, known.map(k => ({ ...k, parcel: enriched.get(`${k.kind}:${k.id}`) })));
   const payload = {
     center, label, market: marketAt(center.lat, center.lng), radiusMiles, sites, createdAt: new Date().toISOString(),

@@ -12,7 +12,7 @@
 //    Acres are corrected; the appraisal district's legal area is kept as well.
 
 export const PARCEL_SOURCE = "TxGIO StratMap Land Parcels (county appraisal district roll)";
-const LAYER = "https://feature.geographic.texas.gov/arcgis/rest/services/Parcels/stratmap_land_parcels_48_most_recent/MapServer";
+export const TEXAS_PARCEL_LAYER = "https://feature.geographic.texas.gov/arcgis/rest/services/Parcels/stratmap_land_parcels_48_most_recent/MapServer";
 const SQM_PER_ACRE = 4046.8564224;
 
 export interface Parcel {
@@ -178,7 +178,7 @@ export async function lookupParcel(lat: number, lng: number, fetcher: typeof fet
 
 async function lookupTexasParcel(lat: number, lng: number, fetcher: typeof fetch): Promise<Parcel | null> {
   const d = 0.001;
-  const url = new URL(`${LAYER}/identify`);
+  const url = new URL(`${TEXAS_PARCEL_LAYER}/identify`);
   url.search = new URLSearchParams({
     geometry: `${lng},${lat}`, geometryType: "esriGeometryPoint", sr: "4326", layers: "all:0", tolerance: "0",
     mapExtent: [lng - d, lat - d, lng + d, lat + d].join(","), imageDisplay: "400,400,96", returnGeometry: "true", f: "json",
