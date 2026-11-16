@@ -8,19 +8,26 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { agentSettings, runAgent, sameShape, verifyPrompt, VERIFY, WEB_SEARCH } from "./outlook-helper/agents.mjs";
+import { agentSettings, runAgent, sameShape, verifyPrompt, toolArgs, HOPPER_TOOLS, VERIFY, WEB_SEARCH } from "./outlook-helper/agents.mjs";
 
 // Settings: strong defaults, flags beat environment, junk falls back.
-assert.deepEqual(agentSettings(() => undefined, {}), { reasoning: "high", concurrency: 3, model: null, verify: true });
-const flags = { "--agent-reasoning": "XHIGH", "--agent-concurrency": "5", "--agent-model": "gpt-5.6", "--agent-verify": "off" };
-assert.deepEqual(agentSettings((n) => flags[n], { HOPPER_AGENT_REASONING: "low" }), { reasoning: "xhigh", concurrency: 5, model: "gpt-5.6", verify: false });
-assert.deepEqual(agentSettings(() => undefined, { HOPPER_AGENT_REASONING: "max", HOPPER_AGENT_CONCURRENCY: "40", HOPPER_AGENT_MODEL: "bad model; rm" }), { reasoning: "high", concurrency: 3, model: null, verify: true });
+assert.deepEqual(agentSettings(() => undefined, {}), { reasoning: "high", concurrency: 3, model: null, verify: true, tools: true });
+const flags = { "--agent-reasoning": "XHIGH", "--agent-concurrency": "5", "--agent-model": "gpt-5.6", "--agent-verify": "off", "--agent-tools": "off" };
+assert.deepEqual(agentSettings((n) => flags[n], { HOPPER_AGENT_REASONING: "low" }), { reasoning: "xhigh", concurrency: 5, model: "gpt-5.6", verify: false, tools: false });
+assert.deepEqual(agentSettings(() => undefined, { HOPPER_AGENT_REASONING: "max", HOPPER_AGENT_CONCURRENCY: "40", HOPPER_AGENT_MODEL: "bad model; rm" }), { reasoning: "high", concurrency: 3, model: null, verify: true, tools: true });
 
 // Web-search list is the same in Hopper and the helper.
 const catalog = readFileSync(new URL("../lib/agents/catalog.ts", import.meta.url), "utf8");
 const listed = JSON.parse(catalog.match(/WEB_SEARCH_AGENTS: readonly AgentId\[\] = (\[[^\]]*\])/)[1]);
 assert.deepEqual([...WEB_SEARCH].sort(), [...listed].sort(), "helper and Hopper agree on which agents may search the web");
-for (const id of ["deal-import", "comp-import", "portfolio-import", "market-report"]) assert(!WEB_SEARCH.has(id) && !VERIFY.has(id), `${id} reads documents only`);
+const toolList = JSON.parse(catalog.match(/TOOL_AGENTS: readonly AgentId\[\] = (\[[^\]]*\])/)[1]);
+assert.deepEqual([...HOPPER_TOOLS].sort(), [...toolList].sort(), "helper and Hopper agree on which agents get Hopper tools");
+for (const id of ["deal-import", "comp-import", "portfolio-import", "market-report"]) assert(!WEB_SEARCH.has(id) && !VERIFY.has(id) && !HOPPER_TOOLS.has(id), `${id} reads documents only`);
+// The tool bridge config: auto-approved, credentials passed by environment, never on the command line.
+const ta = toolArgs().join(" ");
+assert(ta.includes("mcp_servers.hopper.command=") && ta.includes("hopper-mcp.mjs") && ta.includes('default_tools_approval_mode="approve"'));
+assert(ta.includes('env_vars=["HOPPER_BASE","HOPPER_TOKEN","HOPPER_JOB"]'));
+assert(!/Bearer|TOKEN_|[A-Za-z0-9_-]{43}/.test(ta.replace(/HOPPER_TOKEN/g, "")), "no credential in the arguments");
 
 // Format checks.
 const draftJson = JSON.stringify({ version: 2, sites: [{ ref: "S1", owner: "ACME LLC" }, { ref: "S2", owner: null }] });
@@ -81,6 +88,22 @@ const checked = { report: JSON.stringify({ version: 2, sites: [{ ref: "S1", owne
   assert.equal(calls.length, 1);
   assert(out.result.limitations.some((l) => /too large/.test(l)));
 }
+{ // Hopper tools go to research agents (both passes), scoped to the job; not to document readers, nor when off.
+  const hopper = { base: "https://hopper.test", token: "T" };
+  let { run, calls } = fake(draft, checked);
+  await runAgent(job("off-market-sourcing"), undefined, settings, run, hopper);
+  assert(calls.every((c) => c.opts.tools && c.opts.tools.jobId === "j" && c.opts.tools.token === "T" && c.opts.tools.base === "https://hopper.test"));
+  assert(/parcel_lookup/.test(calls[1].prompt), "the checker is told to confirm owners with the tools");
+  ({ run, calls } = fake(draft));
+  await runAgent(job("comp-import"), undefined, settings, run, hopper);
+  assert.equal(calls[0].opts.tools, null);
+  ({ run, calls } = fake(draft, checked));
+  await runAgent(job("site-research"), undefined, { ...settings, tools: false }, run, hopper);
+  assert(calls.every((c) => c.opts.tools === null));
+  ({ run, calls } = fake(draft, checked));
+  await runAgent(job("site-research"), undefined, settings, run);
+  assert(calls.every((c) => c.opts.tools === null), "no pairing token, no tools");
+}
 await assert.rejects(runAgent(job("delete-everything"), undefined, settings, fake().run), /Invalid agent job/);
 
-console.log("PASS: helper agent runner (settings, fact-check pass and fallbacks, document readers single-pass, web-search list matches Hopper).");
+console.log("PASS: helper agent runner (settings, fact-check pass and fallbacks, document readers single-pass, web-search and tool lists match Hopper, tool bridge keeps credentials off the command line).");

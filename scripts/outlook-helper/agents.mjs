@@ -16,15 +16,24 @@
 //     own empty temp folder, read-only, with no shell, plugins or connectors.
 //   * Web search only for WEB_SEARCH agents (same list as lib/agents/catalog.ts
 //     WEB_SEARCH_AGENTS; scripts/test-agents-phase1.mjs checks they match).
+//   * Hopper tools for HOPPER_TOOLS agents (same as catalog TOOL_AGENTS): Codex
+//     gets the read-only tools in lib/agents/tools.ts through the MCP bridge
+//     ./hopper-mcp.mjs, which calls Hopper with this helper's pairing token,
+//     scoped to the job (passed as environment, not on the command line).
+//     --agent-tools off / HOPPER_AGENT_TOOLS=off turns them off.
 
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 const allowed = new Set(["deal-intake", "comp-analyst", "pipeline-follow-up", "site-research", "underwriting-review", "investment-memo", "ic-narrative", "off-market-sourcing", "deal-import", "comp-import", "portfolio-import", "market-report", "market-narrative"]);
 export const WEB_SEARCH = new Set(["site-research", "ic-narrative", "off-market-sourcing", "deal-intake", "comp-analyst", "underwriting-review", "market-narrative"]);
 /** Research agents whose facts get a second, fact-checking pass. Document readers and the deck builder don't. */
+/** Agents that may call Hopper's read-only tools (lib/agents/catalog.ts TOOL_AGENTS). */
+export const HOPPER_TOOLS = new Set(["site-research", "ic-narrative", "off-market-sourcing", "deal-intake", "comp-analyst", "underwriting-review", "market-narrative", "pipeline-follow-up"]);
+const BRIDGE = fileURLToPath(new URL("./hopper-mcp.mjs", import.meta.url)).replace(/\\/g, "/");
 export const VERIFY = new Set(["off-market-sourcing", "site-research", "ic-narrative", "market-narrative", "deal-intake", "comp-analyst", "underwriting-review"]);
 const REASONING = new Set(["low", "medium", "high", "xhigh"]);
 const DRAFT_MINUTES = 15, CHECK_MINUTES = 12;
@@ -45,11 +54,25 @@ export function agentSettings(option = () => undefined, env = process.env) {
     concurrency: Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 6 ? concurrency : 3,
     model: typeof model === "string" && /^[A-Za-z0-9._-]{2,60}$/.test(model) ? model : null,
     verify: String(option("--agent-verify") ?? env.HOPPER_AGENT_VERIFY ?? "on").toLowerCase() !== "off",
+    tools: String(option("--agent-tools") ?? env.HOPPER_AGENT_TOOLS ?? "on").toLowerCase() !== "off",
   };
 }
 
 /** One Codex run: prompt in, { result, usage } out. */
-async function codexRun(prompt, { web, minutes, settings, launcher }) {
+/** Codex -c settings that start the Hopper tool bridge for a job. Credentials go in the environment, not here. */
+export function toolArgs() {
+  const node = process.execPath.replace(/\\/g, "/");
+  return [
+    "-c", `mcp_servers.hopper.command="${node}"`,
+    "-c", `mcp_servers.hopper.args=["${BRIDGE}"]`,
+    "-c", 'mcp_servers.hopper.env_vars=["HOPPER_BASE","HOPPER_TOKEN","HOPPER_JOB"]',
+    "-c", 'mcp_servers.hopper.default_tools_approval_mode="approve"',
+    "-c", "mcp_servers.hopper.startup_timeout_sec=20",
+    "-c", "mcp_servers.hopper.tool_timeout_sec=90",
+  ];
+}
+
+async function codexRun(prompt, { web, minutes, settings, launcher, tools = null }) {
   const cwd = await mkdtemp(join(tmpdir(), "hopper-report-"));
   const schemaPath = join(cwd, "report-schema.json");
   await writeFile(schemaPath, JSON.stringify(schema));
@@ -60,6 +83,7 @@ async function codexRun(prompt, { web, minutes, settings, launcher }) {
     "-c", "web_search=" + (web ? '"live"' : '"disabled"'),
     "-c", `model_reasoning_effort="${settings.reasoning}"`,
     ...(settings.model ? ["-m", settings.model] : []),
+    ...(tools ? toolArgs() : []),
     "--output-schema", schemaPath, "--json", "-"];
   let command = "codex";
   if (process.platform === "win32") {
@@ -68,7 +92,8 @@ async function codexRun(prompt, { web, minutes, settings, launcher }) {
   }
   try {
     return await new Promise((resolve, reject) => {
-      const child = spawn(command, args, { cwd, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+      const env = tools ? { ...process.env, HOPPER_BASE: tools.base, HOPPER_TOKEN: tools.token, HOPPER_JOB: tools.jobId } : process.env;
+      const child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
       let buffer = "", final = "", usage = null, failed = false;
       const timer = setTimeout(() => { failed = true; child.kill(); reject(new Error(`The report exceeded ${minutes} minutes. Narrow the request and try again.`)); }, minutes * 60000);
       child.stdout.on("data", chunk => {
@@ -100,10 +125,10 @@ async function codexRun(prompt, { web, minutes, settings, launcher }) {
 }
 
 /** The fact-checking prompt: the original task and the draft, with the rules for correcting it. */
-export function verifyPrompt(task, draft, web) {
+export function verifyPrompt(task, draft, web, tools = false) {
   return `You are Hopper's fact-checker. A draft was written for the TASK below; check it before it reaches an acquisitions professional.
 Rules:
-- Check every specific claim -- owner and entity names, parcel IDs, addresses, acreage, building SF, prices, rents, cap rates, dates, zoning, flood, distances, and every citation -- against the TASK's source material${web ? " and public web sources (cite the URL for anything you confirm or correct that way)" : ""}.
+- Check every specific claim -- owner and entity names, parcel IDs, addresses, acreage, building SF, prices, rents, cap rates, dates, zoning, flood, distances, and every citation -- against the TASK's source material${web ? " and public web sources (cite the URL for anything you confirm or correct that way)" : ""}${tools ? "; use the read-only hopper tools (parcel_lookup for owners and parcels, usable_acres, comps_near, hopper_nearby) to confirm what they cover" : ""}.
 - Correct what is wrong. Remove, or mark as unverified where the format has a place for that, anything you cannot support. Never add a fact you cannot cite.
 - Keep everything that is correct exactly as it is.
 - Keep the exact output format. If the draft's report is serialized JSON, return the same JSON structure with the same keys and the same number of items in every list, changing only values.
@@ -137,16 +162,17 @@ const addUsage = (a, b) => {
 };
 
 /** Runs one job: a draft, then (for research agents) a fact-check pass. `run` is injectable for tests. */
-export async function runAgent(job, launcher, settings = agentSettings(), run = codexRun) {
+export async function runAgent(job, launcher, settings = agentSettings(), run = codexRun, hopper = null) {
   if (!allowed.has(job.agent) || typeof job.prompt !== "string" || job.prompt.length > 350000) throw new Error("Invalid agent job.");
   const web = WEB_SEARCH.has(job.agent);
-  const draft = await run(job.prompt, { web, minutes: DRAFT_MINUTES, settings, launcher });
+  const tools = settings.tools !== false && hopper?.token && HOPPER_TOOLS.has(job.agent) ? { base: hopper.base, token: hopper.token, jobId: job.id } : null;
+  const draft = await run(job.prompt, { web, minutes: DRAFT_MINUTES, settings, launcher, tools });
   if (!settings.verify || !VERIFY.has(job.agent)) return draft;
   if (job.prompt.length > VERIFY_MAX_PROMPT) {
     return { ...draft, result: { ...draft.result, limitations: [...draft.result.limitations, "Not fact-checked: the source material was too large for a second pass."] } };
   }
   try {
-    const checked = await run(verifyPrompt(job.prompt, draft.result, web), { web, minutes: CHECK_MINUTES, settings, launcher });
+    const checked = await run(verifyPrompt(job.prompt, draft.result, web, !!tools), { web, minutes: CHECK_MINUTES, settings, launcher, tools });
     if (!sameShape(draft.result.report, checked.result.report)) throw new Error("shape");
     const notes = checked.result.limitations.some((l) => /Fact-check:/i.test(l)) ? [] : ["Fact-check: completed."];
     return { result: { ...checked.result, limitations: [...checked.result.limitations, ...notes] }, usage: addUsage(draft.usage, checked.usage) };
@@ -173,7 +199,7 @@ export function startAgentLoop({ base, token, launcher, settings = agentSettings
     return response.json();
   };
   const pulse = setInterval(() => { if (!stopped) void request("GET", undefined, true).catch(() => {}); }, 15000);
-  console.log(`Agents: up to ${settings.concurrency} at once, reasoning ${settings.reasoning}${settings.model ? `, model ${settings.model}` : ""}, fact-check ${settings.verify ? "on" : "off"}.`);
+  console.log(`Agents: up to ${settings.concurrency} at once, reasoning ${settings.reasoning}${settings.model ? `, model ${settings.model}` : ""}, fact-check ${settings.verify ? "on" : "off"}, Hopper tools ${settings.tools ? "on" : "off"}.`);
   const slot = async (n) => {
     // Stagger the slots so they don't all ask for work in the same instant.
     await new Promise(resolve => setTimeout(resolve, n * 1500));
@@ -184,7 +210,7 @@ export function startAgentLoop({ base, token, launcher, settings = agentSettings
         const { job } = await request();
         if (job) {
           console.log("Agent job started.");
-          try { pending = { id: job.id, ...await runAgent(job, launcher, settings) }; }
+          try { pending = { id: job.id, ...await runAgent(job, launcher, settings, codexRun, { base: new URL(base).origin, token }) }; }
           catch (e) { pending = { id: job.id, error: e.message }; }
           console.log("Agent report finished. Saving the result in Hopper.");
           continue;
