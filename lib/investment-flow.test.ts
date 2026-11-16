@@ -12,6 +12,7 @@ class Query {
  filters:((r:any)=>boolean)[]=[];patch:any=null;constructor(public table:string){}
  select(){return this;}eq(k:string,v:any){this.filters.push(r=>typeof r[k]==="object"&&r[k]!==null?JSON.stringify(r[k])===(typeof v==="string"?v:JSON.stringify(v)):r[k]===v);return this;}
  is(k:string,v:any){this.filters.push(r=>r[k]==v);return this;}in(k:string,v:any[]){this.filters.push(r=>v.includes(r[k]));return this;}
+ not(k:string,operator:string,v:any){if(operator!=="is")throw new Error(`Unsupported test operator: ${operator}`);this.filters.push(r=>r[k]!=v);return this;}
  gte(k:string,v:any){this.filters.push(r=>r[k]!=null&&r[k]>=v);return this;}lte(k:string,v:any){this.filters.push(r=>r[k]!=null&&r[k]<=v);return this;}
  or(){return this;}order(){return this;}update(p:any){this.patch=p;return this;}
  rows(){const rows=(state.tables[this.table]??[]).filter(r=>this.filters.every(f=>f(r)));if(this.patch)rows.forEach(r=>Object.assign(r,structuredClone(this.patch)));return structuredClone(rows);}

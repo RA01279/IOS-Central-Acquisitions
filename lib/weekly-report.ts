@@ -13,6 +13,7 @@ import { addDays, assetClassOf, ctToday, dealValue } from "./summary";
 import { OFFER_STATUS_LABELS } from "./offer-status";
 import { listTeam, nameOf } from "./team";
 import { decisionReport } from "./decision-report";
+import { loadWeeklyOutreach, type WeeklyOutreach } from "./weekly-outreach";
 
 const OPEN_STAGES = ["prospect", "uw", "offered", "moving_to_psa", "due_diligence"] as const;
 const MOVE_EVENTS: Record<string, string> = {
@@ -41,6 +42,8 @@ export type WeeklyReport = {
   moves: (ReportDealRef & { date: string; what: string; actor: string; detail: string | null })[];
   offers: (ReportDealRef & { date: string; price: number | null; status: string; counter: number | null })[];
   losses: (ReportDealRef & { date: string; stage: string; reason: string | null })[];
+  /** Off-market outreach this week (lib/weekly-outreach.ts). */
+  outreach: WeeklyOutreach;
   upcoming: (ReportDealRef & { date: string; what: string })[];
   owners: { owner: string; active: number; value: number; inContract: number; due: number }[];
 };
@@ -111,8 +114,9 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
       actor: String(e.actor ?? "").split("@")[0],
       detail: e.event_type === "stage_corrected" && e.detail?.to ? `to ${STAGE_LABELS[e.detail.to] ?? e.detail.to}` : null,
     }));
+  // A site parked from Outreach was never in the pipeline: it is in the outreach section, not a loss.
   const losses = events
-    .filter((e: any) => e.event_type === "archived")
+    .filter((e: any) => e.event_type === "archived" && e.detail?.stage !== "outreach")
     .map((e: any) => ({
       ...ref(e.deal_id),
       date: String(e.created_at).slice(0, 10),
@@ -149,6 +153,8 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
     if (o) o.due++;
   }
 
+  const outreach = await loadWeeklyOutreach(weekStart, today, (email) => nameOf(team, email) ?? "Unassigned");
+
   return {
     today,
     decisions: deals.filter((d:any)=>(OPEN_STAGES as readonly string[]).includes(d.stage)).map(decisionReport),
@@ -166,6 +172,7 @@ export async function buildWeeklyReport(): Promise<WeeklyReport> {
       counter: o.counter_price != null ? Number(o.counter_price) : null,
     })),
     losses,
+    outreach,
     upcoming,
     owners: [...owners.values()].sort((a, b) => (a.owner === "Unassigned" ? 1 : b.owner === "Unassigned" ? -1 : b.active - a.active)),
   };

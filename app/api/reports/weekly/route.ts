@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { getCurrentUser } from "@/lib/auth";
 import { buildWeeklyReport } from "@/lib/weekly-report";
+import { addWeeklyOutreachSheet } from "@/lib/weekly-outreach-excel";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,8 @@ export async function GET(req: NextRequest) {
     { header: "Class", key: "assetClass", width: 11 }, { header: "Owner", key: "owner", width: 16 },
   ]);
   up.addRows(r.upcoming);
+
+  addWeeklyOutreachSheet(wb, r.outreach, r.weekStart, r.today);
 
   const decisions=wb.addWorksheet("Investment decisions");
   const keys=r.decisions[0]?Object.keys(r.decisions[0]):["address","rationale","nextAction"];

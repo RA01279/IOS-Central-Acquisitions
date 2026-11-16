@@ -290,6 +290,73 @@ export default async function WeeklyReportPage() {
         </div>
 
         <section className="panel">
+          <h2>Off-market outreach</h2>
+          <p className="hint" style={{ marginTop: 0 }}>
+            {r.outreach.totals.touches} owner touch{r.outreach.totals.touches === 1 ? "" : "es"} this week · {r.outreach.totals.reached} reached an owner · {r.outreach.moved.length} moved to the pipeline · {r.outreach.parked.length} parked
+            {r.outreach.totals.overdue ? <> · <span className="overdue">{r.outreach.totals.overdue} follow-up{r.outreach.totals.overdue === 1 ? "" : "s"} overdue</span></> : null}
+          </p>
+          <div className="two-col">
+            <div>
+              <h3 className="report-sub" style={{ marginTop: 0 }}>Touches by person</h3>
+              {r.outreach.byPerson.length ? (
+                <>
+                  <Legend items={[{ label: "Calls", color: SERIES[0] }, { label: "Emails", color: SERIES[1] }, { label: "Letters", color: SERIES[2] }, { label: "Other", color: SERIES_SOFT }]} />
+                  <BarRows
+                    labelWidth={120}
+                    rows={r.outreach.byPerson.map((p) => ({
+                      key: p.person,
+                      label: p.person,
+                      title: `${p.person}: ${p.calls} calls, ${p.emails} emails, ${p.letters} letters, ${p.other} other; ${p.reached} reached an owner; ${p.overdue} follow-ups overdue`,
+                      segments: [
+                        { value: p.calls, color: SERIES[0], title: `${p.calls} calls` },
+                        { value: p.emails, color: SERIES[1], title: `${p.emails} emails` },
+                        { value: p.letters, color: SERIES[2], title: `${p.letters} letters` },
+                        { value: p.other, color: SERIES_SOFT, title: `${p.other} other` },
+                      ],
+                      value: <>{p.touches}<span className="muted"> · {p.reached} reached</span>{p.overdue ? <span className="overdue"> · {p.overdue} overdue</span> : null}</>,
+                    }))}
+                  />
+                </>
+              ) : <p className="hint">No owner touches logged this week.</p>}
+            </div>
+            <div>
+              <h3 className="report-sub" style={{ marginTop: 0 }}>Moved to the pipeline ({r.outreach.moved.length})</h3>
+              {r.outreach.moved.length ? (
+                <ul className="feed">
+                  {r.outreach.moved.map((m, i) => (
+                    <li key={i}><span className="badge2 success">Pipeline</span><span className="feed-main"><Link href={`/deals/${m.id}`}>{m.address}</Link></span><span className="muted feed-meta">{day(m.on)} · {m.by}</span></li>
+                  ))}
+                </ul>
+              ) : <p className="hint">None this week.</p>}
+              <h3 className="report-sub">Parked from outreach ({r.outreach.parked.length})</h3>
+              {r.outreach.parked.length ? (
+                <ul className="feed">
+                  {r.outreach.parked.map((p, i) => (
+                    <li key={i}><span className="feed-main"><Link href={`/deals/${p.id}`}>{p.address}</Link><span className="muted"> · {p.reason ?? "No reason given"}</span></span><span className="muted feed-meta">{p.checkBackOn ? `check back ${day(p.checkBackOn)}` : day(p.on)}</span></li>
+                  ))}
+                </ul>
+              ) : <p className="hint">None this week.</p>}
+            </div>
+          </div>
+          <h3 className="report-sub">Warm owners ({r.outreach.warm.length})</h3>
+          {r.outreach.warm.length ? (
+            <ul className="feed">
+              {r.outreach.warm.map((w) => (
+                <li key={w.id} style={{ alignItems: "flex-start" }}>
+                  <span className={`badge2 ${w.status === "interested" ? "success" : "brand"}`}>{w.statusLabel}</span>
+                  <span className="feed-main" style={{ whiteSpace: "normal" }}>
+                    <Link href={`/deals/${w.id}`}>{w.address}</Link>
+                    <span className="muted">{w.city ? ` · ${w.city}` : ""}{w.owner ? ` · ${w.owner}` : ""}</span>
+                    {w.lastTouch ? <div className="muted" style={{ fontSize: 12 }}>{day(w.lastTouch.on)}: {w.lastTouch.what}{w.lastTouch.note ? ` — ${w.lastTouch.note}` : ""}</div> : null}
+                  </span>
+                  <span className="muted feed-meta">{w.nextOn ? `next touch ${day(w.nextOn)}` : "no next touch set"}</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="hint">No owners in conversation or interested right now.</p>}
+        </section>
+
+        <section className="panel">
           <h2>Active investment decisions ({r.decisions.length})</h2>
           <p className="hint">Unknown fields need review; returns are from the named source, not approval. Open a card for the full reconciliation.</p>
           <h3 className="report-sub">Furthest along</h3>
