@@ -2629,3 +2629,8 @@ button.hs-link.hs-tool:hover { background: rgba(255, 255, 255, 0.06); }
 .calc-input input { flex: 1; min-width: 0; border: 0; outline: 0; font: 500 18px/1 var(--font-mono); padding: 10px 0; color: var(--ink); background: transparent; }
 .calc-copy { border: 0; border-left: 1px solid var(--n200); background: var(--canvas); color: var(--brand); font: 600 12px/1 var(--font-body); padding: 0 12px; align-self: stretch; cursor: pointer; border-radius: 0 4px 4px 0; }
 .calc-copy:disabled { color: var(--n400); cursor: default; }
+.calc-results { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 0; }
+.calc-results div { background: var(--canvas); border-radius: 6px; padding: 8px 10px; }
+.calc-results dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.calc-results dd { margin: 2px 0 0; font: 600 16px/1.2 var(--font-mono); color: var(--navy); word-break: break-all; }
+@media (max-width: 560px) { .calc-dialog { padding: 16px; } .calc-input input { font-size: 16px; } }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRate, perAcreToPerSf, perSfToPerAcre, SF_PER_ACRE } from "./rent-convert";
+import { parseRate, perAcreToPerSf, perSfToPerAcre, siteRent, SF_PER_ACRE, usd } from "./rent-convert";
 
 describe("rent calculator", () => {
   it("converts per usable acre per month to per SF per month, to 8 decimals", () => {
@@ -18,5 +18,24 @@ describe("rent calculator", () => {
     expect(parseRate(" 0.17 ")).toBe(0.17);
     expect(parseRate(".5")).toBe(0.5);
     for (const bad of ["", ".", "abc", "-5", "1.2.3", "7,5x0"]) expect(parseRate(bad)).toBeNull();
+  });
+});
+
+describe("site rent", () => {
+  it("prices a 5-acre site at $7,000 per usable acre per month", () => {
+    const r = siteRent(7000, 5)!;
+    expect(r.monthly).toBe(35000);
+    expect(r.annual).toBe(420000);
+    expect(r.usableSf).toBe(217800);
+    expect(perAcreToPerSf(7000)).toBe("0.16069789");
+    expect(r.perSfAnnual).toBe("1.92837466");
+    expect(usd(r.monthly)).toBe("$35,000.00");
+    expect(usd(r.annual)).toBe("$420,000.00");
+  });
+  it("handles fractional acres and waits for both numbers", () => {
+    expect(siteRent(7500, 4.68)!.monthly).toBeCloseTo(35100, 6);
+    expect(siteRent(7000, null)).toBeNull();
+    expect(siteRent(null, 5)).toBeNull();
+    expect(siteRent(7000, 0)).toBeNull();
   });
 });

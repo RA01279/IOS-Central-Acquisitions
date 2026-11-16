@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { CloudCheck, CloudOff, Cloud, LayoutGrid, Map as MapIcon, Presentation, Menu, X } from "lucide-react";
 import { NAV_GROUPS } from "./nav-links";
+import RentCalculator from "./RentCalculator";
 import { ago, readRecent, rememberRoute, type RecentDeal } from "@/lib/recent";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -126,6 +127,8 @@ export function MobileTabs({ active }: { active: string }) {
               {l.label}
             </a>
           ))}
+          {/* Opening the calculator closes this menu; the calculator covers the page. */}
+          <RentCalculator onOpen={() => setOpen(false)} />
           <span className="hs-user" style={{ gridColumn: "1 / -1", marginTop: 8 }}>
             <span className="who">
               <SignOutLink />
