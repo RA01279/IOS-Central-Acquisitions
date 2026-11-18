@@ -31,7 +31,7 @@ export const DEAL_TABS = [
 function useTab(id: string) {
   const path = usePathname() ?? "";
   const rest = path.replace(`/deals/${id}`, "").replace(/^\//, "").split("/")[0];
-  return DEAL_TABS.find((t) => t.seg === rest) ?? DEAL_TABS[0];
+  return DEAL_TABS.find((t) => t.seg === (rest === "acquisition-brief" ? "financials" : rest)) ?? DEAL_TABS[0];
 }
 
 /** Map state that should follow you between Demand Map and IC Deck. */

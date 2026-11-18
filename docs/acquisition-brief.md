@@ -1,0 +1,11 @@
+# Acquisition Brief
+
+On a deal's Financials page, Acquisition Brief sits immediately after IC Deck below the underwriting upload. The existing signed-upload and version-ingestion workflow is unchanged. After upload, the page refresh enables the brief. With no model, the action explains that an underwriting upload is required.
+
+The preview defaults to the highest saved version number, including after replacement uploads. Historical versions are selectable and are labeled historical. The PDF URL pins the previewed version, so a concurrent upload cannot silently change the download. The existing Financials tab stays selected while viewing a brief; there is no extra workspace tab or print control.
+
+The authenticated deal-scoped GET endpoint generates a private, uncached one-page PDF without changing database or storage records. It reads persisted returns, model detail, document metadata, property facts, contract price, and recorded investment-review evidence. It does not request the workbook again or recalculate Excel. Wrong-upload versions are blocked; unconfirmed identity is prominently labeled as a draft with review notes.
+
+Saved rent-roll rows are model assumptions, not assertions of executed lease terms. Missing fields, unsupported older detail, and absent lease page citations are explicit. Expense reimbursements are presented separately from NOI. New model snapshots retain the existing parser's Total Expense Recoveries line. A one-page PDF summarizes up to three tenants and one warning, states omitted counts, and points to the preview's complete supporting rows and warnings.
+
+Verification uses isolated workbook and database fixtures; live records are not edited. Acquisition Brief tests cover IOS Pro Forma and industrial _Upload_ parsing, no model, first/replacement uploads through the actual upload-slot and version routes, historical versions, two-deal separation, incomplete detail, negative and zero returns, authenticated exports, and server-rendered preview. The PDF regression script extracts text and renders complete and incomplete briefs to confirm one page and expected values. Browser automation was unavailable in the implementation session, so direct desktop/mobile interaction was not verified.

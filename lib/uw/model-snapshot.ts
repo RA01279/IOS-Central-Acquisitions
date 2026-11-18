@@ -36,6 +36,8 @@ export interface UwModelSnapshot {
   leveredIrr: number | null;
   leveredMultiple: number | null;
   year1Noi: number | null;
+  /** Year-1 expense reimbursements, separately reported from NOI. */
+  recoveriesYear1?: number | null;
   /** Year-1 vacancy & credit loss as a share of potential base rent. */
   vacancyPct: number | null;
   /** Year-1 capex reserves, dollars. */
@@ -93,6 +95,7 @@ export function modelSnapshot(m: ModelSummary): UwModelSnapshot {
     leveredIrr: m.returns.levered.irr,
     leveredMultiple: m.returns.levered.multiple,
     year1Noi: yr1(/^NOI$/i),
+    recoveriesYear1: yr1(/^(?:Expense Reimbursements|Total Expense Recoveries|Total Recoveries|Expense Recoveries|Reimbursements)$/i),
     vacancyPct: potential && vacancy !== null ? Math.abs(vacancy) / potential : null,
     reservesYear1: reserves === null ? null : Math.abs(reserves),
     statedBump: bump !== null && bump >= 0 && bump <= 0.1 ? Math.round(bump * 10000) / 10000 : null,

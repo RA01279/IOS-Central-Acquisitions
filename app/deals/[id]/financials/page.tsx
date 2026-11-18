@@ -168,6 +168,10 @@ export default async function FinancialsPage(props: { params: Promise<{ id: stri
         )}
         <TaxCheck taxes={taxes} modelTax={typeof latestVersion?.model_detail?.realEstateTaxes === "number" ? latestVersion.model_detail.realEstateTaxes : null} hasModel={!!latestVersion} dealId={deal.id} />
         <ExcelUploadForm dealId={deal.id} hasModel={!!sourceVersion} />
+        <div className="fin-head" style={{ marginTop: 12 }}>
+          <a className="button-link secondary" href={`/deals/${deal.id}/ic-deck`}>IC Deck</a>
+          {versionsDesc.length ? <a className="button-link" href={`/deals/${deal.id}/acquisition-brief`}>Acquisition Brief</a> : <span className="muted" aria-disabled="true">Acquisition Brief · upload an underwriting model first</span>}
+        </div>
         <p className="hint fin-note">
           Uploaded returns are the workbook&apos;s saved calculation results. Hopper does not recalculate Excel formulas. Confirm the source
           property, assumptions and calculation date before relying on them.
