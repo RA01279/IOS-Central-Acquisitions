@@ -8,7 +8,8 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { agentSettings, runAgent, sameShape, verifyPrompt, toolArgs, HOPPER_TOOLS, VERIFY, WEB_SEARCH } from "./outlook-helper/agents.mjs";
+import { agentSettings, runAgent, sameShape, verifyPrompt, toolArgs, codexArgs, fetchImages, HOPPER_TOOLS, VERIFY, WEB_SEARCH } from "./outlook-helper/agents.mjs";
+import { existsSync } from "node:fs";
 
 // Settings: strong defaults, flags beat environment, junk falls back.
 assert.deepEqual(agentSettings(() => undefined, {}), { reasoning: "high", concurrency: 3, model: null, verify: true, tools: true });
@@ -107,4 +108,31 @@ const checked = { report: JSON.stringify({ version: 2, sites: [{ ref: "S1", owne
 }
 await assert.rejects(runAgent(job("delete-everything"), undefined, settings, fake().run), /Invalid agent job/);
 
-console.log("PASS: helper agent runner (settings, fact-check pass and fallbacks, document readers single-pass, web-search and tool lists match Hopper, tool bridge keeps credentials off the command line).");
+// Page images (a PDF with no text layer): downloaded in order, JPEG only, attached with -i, removed after.
+{
+  const jpeg = (n) => Buffer.from([0xff, 0xd8, 0xff, 0xe0, n]);
+  const served = [];
+  const fetcher = async (url, init) => { served.push(url); assert.equal(init.redirect, "error"); return { ok: true, arrayBuffer: async () => jpeg(Number(url.slice(-5, -4))) }; };
+  let { run, calls } = fake(draft, { ...draft, limitations: ["Fact-check: no corrections needed"] });
+  const out = await runAgent({ ...job("comp-import"), images: ["https://s.test/page-1.jpg", "https://s.test/page-2.jpg"] }, undefined, settings, run, null, fetcher);
+  assert.deepEqual(served, ["https://s.test/page-1.jpg", "https://s.test/page-2.jpg"]);
+  assert.equal(calls.length, 2, "a read from images gets the fact-check pass");
+  const files = calls[0].opts.images;
+  assert.equal(files.length, 2);
+  assert(/page-1.jpg$/.test(files[0]) && /page-2.jpg$/.test(files[1]));
+  assert.deepEqual(calls[1].opts.images, files, "the checker sees the same pages");
+  assert(!existsSync(files[0]), "page images are deleted after the run");
+  assert(out.result.limitations.some((l) => /Fact-check/.test(l)));
+  ({ run, calls } = fake(draft));
+  await runAgent(job("comp-import"), undefined, settings, run);
+  assert.equal(calls.length, 1, "a text read stays single-pass");
+  assert.deepEqual(calls[0].opts.images, []);
+  const args = codexArgs({ web: false, settings, images: ["a.jpg", "b.jpg"], schemaPath: "s.json" });
+  assert.deepEqual(args.slice(args.indexOf("-i"), args.indexOf("-i") + 4), ["-i", "a.jpg", "-i", "b.jpg"]);
+  assert.equal(args.at(-1), "-", "the prompt still comes on stdin");
+  await assert.rejects(fetchImages(["https://s.test/page-1.jpg"], async () => ({ ok: true, arrayBuffer: async () => Buffer.from("<html>") })), /not a JPEG/);
+  await assert.rejects(fetchImages(["http://s.test/page-1.jpg"], fetcher), /Invalid page image link/);
+  await assert.rejects(fetchImages(Array(13).fill("https://s.test/page-1.jpg"), fetcher), /Too many/);
+}
+
+console.log("PASS: helper agent runner (settings, fact-check pass and fallbacks, document readers single-pass, web-search and tool lists match Hopper, tool bridge keeps credentials off the command line, page images attached in order, checked and removed).");

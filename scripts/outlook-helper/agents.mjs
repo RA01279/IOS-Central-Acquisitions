@@ -21,6 +21,9 @@
 //     ./hopper-mcp.mjs, which calls Hopper with this helper's pairing token,
 //     scoped to the job (passed as environment, not on the command line).
 //     --agent-tools off / HOPPER_AGENT_TOOLS=off turns them off.
+//   * Page images: a job can carry one-hour links to page images of a PDF
+//     with no text layer (lib/agents/images.ts). They are downloaded to a
+//     temp folder and attached to the Codex run with -i, in page order.
 
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -74,19 +77,50 @@ export function toolArgs() {
   ];
 }
 
-async function codexRun(prompt, { web, minutes, settings, launcher, tools = null }) {
-  const cwd = await mkdtemp(join(tmpdir(), "hopper-report-"));
-  const schemaPath = join(cwd, "report-schema.json");
-  await writeFile(schemaPath, JSON.stringify(schema));
-  // A fresh empty working directory and no user config/plugins/connectors keep
-  // this report generator separate from the user's coding workspace and inbox.
-  const args = ["exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only",
+/** Download a job's page images (signed Hopper storage links) to a temp folder, in order. */
+export async function fetchImages(urls, fetcher = fetch) {
+  if (!Array.isArray(urls) || !urls.length) return { dir: null, files: [] };
+  if (urls.length > 12) throw new Error("Too many page images.");
+  const dir = await mkdtemp(join(tmpdir(), "hopper-pages-"));
+  try {
+    const files = [];
+    for (const [i, url] of urls.entries()) {
+      if (typeof url !== "string" || !/^https:\/\//.test(url)) throw new Error("Invalid page image link.");
+      const res = await fetcher(url, { redirect: "error", signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error("A page image could not be downloaded.");
+      const bytes = Buffer.from(await res.arrayBuffer());
+      // JPEG only (FF D8 FF), at most 10 MB a page.
+      if (bytes.length > 10 * 1024 * 1024 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) throw new Error("A page image was not a JPEG.");
+      const file = join(dir, `page-${i + 1}.jpg`);
+      await writeFile(file, bytes);
+      files.push(file);
+    }
+    return { dir, files };
+  } catch (e) {
+    await rm(dir, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+/** Codex arguments for one run (exported for tests). */
+export function codexArgs({ web, settings, tools = null, images = [], schemaPath }) {
+  return ["exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only",
     "--disable", "shell_tool", "--disable", "multi_agent", "--disable", "plugins", "--disable", "apps",
     "-c", "web_search=" + (web ? '"live"' : '"disabled"'),
     "-c", `model_reasoning_effort="${settings.reasoning}"`,
     ...(settings.model ? ["-m", settings.model] : []),
     ...(tools ? toolArgs() : []),
+    ...images.flatMap((file) => ["-i", file]),
     "--output-schema", schemaPath, "--json", "-"];
+}
+
+async function codexRun(prompt, { web, minutes, settings, launcher, tools = null, images = [] }) {
+  const cwd = await mkdtemp(join(tmpdir(), "hopper-report-"));
+  const schemaPath = join(cwd, "report-schema.json");
+  await writeFile(schemaPath, JSON.stringify(schema));
+  // A fresh empty working directory and no user config/plugins/connectors keep
+  // this report generator separate from the user's coding workspace and inbox.
+  const args = codexArgs({ web, settings, tools, images, schemaPath });
   let command = "codex";
   if (process.platform === "win32") {
     command = process.execPath;
@@ -164,17 +198,24 @@ const addUsage = (a, b) => {
 };
 
 /** Runs one job: a draft, then (for research agents) a fact-check pass. `run` is injectable for tests. */
-export async function runAgent(job, launcher, settings = agentSettings(), run = codexRun, hopper = null) {
+export async function runAgent(job, launcher, settings = agentSettings(), run = codexRun, hopper = null, fetcher = fetch) {
   if (!allowed.has(job.agent) || typeof job.prompt !== "string" || job.prompt.length > 350000) throw new Error("Invalid agent job.");
+  const pages = await fetchImages(job.images, fetcher);
+  try { return await runWithImages(job, launcher, settings, run, hopper, pages.files); }
+  finally { if (pages.dir) await rm(pages.dir, { recursive: true, force: true }); }
+}
+
+async function runWithImages(job, launcher, settings, run, hopper, images) {
   const web = WEB_SEARCH.has(job.agent);
   const tools = settings.tools !== false && hopper?.token && HOPPER_TOOLS.has(job.agent) ? { base: hopper.base, token: hopper.token, jobId: job.id } : null;
-  const draft = await run(job.prompt, { web, minutes: DRAFT_MINUTES_FOR[job.agent] ?? DRAFT_MINUTES, settings, launcher, tools });
-  if (!settings.verify || !VERIFY.has(job.agent)) return draft;
+  const draft = await run(job.prompt, { web, minutes: DRAFT_MINUTES_FOR[job.agent] ?? DRAFT_MINUTES, settings, launcher, tools, images });
+  // A read from page images gets the second pass too: reading figures by sight can slip a digit.
+  if (!settings.verify || !(VERIFY.has(job.agent) || images.length)) return draft;
   if (job.prompt.length > VERIFY_MAX_PROMPT) {
     return { ...draft, result: { ...draft.result, limitations: [...draft.result.limitations, "Not fact-checked: the source material was too large for a second pass."] } };
   }
   try {
-    const checked = await run(verifyPrompt(job.prompt, draft.result, web, !!tools), { web, minutes: CHECK_MINUTES, settings, launcher, tools });
+    const checked = await run(verifyPrompt(job.prompt, draft.result, web, !!tools), { web, minutes: CHECK_MINUTES, settings, launcher, tools, images });
     if (!sameShape(draft.result.report, checked.result.report)) throw new Error("shape");
     const notes = checked.result.limitations.some((l) => /Fact-check:/i.test(l)) ? [] : ["Fact-check: completed."];
     return { result: { ...checked.result, limitations: [...checked.result.limitations, ...notes] }, usage: addUsage(draft.usage, checked.usage) };

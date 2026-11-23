@@ -34,9 +34,10 @@ export function readableText(html: string | null | undefined, text: string | nul
  */
 export async function aiReadComps(
   material: string,
-  opts: { label: string | null; sourceRef?: string | null; source?: string; alive?: () => boolean }
+  opts: { label: string | null; sourceRef?: string | null; source?: string; alive?: () => boolean; images?: string[]; onStatus?: (s: "queued" | "processing") => void }
 ): Promise<{ parts: CompSourcePart[]; notes: string[] }> {
-  const tables = parseCompImport(await runAgent("comp-import", material, { alive: opts.alive }));
+  // images: storage paths of page images (lib/pdf-images.ts) for a PDF with no text layer.
+  const tables = parseCompImport(await runAgent("comp-import", material, { alive: opts.alive, onStatus: opts.onStatus, ...(opts.images?.length ? { meta: { images: opts.images } } : {}) }));
   if (!tables) throw new Error("The helper's answer wasn't a comp table.");
   const warn = ["Read by the Hopper helper. Check each row against the source before saving.", ...tables.notes];
   const base = { ...(opts.source ? { source: opts.source } : {}), ...(opts.sourceRef ? { sourceRef: opts.sourceRef } : {}) };

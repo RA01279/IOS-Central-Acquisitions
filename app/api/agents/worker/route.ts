@@ -37,9 +37,19 @@ export async function GET(req: NextRequest) {
   }
   if (!data) return json({ job: null });
   const claimed = await db.from("agent_runs").update({ status: "processing", started_at: new Date().toISOString() })
-    .eq("id", data.id).eq("helper_id", helper.id).eq("status", "queued").select("id,agent,prompt").maybeSingle();
+    .eq("id", data.id).eq("helper_id", helper.id).eq("status", "queued").select("id,agent,prompt,meta").maybeSingle();
   if (claimed.error) throw claimed.error;
-  return json({ job: claimed.data });
+  if (!claimed.data) return json({ job: null });
+  const { meta, ...job } = claimed.data as any;
+  // Page images (lib/agents/images.ts): one-hour signed links, in page order.
+  const paths: string[] = Array.isArray(meta?.images) ? meta.images : [];
+  let images: string[] = [];
+  if (paths.length) {
+    const signed = await db.storage.from("documents").createSignedUrls(paths, 3600);
+    if (signed.error) throw signed.error;
+    images = paths.map((p) => signed.data.find((s: any) => s.path === p)?.signedUrl).filter((u): u is string => !!u);
+  }
+  return json({ job: images.length ? { ...job, images } : job });
  } catch { return json({ error: "Agent queue unavailable." }, 503); }
 }
 export async function POST(req: NextRequest) {

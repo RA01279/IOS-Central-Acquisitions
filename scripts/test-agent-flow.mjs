@@ -55,6 +55,7 @@ deps["./identity"]=load("lib/sourcing/identity.ts",deps);
 deps["@/lib/sourcing/snapshot"]=load("lib/sourcing/snapshot.ts",deps);
 deps["@/lib/sourcing/fit"]=load("lib/sourcing/fit.ts",deps);
 for (const m of ["deal-import","comp-import","portfolio-import","market-report","market-narrative"]) deps["./"+m]=deps["@/lib/agents/"+m]=load("lib/agents/"+m+".ts",deps);
+deps["@/lib/agents/images"]=load("lib/agents/images.ts",deps);
 deps["@/lib/agents/catalog"]=load("lib/agents/catalog.ts",deps);
 const autoCalls=[];deps["@/lib/ic-deck/auto"]={autoExecSummary:async(...a)=>{autoCalls.push(a);}};
 deps["@/lib/agents/context"]={loadEvidence:async()=>[{label:"Synthetic test",data:{address:"123 Example Road"}}]};

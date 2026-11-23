@@ -3,6 +3,7 @@ import { userContext, json, reap, MAX_ACTIVE_RUNS } from "@/lib/agents/server";
 import { AGENTS, UUID, isAgentId, buildPrompt } from "@/lib/agents/catalog";
 import { loadEvidence } from "@/lib/agents/context";
 import { MAX_SOURCING_SITES } from "@/lib/agents/sourcing";
+import { IMAGE_AGENTS, validImagePaths } from "@/lib/agents/images";
 import { SNAPSHOT_LABEL, reviewedSites, selectReviewedSites, validBuyBox, type ReviewedSourcing } from "@/lib/sourcing/snapshot";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
@@ -54,6 +55,15 @@ export async function POST(req: NextRequest) {
     const path = String(body.meta.path ?? "");
     if (!/^market-reports\/[0-9a-f-]{36}-[A-Za-z0-9._-]+\.pdf$/i.test(path)) return json({ error: "Upload the report first." }, 400);
     meta = { path, fileName: String(body.meta.fileName ?? "").slice(0, 200), pages: Number.isInteger(body.meta.pages) ? body.meta.pages : null };
+  }
+  // Page images of a PDF with no text layer, uploaded through /api/agents/images.
+  if (body.meta?.images != null) {
+    const images = (IMAGE_AGENTS as readonly string[]).includes(body.agent) ? validImagePaths(body.meta.images) : null;
+    if (!images) return json({ error: "Upload the page images first." }, 400);
+    const folder = images[0].slice(0, images[0].lastIndexOf("/"));
+    const { data: listed } = await db.storage.from("documents").list(folder, { limit: 20 });
+    if (!images.every((p) => listed?.some((o: any) => `${folder}/${o.name}` === p))) return json({ error: "Some page images didn't arrive. Upload the PDF again." }, 400);
+    meta = { ...(meta ?? {}), images };
   }
   let reviewed: ReviewedSourcing | null = null;
   if (body.agent === "off-market-sourcing") {

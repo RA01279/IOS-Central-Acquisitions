@@ -27,7 +27,9 @@ import {isAddressRange, type SalePortfolioDraft} from '@/lib/comps/portfolios';
 import { validCoordinates } from "@/lib/location";
 import { isExplicitCompTable } from "@/lib/comps/parse";
 import { compIssue, RENT_BASES } from "@/lib/comps/intake-validation";
-import { aiReadComps, readableText } from "@/lib/comps/ai-read";
+import { aiReadComps, readableText, directPdfComps } from "@/lib/comps/ai-read";
+import { pdfText } from "@/lib/pdf-text";
+import { pdfPageImages, uploadPageImages } from "@/lib/pdf-images";
 import { helperOnline } from "@/lib/agent-client";
 
 /** One line for a row's location check: where it landed, or why it needs a fix. */
@@ -280,14 +282,53 @@ export default function CompIntakeForm({
       return;
     }
     const buf = await file.arrayBuffer();
+    setSourceRef(file.name);
+    if (/\.pdf$/i.test(file.name)) return readPdf(buf, file.name);
     let binary = "";
     const bytes = new Uint8Array(buf);
     const CHUNK = 8192; // avoid blowing the argument limit on a big file
     for (let i = 0; i < bytes.length; i += CHUNK) {
       binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
     }
-    setSourceRef(file.name);
     sendToParser({ fileBase64: btoa(binary), fileName: file.name });
+  }
+
+  // A comp PDF. The one broker sale-grid layout Hopper knows is read exactly,
+  // column for column. Any other layout -- a comp sheet, a broker survey, a
+  // one-pager per sale -- is read by the Hopper helper from the PDF's text,
+  // and its table goes through the same parser and review as everything else.
+  async function readPdf(buf: ArrayBuffer, name: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      setStep(`Reading ${name}…`);
+      const direct = await directPdfComps(buf, name, name);
+      if (direct) return await sendParts([direct]);
+      // pdf.js takes over (detaches) the buffer it is given, so each reader gets its own copy.
+      const pdf = await pdfText(buf.slice(0), 95000, 120);
+      if (!(await helperOnline())) throw new Error("This PDF isn't in the sale-grid layout Hopper reads on its own, so the Hopper helper reads it. Start the helper on your computer (Desktop: Start Hopper helper) and upload it again.");
+      // No text layer (a scan, or text converted to outlines): the helper reads the pages by sight.
+      let images: string[] | undefined, skipped: string | null = null;
+      if (pdf.scanned) {
+        setStep(`${name} has no selectable text, so its pages are sent to the Hopper helper as images…`);
+        const rendered = await pdfPageImages(buf.slice(0), 12);
+        images = await uploadPageImages(rendered.blobs);
+        if (rendered.pages > 12) skipped = `Only the first 12 of ${rendered.pages} pages were read.`;
+      }
+      setStep(`Reading the comps in ${name} with the Hopper helper… (usually a minute or two)`);
+      const material = images
+        ? `COMP PDF (${name}, ${pdf.pages} pages). This PDF has no text layer: its ${images.length} page${images.length === 1 ? " is" : "s are"} attached to this message as images, in page order. Read every comp row from the images exactly as printed; leave anything you cannot read clearly blank and say so in notes.`
+        : `COMP PDF (${name}, ${pdf.pages} pages):\n${pdf.text}`;
+      const read = await aiReadComps(material, { label: name, sourceRef: name, images, onStatus: (st) => setStep(st === "queued" ? `Waiting for the Hopper helper to pick up ${name}…` : `Reading the comps in ${name} with the Hopper helper… (usually a minute or two)`) });
+      if (images) read.parts = read.parts.map((p) => ({ ...p, warnings: [`Read from page images (${name} has no selectable text). Check every figure against the PDF before saving.`, ...(skipped ? [skipped] : []), ...(p.warnings ?? [])] }));
+      if (!read.parts.length) throw new Error(`The Hopper helper found no executed leases or closed sales in ${name}.${read.notes.length ? ` ${read.notes.join(" ")}` : ""}`);
+      return await sendParts(read.parts.map((p) => ({ ...p, warnings: [...(p.warnings ?? []), ...(pdf.text.length >= 95000 ? [`Only the first part of this long PDF was read (${pdf.pages} pages). Check nothing is missing.`] : [])] })));
+    } catch (e: any) {
+      setError(e?.message ?? "Could not read that PDF.");
+    } finally {
+      setStep("");
+      setBusy(false);
+    }
   }
 
   /** FileSystemFileEntry.file() is callback-based; make it awaitable. */
